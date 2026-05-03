@@ -285,7 +285,18 @@ export default function AdminSheetView({tech, onBack, viewDate}){
                           ?<span style={{padding:'4px 6px',display:'block',fontSize:'12px'}}>{rt?.name||'—'}</span>
                           :<select value={row.repairTypeId} onChange={e=>updateRow(row._id,{repairTypeId:e.target.value})} disabled={!row.deviceModelId} style={selStyle}><option value="">— select —</option>{repairsForType.map(r=><option key={r.id} value={r.id}>{r.name}</option>)}</select>}
                       </td>
-                      <td style={{padding:'4px',textAlign:'center',fontWeight:700,fontSize:'12px',color:BLUE}}>{book!==null?book:'—'}</td>
+                      <td style={{padding:'4px',textAlign:'center',fontWeight:700,fontSize:'12px',color:BLUE}}>
+                        {editMode
+                          ? <BookOverride value={book} onSave={async v=>{
+                              const mins=parseInt(v);
+                              if(!isNaN(mins)&&row.dbId){
+                                await supabase.from('tickets').update({book_minutes:mins}).eq('id',row.dbId);
+                                setRows(prev=>prev.map(r=>r._id===row._id?{...r,_bookOverride:mins}:r));
+                              }
+                            }}/>
+                          : (book!==null?book:'—')
+                        }
+                      </td>
                       <td style={{padding:'4px'}}>
                         {isLabor&&editMode&&(
                           <div style={{display:'flex',alignItems:'center',gap:'3px',marginBottom:'3px'}}>
@@ -364,6 +375,28 @@ export default function AdminSheetView({tech, onBack, viewDate}){
         )}
       </div>
     </div>
+  );
+}
+
+function BookOverride({value,onSave}){
+  const[editing,setEditing]=useState(false);
+  const[local,setLocal]=useState(value!=null?String(value):'');
+  useEffect(()=>{if(!editing)setLocal(value!=null?String(value):'');},[value,editing]);
+  if(editing){
+    return<input autoFocus type="number" value={local} onChange={e=>setLocal(e.target.value)}
+      onBlur={()=>{setEditing(false);if(local.trim()&&local!==String(value))onSave(local);}}
+      onKeyDown={e=>{
+        if(e.key==='Enter'){setEditing(false);if(local.trim()&&local!==String(value))onSave(local);}
+        if(e.key==='Escape'){setEditing(false);setLocal(value!=null?String(value):'');}
+      }}
+      style={{width:'52px',textAlign:'center',border:'1.5px solid #1B9BD4',borderRadius:'4px',padding:'3px 4px',fontSize:'12px',outline:'none',fontWeight:700,color:'#1a2a3a'}}/>;
+  }
+  return(
+    <span onClick={()=>setEditing(true)} title="Click to override book time for this ticket"
+      style={{cursor:'pointer',padding:'2px 6px',borderRadius:'4px',display:'inline-block',minWidth:'32px',border:'1px dashed rgba(27,155,212,0.5)',color:'#1B9BD4'}}
+      onMouseEnter={e=>{e.currentTarget.style.background='#e8f6fc';}}
+      onMouseLeave={e=>{e.currentTarget.style.background='transparent';}}
+    >{value!=null?value:'—'}<span style={{fontSize:'9px',color:'#aac8d8',marginLeft:'2px'}}>✎</span></span>
   );
 }
 
