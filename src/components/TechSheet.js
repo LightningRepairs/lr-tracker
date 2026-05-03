@@ -117,7 +117,8 @@ export default function TechSheet({ tech }) {
     const rt = repairTypes.find(r => r.id === repairTypeId);
     if (!rt?.is_labor) return null;
     const cost = parseFloat(laborCost) || 0;
-    return cost > 0 ? Math.round(cost * 0.3) : null;
+    const multiplier = parseFloat(rt.labor_multiplier) || 0.3;
+    return cost > 0 ? Math.round(cost * multiplier) : null;
   }, [repairTypes]);
 
   const calcEfficiency = useCallback((row) => {
