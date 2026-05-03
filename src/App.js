@@ -25,14 +25,14 @@ export default function App() {
     if (saved) {
       const tech = JSON.parse(saved);
       setCurrentTech(tech);
-      setView(tech.role === 'admin' ? 'manager' : 'tech');
+      setView(tech.role === 'admin' || tech.role === 'manager' ? 'manager' : 'tech');
     }
   }, []);
 
   const handleLogin = (tech) => {
     sessionStorage.setItem('lr_tech', JSON.stringify(tech));
     setCurrentTech(tech);
-    setView(tech.role === 'admin' ? 'manager' : 'tech');
+    setView(tech.role === 'admin' || tech.role === 'manager' ? 'manager' : 'tech');
   };
 
   const handleLogout = () => {
@@ -84,10 +84,8 @@ function NavBar({ tech, view, setView, onLogout }) {
 
       <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
         <NavBtn active={view === 'tech'} onClick={() => setView('tech')}>My Sheet</NavBtn>
-        {tech?.role === 'admin' && <>
-          <NavBtn active={view === 'manager'} onClick={() => setView('manager')}>Manager View</NavBtn>
-          <NavBtn active={view === 'admin'} onClick={() => setView('admin')}>Admin Panel</NavBtn>
-        </>}
+        {(tech?.role === 'admin' || tech?.role === 'manager') && <NavBtn active={view === 'manager'} onClick={() => setView('manager')}>Manager View</NavBtn>}
+        {tech?.role === 'admin' && <NavBtn active={view === 'admin'} onClick={() => setView('admin')}>Admin Panel</NavBtn>}
         <div style={{ color: 'rgba(255,255,255,0.5)', margin: '0 4px' }}>|</div>
         <div style={{ color: 'rgba(255,255,255,0.7)', fontSize: '13px' }}>{tech?.name}</div>
         <button onClick={onLogout} style={{
