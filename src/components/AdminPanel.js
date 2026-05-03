@@ -56,6 +56,11 @@ function BookTimesEditor(){
     const isNA=value==='N/A'||value==='';const mins=isNA?null:parseInt(value);
     if(existing){await supabase.from('book_times').update({minutes:mins,is_na:isNA,updated_at:new Date().toISOString()}).eq('id',existing.id);setBookTimes(prev=>prev.map(b=>b.id===existing.id?{...b,minutes:mins,is_na:isNA}:b));}
     else{const{data}=await supabase.from('book_times').insert({repair_type_id:rid,device_model_id:mid,minutes:mins,is_na:isNA}).select().single();if(data)setBookTimes(prev=>[...prev,data]);}
+    // Update today's tickets that use this repair type + model
+    if(!isNA&&mins){
+      const today=new Date().toISOString().slice(0,10);
+      await supabase.from('tickets').update({book_minutes:mins}).eq('repair_type_id',rid).eq('device_model_id',mid).eq('work_date',today);
+    }
     setSaving(s=>({...s,[key]:false}));setSaved(s=>({...s,[key]:true}));setTimeout(()=>setSaved(s=>({...s,[key]:false})),1500);
   };
 
