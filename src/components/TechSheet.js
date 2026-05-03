@@ -168,11 +168,31 @@ export default function TechSheet({tech}){
   };
 
   const addRow=()=>setRows(prev=>[...prev,EMPTY_ROW()]);
-  const clearAll=()=>{
-    if(!window.confirm('Clear all rows for today?'))return;
+  const clearAll=async()=>{
+    if(!window.confirm('Clear all rows for today? This cannot be undone.'))return;
     Object.values(timerRefs.current).forEach(clearInterval);
-    supabase.from('tickets').delete().eq('technician_id',tech.id).eq('work_date',today);
-    setRows(Array.from({length:10},EMPTY_ROW));
+    timerRefs.current={};
+    const{data:todayTickets}=await supabase.from('tickets').select('id').eq('technician_id',tech.id).eq('work_date',today);
+    if(todayTickets&&todayTickets.length>0){
+      const ids=todayTickets.map(t=>t.id);
+      await supabase.from('ticket_add_ons').delete().in('ticket_id',ids);
+      await supabase.from('tickets').delete().eq('technician_id',tech.id).eq('work_date',today);
+    }
+    setRows(Array.from({length:parseInt(settings.default_rows||10)},EMPTY_ROW));
+    setOpenPopup(null);
+  };
+
+  const clearRow=async(row)=>{
+    if(!window.confirm('Remove this row? This cannot be undone.'))return;
+    if(row.timerState==='running'||row.timerState==='paused'){
+      clearInterval(timerRefs.current['timer_'+row._id]);
+    }
+    if(row.dbId){
+      await supabase.from('ticket_add_ons').delete().eq('ticket_id',row.dbId);
+      await supabase.from('tickets').delete().eq('id',row.dbId);
+    }
+    setRows(prev=>prev.filter(r=>r._id!==row._id));
+    if(openPopup===row._id)setOpenPopup(null);
   };
 
   const effGreen=parseInt(settings.efficiency_green||90);
@@ -225,7 +245,7 @@ export default function TechSheet({tech}){
           <table style={{width:'100%',borderCollapse:'collapse',fontSize:'12px',minWidth:'1200px'}}>
             <thead>
               <tr style={{background:NAVY}}>
-                {['Ticket #','Device Type','Model','Repair Type','Book','Actual (min)','+/− min','Efficiency','Timer','Add-ons','Notes'].map(h=>(
+                {['Ticket #','Device Type','Model','Repair Type','Book','Actual (min)','+/− min','Efficiency','Timer','Add-ons','Notes',''].map(h=>(
                   <th key={h} style={{padding:'8px 6px',textAlign:'left',fontWeight:700,fontSize:'10px',color:'#7aafc8',textTransform:'uppercase',letterSpacing:'0.05em',borderBottom:`2px solid ${BLUE}`,whiteSpace:'nowrap'}}>{h}</th>
                 ))}
               </tr>
@@ -300,6 +320,9 @@ export default function TechSheet({tech}){
                         )}
                       </td>
                       <td style={{padding:'4px'}}><input value={row.notes} onChange={e=>updateRow(row._id,{notes:e.target.value})} placeholder="Notes (optional)" style={inpStyle}/></td>
+                      <td style={{padding:'4px',textAlign:'center',width:'28px'}}>
+                        <button onClick={()=>clearRow(row)} title="Remove row" style={{background:'none',border:'none',cursor:'pointer',color:'#ccc',fontSize:'15px',lineHeight:1,padding:'2px'}} onMouseEnter={e=>e.currentTarget.style.color='#b52020'} onMouseLeave={e=>e.currentTarget.style.color='#ccc'}>✕</button>
+                      </td>
                     </tr>
                     {row.addOns.map(a=>(
                       <tr key={a.id} style={{background:rowBg(pct,effGreen,effYellow),opacity:0.85}}>

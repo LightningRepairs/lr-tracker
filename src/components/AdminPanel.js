@@ -420,9 +420,19 @@ function SettingsEditor(){
   );
 }
 
-function PinEditor({id,currentPin,onSave}){
-  const[val,setVal]=useState(currentPin||'');
-  return<input autoFocus value={val} onChange={e=>setVal(e.target.value)} onKeyDown={e=>{if(e.key==='Enter')onSave(val);}} style={{border:'1.5px solid #1B9BD4',borderRadius:'6px',padding:'4px 8px',fontSize:'13px',outline:'none',fontFamily:'inherit',color:'#1a2a3a',width:'80px',background:'#fff'}} placeholder="New PIN"/>;
+function PinEditor({onSave}){
+  const[val,setVal]=useState('');
+  const save=()=>{if(val.trim())onSave(val.trim());};
+  return(
+    <div style={{display:'flex',gap:'4px',alignItems:'center'}}>
+      <input autoFocus value={val} onChange={e=>setVal(e.target.value)}
+        onKeyDown={e=>{if(e.key==='Enter')save();}}
+        style={{border:'1.5px solid #1B9BD4',borderRadius:'6px',padding:'4px 8px',fontSize:'13px',outline:'none',fontFamily:'inherit',color:'#1a2a3a',width:'70px',background:'#fff'}}
+        placeholder="New PIN" maxLength={6}/>
+      <button onClick={save} style={{background:'#1B9BD4',color:'#fff',border:'none',borderRadius:'5px',padding:'4px 8px',fontSize:'11px',fontWeight:700,cursor:'pointer'}}>Save</button>
+      <button onClick={()=>onSave(null)} style={{background:'transparent',color:'#888',border:'1px solid #ddd',borderRadius:'5px',padding:'4px 8px',fontSize:'11px',cursor:'pointer'}}>Cancel</button>
+    </div>
+  );
 }
 
 function SettingRow({setting,onSave,saving,saved}){

@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { supabase } from '../lib/supabase';
+import AdminSheetView from './AdminSheetView';
 import { getSettings, getDefaults } from '../lib/settings';
 
 const BLUE='#1B9BD4',NAVY='#1a2a3a',YELLOW='#F5C518',BORDER='#b8dff0';
@@ -82,7 +83,7 @@ export default function ManagerDashboard({tech}){
   };
 
   if(drillTech){
-    return<TechDrillDown tech={drillTech} currentUser={tech} repairTypes={repairTypes} deviceTypes={deviceTypes} deviceModels={deviceModels} addOnOptions={addOnOptions} effGreen={effGreen} effYellow={effYellow} onBack={()=>setDrillTech(null)}/>;
+    return<AdminSheetView tech={drillTech} onBack={()=>setDrillTech(null)}/>;
   }
 
   return(
