@@ -192,7 +192,12 @@ export default function TechSheet({tech}){
   return(
     <div style={{maxWidth:'1400px',margin:'0 auto'}}>
       <div style={{background:BLUE,borderRadius:'12px 12px 0 0',padding:'0.85rem 1.5rem',display:'flex',alignItems:'center',justifyContent:'space-between'}}>
-        <div style={{color:'rgba(255,255,255,0.85)',fontSize:'13px'}}>{tech.name}</div>
+        <div style={{display:'flex',alignItems:'center',gap:'12px'}}>
+          <div style={{background:NAVY,borderRadius:'10px',padding:'8px 18px',border:'2px solid rgba(255,255,255,0.2)'}}>
+            <div style={{fontSize:'10px',fontWeight:700,color:'rgba(255,255,255,0.5)',textTransform:'uppercase',letterSpacing:'0.1em',marginBottom:'2px'}}>Technician</div>
+            <div style={{fontSize:'20px',fontWeight:800,color:YELLOW,letterSpacing:'0.02em'}}>{tech.name}</div>
+          </div>
+        </div>
         <div style={{textAlign:'center'}}>
           <div style={{color:'#fff',fontWeight:700,fontSize:'14px',textTransform:'uppercase',letterSpacing:'0.08em'}}>Daily Ticket Tracker</div>
           <div style={{color:'rgba(255,255,255,0.75)',fontSize:'11px',marginTop:'2px'}}>{dateStr}</div>

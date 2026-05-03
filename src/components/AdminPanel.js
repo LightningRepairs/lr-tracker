@@ -118,6 +118,13 @@ function DevicesEditor(){
 
   const flash=m=>{setMsg(m);setTimeout(()=>setMsg(''),2500);};
 
+  const deleteItem=async(table,id,setList,confirmMsg)=>{
+    if(!window.confirm(confirmMsg))return;
+    await supabase.from(table).delete().eq('id',id);
+    setList(prev=>prev.filter(x=>x.id!==id));
+    flash('Deleted.');
+  };
+
   const addDeviceType=async()=>{
     if(!newTypeName.trim())return;
     const maxOrd=Math.max(0,...deviceTypes.map(d=>d.sort_order));
@@ -185,6 +192,7 @@ function DevicesEditor(){
           <DragRow key={dt.id} item={dt} list={deviceTypes} setList={setDeviceTypes} table="device_types">
             <InlineEdit value={dt.name} onSave={v=>updateName('device_types',dt.id,v,setDeviceTypes)} active={dt.active}/>
             <button onClick={()=>toggleActive('device_types',dt.id,dt.active,setDeviceTypes)} style={{fontSize:'10px',border:`1px solid ${dt.active?'#f0aaaa':'#a8dbb8'}`,background:'transparent',color:dt.active?RED:GREEN,borderRadius:'4px',padding:'2px 6px',cursor:'pointer',whiteSpace:'nowrap'}}>{dt.active?'Disable':'Enable'}</button>
+              <button onClick={()=>deleteItem('device_types',dt.id,setDeviceTypes,'Delete this device type? This will also remove all its models, repair types, and book times.')} style={{fontSize:'10px',border:'1px solid #f0aaaa',background:'transparent',color:RED,borderRadius:'4px',padding:'2px 6px',cursor:'pointer',whiteSpace:'nowrap'}}>Delete</button>
           </DragRow>
         ))}
         <div style={{display:'flex',gap:'6px',marginTop:'8px'}}>
@@ -203,6 +211,7 @@ function DevicesEditor(){
               <DragRow key={m.id} item={m} list={deviceModels} setList={setDeviceModels} table="device_models">
                 <InlineEdit value={m.name} onSave={v=>updateName('device_models',m.id,v,setDeviceModels)} active={m.active}/>
                 <button onClick={()=>toggleActive('device_models',m.id,m.active,setDeviceModels)} style={{fontSize:'10px',border:`1px solid ${m.active?'#f0aaaa':'#a8dbb8'}`,background:'transparent',color:m.active?RED:GREEN,borderRadius:'4px',padding:'2px 6px',cursor:'pointer',whiteSpace:'nowrap'}}>{m.active?'Disable':'Enable'}</button>
+                <button onClick={()=>deleteItem('device_models',m.id,setDeviceModels,'Delete this model?')} style={{fontSize:'10px',border:'1px solid #f0aaaa',background:'transparent',color:RED,borderRadius:'4px',padding:'2px 6px',cursor:'pointer',whiteSpace:'nowrap'}}>Delete</button>
               </DragRow>
             ))}
             <div style={{display:'flex',gap:'6px',marginTop:'8px'}}>
@@ -222,6 +231,7 @@ function DevicesEditor(){
                   </div>
                 </div>
                 <button onClick={()=>toggleActive('repair_types',r.id,r.active,setRepairTypes)} style={{fontSize:'10px',border:`1px solid ${r.active?'#f0aaaa':'#a8dbb8'}`,background:'transparent',color:r.active?RED:GREEN,borderRadius:'4px',padding:'2px 6px',cursor:'pointer',whiteSpace:'nowrap'}}>{r.active?'Disable':'Enable'}</button>
+                <button onClick={()=>deleteItem('repair_types',r.id,setRepairTypes,'Delete this repair type?')} style={{fontSize:'10px',border:'1px solid #f0aaaa',background:'transparent',color:RED,borderRadius:'4px',padding:'2px 6px',cursor:'pointer',whiteSpace:'nowrap'}}>Delete</button>
               </DragRow>
             ))}
             <div style={{marginTop:'10px',background:'#f8fbfd',borderRadius:'8px',padding:'10px',border:'1px solid #eef3f7'}}>
@@ -258,6 +268,13 @@ function AddOnsEditor(){
   },[]);
 
   const flash=m=>{setMsg(m);setTimeout(()=>setMsg(''),2500);};
+
+  const deleteAddOn=async(id)=>{
+    if(!window.confirm('Delete this add-on?'))return;
+    await supabase.from('add_ons').delete().eq('id',id);
+    setAddOns(prev=>prev.filter(a=>a.id!==id));
+    flash('Deleted.');
+  };
 
   const addOnForType=addOns.filter(a=>a.device_type_id===selectedType).sort((a,b)=>a.sort_order-b.sort_order);
 
@@ -299,6 +316,7 @@ function AddOnsEditor(){
                 <input type="number" value={a.book_minutes} onChange={e=>updateAddOn(a.id,{book_minutes:parseInt(e.target.value)||0})} style={{...inp,width:'60px',textAlign:'center'}}/>
               </div>
               <button onClick={()=>updateAddOn(a.id,{active:!a.active})} style={{fontSize:'10px',border:`1px solid ${a.active?'#f0aaaa':'#a8dbb8'}`,background:'transparent',color:a.active?RED:GREEN,borderRadius:'4px',padding:'2px 6px',cursor:'pointer',whiteSpace:'nowrap'}}>{a.active?'Disable':'Enable'}</button>
+              <button onClick={()=>deleteAddOn(a.id)} style={{fontSize:'10px',border:'1px solid #f0aaaa',background:'transparent',color:RED,borderRadius:'4px',padding:'2px 6px',cursor:'pointer',whiteSpace:'nowrap'}}>Delete</button>
             </div>
           ))}
           <div style={{display:'flex',gap:'8px',marginTop:'12px',alignItems:'flex-end',background:'#f8fbfd',padding:'10px',borderRadius:'8px',border:'1px solid #eef3f7'}}>
@@ -327,7 +345,7 @@ function TechniciansEditor(){
     <div>
       {msg&&<div style={{background:'#e6f5ec',color:GREEN,borderRadius:'8px',padding:'8px 14px',fontSize:'13px',marginBottom:'1rem'}}>{msg}</div>}
       <div style={{fontSize:'12px',color:'#888',marginBottom:'1rem',background:'#f8fbfd',borderRadius:'8px',padding:'10px 14px',border:'1px solid #eef3f7'}}>
-        <strong>Roles:</strong> &nbsp;<span style={{color:'#1B9BD4',fontWeight:600}}>Tech</span> — daily sheet only &nbsp;|&nbsp;<span style={{color:'#9a6000',fontWeight:600}}>Manager</span> — sheet + manager view &nbsp;|&nbsp;<span style={{color:RED,fontWeight:600}}>Admin</span> — full access
+        <strong>Roles:</strong> &nbsp;<span style={{color:'#1B9BD4',fontWeight:600}}>Tech</span> — daily sheet only &nbsp;|&nbsp;<span style={{color:'#9a6000',fontWeight:600}}>Keyholder</span> — sheet + team overview &nbsp;|&nbsp;<span style={{color:RED,fontWeight:600}}>Admin</span> — full access
       </div>
       <table style={{width:'100%',borderCollapse:'collapse',fontSize:'13px',marginBottom:'1.5rem'}}>
         <thead><tr style={{background:'#f5f5f0'}}>{['Name','PIN','Role','Status','Actions'].map(h=><th key={h} style={{padding:'8px 10px',textAlign:'left',fontSize:'11px',color:'#555',textTransform:'uppercase',letterSpacing:'0.05em',fontWeight:700,borderBottom:'1px solid #e0ddd5'}}>{h}</th>)}</tr></thead>
@@ -335,7 +353,7 @@ function TechniciansEditor(){
           <tr key={t.id} style={{borderBottom:'1px solid #f0ede5'}}>
             <td style={{padding:'8px 10px',fontWeight:600,color:NAVY}}>{t.name}</td>
             <td style={{padding:'8px 10px'}}>{editing[t.id]?<input defaultValue={t.pin} onBlur={e=>{updateTech(t.id,{pin:e.target.value});setEditing(p=>({...p,[t.id]:false}));}} style={{...inp,width:'80px'}} autoFocus/>:<span style={{fontFamily:'monospace',background:'#f0f0f0',padding:'2px 8px',borderRadius:'4px'}}>{'•'.repeat(t.pin?.length||4)}</span>}</td>
-            <td style={{padding:'8px 10px'}}><select value={t.role} onChange={e=>updateTech(t.id,{role:e.target.value})} style={{...inp,width:'110px'}}><option value="tech">Tech</option><option value="manager">Manager</option><option value="admin">Admin</option></select></td>
+            <td style={{padding:'8px 10px'}}><select value={t.role} onChange={e=>updateTech(t.id,{role:e.target.value})} style={{...inp,width:'110px'}}><option value="tech">Tech</option><option value="manager">Keyholder</option><option value="admin">Admin</option></select></td>
             <td style={{padding:'8px 10px'}}><span style={{background:t.active?'#e6f5ec':'#fce8e8',color:t.active?GREEN:RED,borderRadius:'20px',padding:'2px 10px',fontSize:'11px',fontWeight:700}}>{t.active?'Active':'Inactive'}</span></td>
             <td style={{padding:'8px 10px',display:'flex',gap:'6px'}}>
               <button onClick={()=>setEditing(p=>({...p,[t.id]:!p[t.id]}))} style={{fontSize:'11px',border:`1px solid ${BLUE}`,background:'transparent',color:BLUE,borderRadius:'4px',padding:'2px 8px',cursor:'pointer'}}>{editing[t.id]?'Done':'Change PIN'}</button>
@@ -349,7 +367,7 @@ function TechniciansEditor(){
         <div style={{display:'flex',gap:'10px',flexWrap:'wrap',alignItems:'flex-end'}}>
           <div><label style={lbl}>Name</label><input value={newName} onChange={e=>setNewName(e.target.value)} placeholder="Full name" style={inp}/></div>
           <div><label style={lbl}>PIN</label><input value={newPin} onChange={e=>setNewPin(e.target.value)} placeholder="e.g. 1234" maxLength={6} style={{...inp,width:'100px'}}/></div>
-          <div><label style={lbl}>Role</label><select value={newRole} onChange={e=>setNewRole(e.target.value)} style={inp}><option value="tech">Tech</option><option value="manager">Manager</option><option value="admin">Admin</option></select></div>
+          <div><label style={lbl}>Role</label><select value={newRole} onChange={e=>setNewRole(e.target.value)} style={inp}><option value="tech">Tech</option><option value="manager">Keyholder</option><option value="admin">Admin</option></select></div>
           <button onClick={addTech} style={addBtnStyle}>Add</button>
         </div>
       </div>
