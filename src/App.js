@@ -53,7 +53,7 @@ export default function App() {
       />
       <div style={{ padding: '1rem' }}>
         {view === 'tech' && <TechSheet tech={currentTech} />}
-        {view === 'manager' && <ManagerDashboard />}
+        {view === 'manager' && <ManagerDashboard tech={currentTech} />}
         {view === 'admin' && <AdminPanel />}
       </div>
     </div>

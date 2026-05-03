@@ -8,7 +8,7 @@ const GREEN='#2d8a4e',GREEN_BG='#e6f5ec',AMBER='#9a6000',AMBER_BG='#fff3d0',RED=
 function effColor(pct,green=90,yellow=79){if(pct===null||pct===undefined)return'#aac8d8';return pct>=green?GREEN:pct>=yellow?AMBER:RED;}
 function effBg(pct,green=90,yellow=79){if(pct===null||pct===undefined)return'rgba(255,255,255,0.1)';return pct>=green?GREEN_BG:pct>=yellow?AMBER_BG:RED_BG;}
 
-export default function ManagerDashboard(){
+export default function ManagerDashboard({tech}){
   const [tickets,setTickets]=useState([]);
   const [ticketAddOns,setTicketAddOns]=useState([]);
   const [technicians,setTechnicians]=useState([]);
@@ -82,7 +82,7 @@ export default function ManagerDashboard(){
   };
 
   if(drillTech){
-    return<TechDrillDown tech={drillTech} repairTypes={repairTypes} deviceTypes={deviceTypes} deviceModels={deviceModels} addOnOptions={addOnOptions} effGreen={effGreen} effYellow={effYellow} onBack={()=>setDrillTech(null)}/>;
+    return<TechDrillDown tech={drillTech} currentUser={tech} repairTypes={repairTypes} deviceTypes={deviceTypes} deviceModels={deviceModels} addOnOptions={addOnOptions} effGreen={effGreen} effYellow={effYellow} onBack={()=>setDrillTech(null)}/>;
   }
 
   return(
@@ -177,10 +177,17 @@ function TechChip({label,active,onClick}){
   return<button onClick={onClick} style={{background:active?BLUE:'transparent',border:`1px solid ${active?BLUE:BORDER}`,color:active?'#fff':'#555',borderRadius:'20px',padding:'4px 12px',fontSize:'12px',fontWeight:active?700:400,cursor:'pointer',fontFamily:'inherit',transition:'all 0.15s'}}>{label}</button>;
 }
 
-function TechDrillDown({tech,repairTypes,deviceTypes,deviceModels,addOnOptions,effGreen,effYellow,onBack}){
+function TechDrillDown({tech,currentUser,repairTypes,deviceTypes,deviceModels,addOnOptions,effGreen,effYellow,onBack}){
   const [liveTickets,setLiveTickets]=useState([]);
   const [liveAddOns,setLiveAddOns]=useState([]);
   const today=new Date().toISOString().slice(0,10);
+
+  const isAdmin = currentUser?.role === 'admin';
+
+  const updateTicketBook=async(ticketId,newMins)=>{
+    await supabase.from('tickets').update({book_minutes:parseInt(newMins)}).eq('id',ticketId);
+    setLiveTickets(prev=>prev.map(t=>t.id===ticketId?{...t,book_minutes:parseInt(newMins)}:t));
+  };
 
   useEffect(()=>{
     const reload=async()=>{
@@ -265,7 +272,12 @@ function TechDrillDown({tech,repairTypes,deviceTypes,deviceModels,addOnOptions,e
                     <td style={{padding:'6px'}}>{dt?.name||'—'}</td>
                     <td style={{padding:'6px'}}>{dm?.name||'—'}</td>
                     <td style={{padding:'6px'}}>{rt?.name||'—'}</td>
-                    <td style={{padding:'6px',fontWeight:700,color:BLUE,textAlign:'center'}}>{t.book_minutes||'—'}</td>
+                    <td style={{padding:'6px',fontWeight:700,color:BLUE,textAlign:'center'}}>
+                      {isAdmin
+                        ? <BookOverride value={t.book_minutes} onSave={v=>updateTicketBook(t.id,v)}/>
+                        : (t.book_minutes||'—')
+                      }
+                    </td>
                     <td style={{padding:'6px',textAlign:'center'}}>{t.actual_minutes||'—'}</td>
                     <td style={{padding:'6px',fontWeight:700,textAlign:'center',color:diff===null?'#aac8d8':diff<=0?GREEN:RED}}>{diff===null?'—':diff>0?`+${diff}`:diff}</td>
                     <td style={{padding:'6px',textAlign:'center'}}>{pct!==null?<span style={{display:'inline-block',fontSize:'11px',fontWeight:700,padding:'2px 7px',borderRadius:'20px',background:pct>=effGreen?GREEN_BG:pct>=effYellow?AMBER_BG:RED_BG,color:effColor(pct,effGreen,effYellow)}}>{pct}%</span>:'—'}</td>
@@ -279,6 +291,25 @@ function TechDrillDown({tech,repairTypes,deviceTypes,deviceModels,addOnOptions,e
         </div>
       </div>
     </div>
+  );
+}
+
+function BookOverride({value,onSave}){
+  const[editing,setEditing]=useState(false);
+  const[local,setLocal]=useState(value||'');
+  useEffect(()=>{setLocal(value||'');},[value]);
+  if(editing){
+    return<input autoFocus type="number" value={local} onChange={e=>setLocal(e.target.value)}
+      onBlur={()=>{setEditing(false);if(local&&local!==String(value))onSave(local);}}
+      onKeyDown={e=>{if(e.key==='Enter'){setEditing(false);if(local&&local!==String(value))onSave(local);}if(e.key==='Escape'){setEditing(false);setLocal(value||'');}}}
+      style={{width:'52px',textAlign:'center',border:'1.5px solid #1B9BD4',borderRadius:'4px',padding:'3px 4px',fontSize:'12px',outline:'none',fontWeight:700}}/>;
+  }
+  return(
+    <span onClick={()=>setEditing(true)} title="Admin: click to override book time"
+      style={{cursor:'pointer',padding:'2px 6px',borderRadius:'4px',display:'inline-block',minWidth:'30px',border:'1px dashed rgba(27,155,212,0.4)'}}
+      onMouseEnter={e=>e.currentTarget.style.background='#e8f6fc'}
+      onMouseLeave={e=>e.currentTarget.style.background='transparent'}
+    >{value||'—'}<span style={{fontSize:'9px',color:'#aac8d8',marginLeft:'3px'}}>✎</span></span>
   );
 }
 

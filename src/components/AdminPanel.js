@@ -420,6 +420,11 @@ function SettingsEditor(){
   );
 }
 
+function PinEditor({id,currentPin,onSave}){
+  const[val,setVal]=useState(currentPin||'');
+  return<input autoFocus value={val} onChange={e=>setVal(e.target.value)} onKeyDown={e=>{if(e.key==='Enter')onSave(val);}} style={{border:'1.5px solid #1B9BD4',borderRadius:'6px',padding:'4px 8px',fontSize:'13px',outline:'none',fontFamily:'inherit',color:'#1a2a3a',width:'80px',background:'#fff'}} placeholder="New PIN"/>;
+}
+
 function SettingRow({setting,onSave,saving,saved}){
   const[local,setLocal]=useState(setting.value);useEffect(()=>{setLocal(setting.value);},[setting.value]);
   return(
