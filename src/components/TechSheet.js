@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { supabase } from '../lib/supabase';
+import { getSettings, getDefaults } from '../lib/settings';
 
 const BLUE = '#1B9BD4';
 const NAVY = '#1a2a3a';
@@ -22,13 +23,13 @@ function fmtTimer(ms) {
   const cs = Math.floor((ms % 1000) / 10);
   return `${pad(m)}:${pad(s)}:${pad(cs)}`;
 }
-function effColor(pct) {
+function effColor(pct, green=90, yellow=79) {
   if (pct === null) return '#aac8d8';
-  return pct >= 90 ? GREEN : pct >= 65 ? AMBER : RED;
+  return pct >= green ? GREEN : pct >= yellow ? AMBER : RED;
 }
 function rowBg(pct) {
   if (pct === null) return 'transparent';
-  return pct >= 90 ? GREEN_BG : pct >= 65 ? AMBER_BG : RED_BG;
+  return pct >= 90 ? GREEN_BG : pct >= 79 ? AMBER_BG : RED_BG;
 }
 
 const EMPTY_ROW = () => ({
@@ -48,18 +49,21 @@ const EMPTY_ROW = () => ({
 });
 
 export default function TechSheet({ tech }) {
-  const [rows, setRows] = useState(() => Array.from({ length: 10 }, EMPTY_ROW));
+  const [rows, setRows] = useState(() => Array.from({ length: 10 }, EMPTY_ROW)); // updated after settings load
   const [deviceTypes, setDeviceTypes] = useState([]);
   const [deviceModels, setDeviceModels] = useState([]);
   const [repairTypes, setRepairTypes] = useState([]);
   const [bookTimes, setBookTimes] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [settings, setSettings] = useState(getDefaults());
   const timerRefs = useRef({});
   const today = new Date().toISOString().slice(0, 10);
 
   // Load reference data
   useEffect(() => {
     const load = async () => {
+      const s = await getSettings();
+      setSettings(s);
       const [dt, dm, rt, bt] = await Promise.all([
         supabase.from('device_types').select('*').eq('active', true).order('sort_order'),
         supabase.from('device_models').select('*').eq('active', true).order('sort_order'),
@@ -263,7 +267,7 @@ export default function TechSheet({ tech }) {
         <div style={{ textAlign: 'center', marginBottom: '8px' }}>
           <div style={{ display: 'inline-flex', alignItems: 'center', gap: '10px', background: NAVY, border: '1px solid rgba(255,255,255,0.15)', borderRadius: '10px', padding: '6px 20px' }}>
             <span style={{ fontSize: '11px', fontWeight: 700, color: 'rgba(255,255,255,0.6)', textTransform: 'uppercase', letterSpacing: '0.1em' }}>Avg Efficiency</span>
-            <span style={{ fontSize: '20px', fontWeight: 800, color: avgEff === null ? YELLOW : effColor(avgEff) }}>
+            <span style={{ fontSize: '20px', fontWeight: 800, color: avgEff === null ? YELLOW : effColor(avgEff, parseInt(settings.efficiency_green||90), parseInt(settings.efficiency_yellow||79)) }}>
               {avgEff === null ? '—' : `${avgEff}%`}
             </span>
           </div>
@@ -312,6 +316,8 @@ export default function TechSheet({ tech }) {
                   timerStart={timerStart}
                   timerPause={timerPause}
                   timerStop={timerStop}
+                  effGreen={parseInt(settings.efficiency_green||90)}
+                  effYellow={parseInt(settings.efficiency_yellow||79)}
                 />
               ))}
             </tbody>
@@ -338,7 +344,7 @@ export default function TechSheet({ tech }) {
   );
 }
 
-function TicketRow({ row, idx, deviceTypes, deviceModels, repairTypes, bookTimes, getBookMinutes, getLaborBookMinutes, calcEfficiency, updateRow, timerStart, timerPause, timerStop }) {
+function TicketRow({ row, idx, deviceTypes, deviceModels, repairTypes, bookTimes, getBookMinutes, getLaborBookMinutes, calcEfficiency, updateRow, timerStart, timerPause, timerStop, effGreen=90, effYellow=79 }) {
   const modelsForType = deviceModels.filter(m => m.device_type_id === row.deviceTypeId);
   const repairsForModel = repairTypes.filter(r => {
     const dt = deviceTypes.find(d => d.id === row.deviceTypeId);
@@ -357,7 +363,7 @@ function TicketRow({ row, idx, deviceTypes, deviceModels, repairTypes, bookTimes
   const pct = calcEfficiency(row);
   const diff = (actual > 0 && bookMins !== null) ? Math.round(actual - bookMins) : null;
   const diffStr = diff === null ? '—' : (diff > 0 ? `+${diff}` : String(diff));
-  const bg = rowBg(pct);
+  const bg = rowBg(pct, effGreen, effYellow);
 
   const inp = (val, onChange, opts = {}) => (
     <input
@@ -419,7 +425,7 @@ function TicketRow({ row, idx, deviceTypes, deviceModels, repairTypes, bookTimes
       </td>
       <td style={{ padding: '4px', textAlign: 'center' }}>
         {pct !== null
-          ? <span style={{ display: 'inline-block', fontSize: '11px', fontWeight: 700, padding: '2px 7px', borderRadius: '20px', background: pct >= 90 ? GREEN_BG : pct >= 65 ? AMBER_BG : RED_BG, color: pct >= 90 ? GREEN : pct >= 65 ? AMBER : RED }}>{pct}%</span>
+          ? <span style={{ display: 'inline-block', fontSize: '11px', fontWeight: 700, padding: '2px 7px', borderRadius: '20px', background: rowBg(pct, effGreen, effYellow), color: effColor(pct, effGreen, effYellow) }}>{pct}%</span>
           : <span style={{ color: '#aac8d8', fontSize: '11px' }}>—</span>
         }
       </td>

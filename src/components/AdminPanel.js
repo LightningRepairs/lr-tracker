@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
+import { clearSettingsCache } from '../lib/settings';
 
 const BLUE = '#1B9BD4';
 const NAVY = '#1a2a3a';
@@ -15,7 +16,7 @@ export default function AdminPanel() {
       <div style={{ background: '#fff', borderRadius: '12px', border: `1.5px solid ${BORDER}`, overflow: 'hidden' }}>
         <div style={{ background: NAVY, padding: '1rem 1.5rem', display: 'flex', gap: '8px', alignItems: 'center' }}>
           <span style={{ color: '#fff', fontWeight: 700, fontSize: '15px', marginRight: '16px' }}>Admin Panel</span>
-          {[['booktimes','Book Times'],['devices','Devices & Repairs'],['technicians','Technicians']].map(([key, label]) => (
+          {[['booktimes','Book Times'],['devices','Devices & Repairs'],['technicians','Technicians'],['settings','Settings']].map(([key, label]) => (
             <button key={key} onClick={() => setTab(key)} style={{
               background: tab === key ? BLUE : 'transparent',
               border: `1px solid ${tab === key ? BLUE : 'rgba(255,255,255,0.2)'}`,
@@ -29,6 +30,7 @@ export default function AdminPanel() {
           {tab === 'booktimes' && <BookTimesEditor />}
           {tab === 'devices' && <DevicesEditor />}
           {tab === 'technicians' && <TechniciansEditor />}
+          {tab === 'settings' && <SettingsEditor />}
         </div>
       </div>
     </div>
@@ -478,6 +480,114 @@ function TechniciansEditor() {
           </div>
           <button onClick={addTech} style={addBtn}>Add</button>
         </div>
+      </div>
+    </div>
+  );
+}
+
+// ── SETTINGS ─────────────────────────────────────────────────
+function SettingsEditor() {
+  const [settings, setSettings] = useState([]);
+  const [saving, setSaving] = useState({});
+  const [saved, setSaved] = useState({});
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    supabase.from('settings').select('*').order('key').then(({ data }) => {
+      setSettings(data || []);
+      setLoading(false);
+    });
+  }, []);
+
+  const updateSetting = async (key, value) => {
+    setSaving(s => ({ ...s, [key]: true }));
+    await supabase.from('settings').update({ value, updated_at: new Date().toISOString() }).eq('key', key);
+    setSettings(prev => prev.map(s => s.key === key ? { ...s, value } : s));
+    clearSettingsCache();
+    setSaving(s => ({ ...s, [key]: false }));
+    setSaved(s => ({ ...s, [key]: true }));
+    setTimeout(() => setSaved(s => ({ ...s, [key]: false })), 1500);
+  };
+
+  const GROUPS = [
+    {
+      title: 'Efficiency Thresholds',
+      desc: 'Controls the green/yellow/red color coding on the tracker and manager view.',
+      keys: ['efficiency_green', 'efficiency_yellow'],
+    },
+    {
+      title: 'Sheet Defaults',
+      desc: 'Default values used when a tech opens a fresh daily sheet.',
+      keys: ['default_rows', 'default_labor_multiplier'],
+    },
+    {
+      title: 'General',
+      desc: 'General app settings.',
+      keys: ['shop_name'],
+    },
+  ];
+
+  if (loading) return <div style={{ color: '#888', padding: '2rem', textAlign: 'center' }}>Loading...</div>;
+
+  return (
+    <div>
+      <div style={{ fontSize: '12px', color: '#888', marginBottom: '1.5rem', background: '#f8fbfd', borderRadius: '8px', padding: '10px 14px', border: '1px solid #eef3f7' }}>
+        Changes take effect immediately for all users. No redeploy needed.
+      </div>
+
+      {/* Efficiency preview */}
+      <div style={{ marginBottom: '1.5rem', background: '#f8fbfd', borderRadius: '10px', padding: '1rem', border: '1px solid #eef3f7' }}>
+        <div style={{ fontWeight: 700, color: '#1a2a3a', marginBottom: '8px', fontSize: '13px' }}>Color preview</div>
+        <div style={{ display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
+          {(() => {
+            const green = parseInt(settings.find(s => s.key === 'efficiency_green')?.value || 90);
+            const yellow = parseInt(settings.find(s => s.key === 'efficiency_yellow')?.value || 79);
+            return <>
+              <span style={{ background: '#e6f5ec', color: '#2d8a4e', fontWeight: 700, padding: '4px 12px', borderRadius: '20px', fontSize: '12px' }}>{green}–100%+ Green</span>
+              <span style={{ background: '#fff3d0', color: '#9a6000', fontWeight: 700, padding: '4px 12px', borderRadius: '20px', fontSize: '12px' }}>{yellow}–{green - 1}% Yellow</span>
+              <span style={{ background: '#fce8e8', color: '#b52020', fontWeight: 700, padding: '4px 12px', borderRadius: '20px', fontSize: '12px' }}>0–{yellow - 1}% Red</span>
+            </>;
+          })()}
+        </div>
+      </div>
+
+      {GROUPS.map(group => (
+        <div key={group.title} style={{ marginBottom: '1.5rem' }}>
+          <div style={{ fontWeight: 700, color: '#1a2a3a', fontSize: '14px', marginBottom: '4px' }}>{group.title}</div>
+          <div style={{ fontSize: '12px', color: '#888', marginBottom: '10px' }}>{group.desc}</div>
+          {group.keys.map(key => {
+            const s = settings.find(x => x.key === key);
+            if (!s) return null;
+            return (
+              <SettingRow key={key} setting={s} onSave={v => updateSetting(key, v)} saving={saving[key]} saved={saved[key]} />
+            );
+          })}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function SettingRow({ setting, onSave, saving, saved }) {
+  const [local, setLocal] = useState(setting.value);
+  useEffect(() => { setLocal(setting.value); }, [setting.value]);
+
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: '16px', padding: '10px 14px', background: '#fff', borderRadius: '8px', border: '1px solid #eef3f7', marginBottom: '6px' }}>
+      <div style={{ flex: 1 }}>
+        <div style={{ fontWeight: 600, fontSize: '13px', color: '#1a2a3a' }}>{setting.label}</div>
+        <div style={{ fontSize: '11px', color: '#888', marginTop: '2px' }}>{setting.description}</div>
+      </div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+        <input
+          value={local}
+          onChange={e => setLocal(e.target.value)}
+          onBlur={() => { if (local !== setting.value) onSave(local); }}
+          onKeyDown={e => { if (e.key === 'Enter') onSave(local); }}
+          style={{ border: '1.5px solid #d0cdc5', borderRadius: '8px', padding: '6px 10px', fontSize: '13px', outline: 'none', fontFamily: 'inherit', color: '#1a2a3a', width: '140px', textAlign: 'right' }}
+        />
+        {saving && <span style={{ fontSize: '12px', color: '#888' }}>Saving...</span>}
+        {saved && <span style={{ fontSize: '12px', color: '#2d8a4e', fontWeight: 700 }}>✓ Saved</span>}
       </div>
     </div>
   );

@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
+import { getSettings, getDefaults } from '../lib/settings';
 
 const BLUE = '#1B9BD4';
 const NAVY = '#1a2a3a';
@@ -14,7 +15,7 @@ const BORDER = '#b8dff0';
 
 function effColor(pct) {
   if (pct === null || pct === undefined) return '#aac8d8';
-  return pct >= 90 ? GREEN : pct >= 65 ? AMBER : RED;
+  return pct >= 90 ? GREEN : pct >= 79 ? AMBER : RED;
 }
 
 export default function ManagerDashboard() {
@@ -26,9 +27,12 @@ export default function ManagerDashboard() {
   const [selectedDate, setSelectedDate] = useState(new Date().toISOString().slice(0, 10));
   const [selectedTech, setSelectedTech] = useState('all');
   const [loading, setLoading] = useState(true);
+  const [settings, setSettings] = useState(getDefaults());
 
   useEffect(() => {
     const load = async () => {
+      const s = await getSettings();
+      setSettings(s);
       const [tech, rt, dt, dm] = await Promise.all([
         supabase.from('technicians').select('*').eq('active', true).order('name'),
         supabase.from('repair_types').select('*'),
@@ -109,7 +113,7 @@ export default function ManagerDashboard() {
             <div key={tech.id} style={{ background: NAVY, borderRadius: '12px', padding: '1rem 1.25rem', border: '1px solid rgba(255,255,255,0.1)' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
                 <div style={{ color: '#fff', fontWeight: 700, fontSize: '15px' }}>{tech.name}</div>
-                <div style={{ background: avgEff === null ? 'rgba(255,255,255,0.1)' : (avgEff >= 90 ? GREEN_BG : avgEff >= 65 ? AMBER_BG : RED_BG), color: avgEff === null ? '#aac8d8' : effColor(avgEff), fontWeight: 800, fontSize: '16px', padding: '3px 12px', borderRadius: '20px' }}>
+                <div style={{ background: avgEff === null ? 'rgba(255,255,255,0.1)' : (avgEff >= parseInt(settings.efficiency_green||90) ? GREEN_BG : avgEff >= parseInt(settings.efficiency_yellow||79) ? AMBER_BG : RED_BG), color: avgEff === null ? '#aac8d8' : effColor(avgEff), fontWeight: 800, fontSize: '16px', padding: '3px 12px', borderRadius: '20px' }}>
                   {avgEff === null ? '—' : `${avgEff}%`}
                 </div>
               </div>
@@ -154,7 +158,7 @@ export default function ManagerDashboard() {
                   const dm = deviceModels.find(x => x.id === t.device_model_id);
                   const pct = t.efficiency_pct;
                   const diff = (t.actual_minutes && t.book_minutes) ? t.actual_minutes - t.book_minutes : null;
-                  const bg = pct === null ? 'transparent' : pct >= 90 ? GREEN_BG : pct >= 65 ? AMBER_BG : RED_BG;
+                  const bg = pct === null ? 'transparent' : pct >= parseInt(settings.efficiency_green||90) ? GREEN_BG : pct >= parseInt(settings.efficiency_yellow||79) ? AMBER_BG : RED_BG;
                   return (
                     <tr key={t.id} style={{ background: bg, borderBottom: `1px solid #e8f0f5` }}>
                       <td style={{ padding: '6px 8px', fontWeight: 600 }}>{tech?.name || '—'}</td>
@@ -165,7 +169,7 @@ export default function ManagerDashboard() {
                       <td style={{ padding: '6px 8px' }}>{t.actual_minutes ?? '—'}</td>
                       <td style={{ padding: '6px 8px', fontWeight: 700, color: diff === null ? '#aac8d8' : diff <= 0 ? GREEN : RED }}>{diff === null ? '—' : diff > 0 ? `+${diff}` : diff}</td>
                       <td style={{ padding: '6px 8px' }}>
-                        {pct !== null ? <span style={{ display: 'inline-block', fontSize: '11px', fontWeight: 700, padding: '2px 7px', borderRadius: '20px', background: pct >= 90 ? GREEN_BG : pct >= 65 ? AMBER_BG : RED_BG, color: effColor(pct) }}>{pct}%</span> : '—'}
+                        {pct !== null ? <span style={{ display: 'inline-block', fontSize: '11px', fontWeight: 700, padding: '2px 7px', borderRadius: '20px', background: pct >= parseInt(settings.efficiency_green||90) ? GREEN_BG : pct >= parseInt(settings.efficiency_yellow||79) ? AMBER_BG : RED_BG, color: effColor(pct, parseInt(settings.efficiency_green||90), parseInt(settings.efficiency_yellow||79)) }}>{pct}%</span> : '—'}
                       </td>
                       <td style={{ padding: '6px 8px', color: '#666' }}>{t.notes || ''}</td>
                     </tr>
