@@ -1,36 +1,26 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { supabase } from '../lib/supabase';
 import { clearSettingsCache } from '../lib/settings';
 
-const BLUE = '#1B9BD4';
-const NAVY = '#1a2a3a';
-const BORDER = '#b8dff0';
-const GREEN = '#2d8a4e';
-const RED = '#b52020';
-const YELLOW = '#F5C518';
+const BLUE='#1B9BD4',NAVY='#1a2a3a',BORDER='#b8dff0',GREEN='#2d8a4e',RED='#b52020';
 
-export default function AdminPanel() {
-  const [tab, setTab] = useState('booktimes');
-  return (
-    <div style={{ maxWidth: '1100px', margin: '0 auto' }}>
-      <div style={{ background: '#fff', borderRadius: '12px', border: `1.5px solid ${BORDER}`, overflow: 'hidden' }}>
-        <div style={{ background: NAVY, padding: '1rem 1.5rem', display: 'flex', gap: '8px', alignItems: 'center' }}>
-          <span style={{ color: '#fff', fontWeight: 700, fontSize: '15px', marginRight: '16px' }}>Admin Panel</span>
-          {[['booktimes','Book Times'],['devices','Devices & Repairs'],['technicians','Technicians'],['settings','Settings']].map(([key, label]) => (
-            <button key={key} onClick={() => setTab(key)} style={{
-              background: tab === key ? BLUE : 'transparent',
-              border: `1px solid ${tab === key ? BLUE : 'rgba(255,255,255,0.2)'}`,
-              color: tab === key ? '#fff' : 'rgba(255,255,255,0.6)',
-              borderRadius: '6px', padding: '5px 14px', fontSize: '12px',
-              fontWeight: tab === key ? 700 : 400, cursor: 'pointer',
-            }}>{label}</button>
+export default function AdminPanel(){
+  const [tab,setTab]=useState('booktimes');
+  return(
+    <div style={{maxWidth:'1100px',margin:'0 auto'}}>
+      <div style={{background:'#fff',borderRadius:'12px',border:`1.5px solid ${BORDER}`,overflow:'hidden'}}>
+        <div style={{background:NAVY,padding:'1rem 1.5rem',display:'flex',gap:'8px',alignItems:'center',flexWrap:'wrap'}}>
+          <span style={{color:'#fff',fontWeight:700,fontSize:'15px',marginRight:'16px'}}>Admin Panel</span>
+          {[['booktimes','Book Times'],['devices','Devices & Repairs'],['addons','Add-ons'],['technicians','Technicians'],['settings','Settings']].map(([key,label])=>(
+            <button key={key} onClick={()=>setTab(key)} style={{background:tab===key?BLUE:'transparent',border:`1px solid ${tab===key?BLUE:'rgba(255,255,255,0.2)'}`,color:tab===key?'#fff':'rgba(255,255,255,0.6)',borderRadius:'6px',padding:'5px 14px',fontSize:'12px',fontWeight:tab===key?700:400,cursor:'pointer'}}>{label}</button>
           ))}
         </div>
-        <div style={{ padding: '1.5rem' }}>
-          {tab === 'booktimes' && <BookTimesEditor />}
-          {tab === 'devices' && <DevicesEditor />}
-          {tab === 'technicians' && <TechniciansEditor />}
-          {tab === 'settings' && <SettingsEditor />}
+        <div style={{padding:'1.5rem'}}>
+          {tab==='booktimes'&&<BookTimesEditor/>}
+          {tab==='devices'&&<DevicesEditor/>}
+          {tab==='addons'&&<AddOnsEditor/>}
+          {tab==='technicians'&&<TechniciansEditor/>}
+          {tab==='settings'&&<SettingsEditor/>}
         </div>
       </div>
     </div>
@@ -38,95 +28,57 @@ export default function AdminPanel() {
 }
 
 // ── BOOK TIMES ──────────────────────────────────────────────
-function BookTimesEditor() {
-  const [deviceTypes, setDeviceTypes] = useState([]);
-  const [deviceModels, setDeviceModels] = useState([]);
-  const [repairTypes, setRepairTypes] = useState([]);
-  const [bookTimes, setBookTimes] = useState([]);
-  const [selectedType, setSelectedType] = useState('');
-  const [saving, setSaving] = useState({});
-  const [saved, setSaved] = useState({});
+function BookTimesEditor(){
+  const [deviceTypes,setDeviceTypes]=useState([]);
+  const [deviceModels,setDeviceModels]=useState([]);
+  const [repairTypes,setRepairTypes]=useState([]);
+  const [bookTimes,setBookTimes]=useState([]);
+  const [selectedType,setSelectedType]=useState('');
+  const [saving,setSaving]=useState({});
+  const [saved,setSaved]=useState({});
 
-  useEffect(() => {
-    const load = async () => {
-      const [dt, dm, rt, bt] = await Promise.all([
-        supabase.from('device_types').select('*').eq('active', true).order('sort_order'),
-        supabase.from('device_models').select('*').eq('active', true).order('sort_order'),
-        supabase.from('repair_types').select('*').eq('active', true).order('sort_order'),
-        supabase.from('book_times').select('*'),
-      ]);
-      setDeviceTypes(dt.data || []);
-      setDeviceModels(dm.data || []);
-      setRepairTypes(rt.data || []);
-      setBookTimes(bt.data || []);
-    };
-    load();
-  }, []);
+  useEffect(()=>{
+    Promise.all([
+      supabase.from('device_types').select('*').eq('active',true).order('sort_order'),
+      supabase.from('device_models').select('*').eq('active',true).order('sort_order'),
+      supabase.from('repair_types').select('*').eq('active',true).order('sort_order'),
+      supabase.from('book_times').select('*'),
+    ]).then(([dt,dm,rt,bt])=>{setDeviceTypes(dt.data||[]);setDeviceModels(dm.data||[]);setRepairTypes(rt.data||[]);setBookTimes(bt.data||[]);});
+  },[]);
 
-  const modelsForType = deviceModels.filter(m => m.device_type_id === selectedType);
-  const repairsForType = repairTypes.filter(r => r.device_type_id === selectedType && !r.is_labor);
+  const modelsForType=deviceModels.filter(m=>m.device_type_id===selectedType);
+  const repairsForType=repairTypes.filter(r=>r.device_type_id===selectedType&&!r.is_labor);
+  const getBookTime=(rid,mid)=>bookTimes.find(b=>b.repair_type_id===rid&&b.device_model_id===mid);
 
-  const getBookTime = (repairId, modelId) =>
-    bookTimes.find(b => b.repair_type_id === repairId && b.device_model_id === modelId);
-
-  const updateBookTime = async (repairId, modelId, value) => {
-    const key = `${repairId}_${modelId}`;
-    setSaving(s => ({ ...s, [key]: true }));
-    const existing = getBookTime(repairId, modelId);
-    const isNA = value === 'N/A' || value === '';
-    const mins = isNA ? null : parseInt(value);
-    if (existing) {
-      await supabase.from('book_times').update({ minutes: mins, is_na: isNA, updated_at: new Date().toISOString() }).eq('id', existing.id);
-      setBookTimes(prev => prev.map(b => b.id === existing.id ? { ...b, minutes: mins, is_na: isNA } : b));
-    } else {
-      const { data } = await supabase.from('book_times').insert({ repair_type_id: repairId, device_model_id: modelId, minutes: mins, is_na: isNA }).select().single();
-      if (data) setBookTimes(prev => [...prev, data]);
-    }
-    setSaving(s => ({ ...s, [key]: false }));
-    setSaved(s => ({ ...s, [key]: true }));
-    setTimeout(() => setSaved(s => ({ ...s, [key]: false })), 1500);
+  const updateBookTime=async(rid,mid,value)=>{
+    const key=`${rid}_${mid}`;setSaving(s=>({...s,[key]:true}));
+    const existing=getBookTime(rid,mid);
+    const isNA=value==='N/A'||value==='';const mins=isNA?null:parseInt(value);
+    if(existing){await supabase.from('book_times').update({minutes:mins,is_na:isNA,updated_at:new Date().toISOString()}).eq('id',existing.id);setBookTimes(prev=>prev.map(b=>b.id===existing.id?{...b,minutes:mins,is_na:isNA}:b));}
+    else{const{data}=await supabase.from('book_times').insert({repair_type_id:rid,device_model_id:mid,minutes:mins,is_na:isNA}).select().single();if(data)setBookTimes(prev=>[...prev,data]);}
+    setSaving(s=>({...s,[key]:false}));setSaved(s=>({...s,[key]:true}));setTimeout(()=>setSaved(s=>({...s,[key]:false})),1500);
   };
 
-  return (
+  return(
     <div>
-      <div style={{ marginBottom: '1rem', display: 'flex', gap: '12px', alignItems: 'center', flexWrap: 'wrap' }}>
-        <div>
-          <label style={labelStyle}>Device type</label>
-          <select value={selectedType} onChange={e => setSelectedType(e.target.value)} style={inputStyle}>
-            <option value="">— Select device type —</option>
-            {deviceTypes.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
-          </select>
-        </div>
-        <div style={{ fontSize: '12px', color: '#888', marginTop: '18px' }}>
-          Click any cell to edit. Enter minutes or "N/A". Saves instantly.
-        </div>
+      <div style={{marginBottom:'1rem',display:'flex',gap:'12px',alignItems:'center',flexWrap:'wrap'}}>
+        <div><label style={lbl}>Device type</label><select value={selectedType} onChange={e=>setSelectedType(e.target.value)} style={inp}><option value="">— Select —</option>{deviceTypes.map(d=><option key={d.id} value={d.id}>{d.name}</option>)}</select></div>
+        <div style={{fontSize:'12px',color:'#888',marginTop:'18px'}}>Click any cell to edit. Enter minutes or "N/A".</div>
       </div>
-      {selectedType && modelsForType.length > 0 && repairsForType.length > 0 && (
-        <div style={{ overflowX: 'auto' }}>
-          <table style={{ borderCollapse: 'collapse', fontSize: '12px', width: '100%' }}>
-            <thead>
-              <tr style={{ background: NAVY }}>
-                <th style={{ ...thStyle, width: '180px', textAlign: 'left' }}>Repair Type</th>
-                {modelsForType.map(m => <th key={m.id} style={thStyle}>{m.name}</th>)}
+      {selectedType&&modelsForType.length>0&&repairsForType.length>0&&(
+        <div style={{overflowX:'auto'}}>
+          <table style={{borderCollapse:'collapse',fontSize:'12px',width:'100%'}}>
+            <thead><tr style={{background:NAVY}}><th style={{...th,textAlign:'left',width:'180px'}}>Repair Type</th>{modelsForType.map(m=><th key={m.id} style={th}>{m.name}</th>)}</tr></thead>
+            <tbody>{repairsForType.map((repair,ri)=>(
+              <tr key={repair.id} style={{background:ri%2===0?'#f8fbfd':'#fff'}}>
+                <td style={{padding:'6px 8px',fontWeight:600,fontSize:'12px',color:NAVY,borderBottom:'1px solid #eef3f7'}}>{repair.name}</td>
+                {modelsForType.map(model=>{
+                  const bt=getBookTime(repair.id,model.id);const key=`${repair.id}_${model.id}`;
+                  const val=bt?.is_na?'N/A':(bt?.minutes!=null?String(bt.minutes):'');
+                  return<td key={model.id} style={{padding:'4px',borderBottom:'1px solid #eef3f7',textAlign:'center'}}><BookCell value={val} onSave={v=>updateBookTime(repair.id,model.id,v)} saving={saving[key]} saved={saved[key]}/></td>;
+                })}
               </tr>
-            </thead>
-            <tbody>
-              {repairsForType.map((repair, ri) => (
-                <tr key={repair.id} style={{ background: ri % 2 === 0 ? '#f8fbfd' : '#fff' }}>
-                  <td style={{ padding: '6px 8px', fontWeight: 600, fontSize: '12px', color: NAVY, borderBottom: '1px solid #eef3f7' }}>{repair.name}</td>
-                  {modelsForType.map(model => {
-                    const bt = getBookTime(repair.id, model.id);
-                    const key = `${repair.id}_${model.id}`;
-                    const val = bt?.is_na ? 'N/A' : (bt?.minutes != null ? String(bt.minutes) : '');
-                    return (
-                      <td key={model.id} style={{ padding: '4px', borderBottom: '1px solid #eef3f7', textAlign: 'center' }}>
-                        <BookCell value={val} onSave={v => updateBookTime(repair.id, model.id, v)} saving={saving[key]} saved={saved[key]} />
-                      </td>
-                    );
-                  })}
-                </tr>
-              ))}
-            </tbody>
+            ))}</tbody>
           </table>
         </div>
       )}
@@ -134,216 +86,152 @@ function BookTimesEditor() {
   );
 }
 
-function BookCell({ value, onSave, saving, saved }) {
-  const [editing, setEditing] = useState(false);
-  const [local, setLocal] = useState(value);
-  useEffect(() => { setLocal(value); }, [value]);
-  if (editing) {
-    return (
-      <input autoFocus value={local} onChange={e => setLocal(e.target.value)}
-        onBlur={() => { setEditing(false); onSave(local); }}
-        onKeyDown={e => { if (e.key === 'Enter') { setEditing(false); onSave(local); } if (e.key === 'Escape') { setEditing(false); setLocal(value); } }}
-        style={{ width: '60px', textAlign: 'center', border: `1.5px solid ${BLUE}`, borderRadius: '4px', padding: '3px 4px', fontSize: '12px', outline: 'none' }}
-      />
-    );
-  }
-  return (
-    <div onClick={() => setEditing(true)} title="Click to edit"
-      style={{ minWidth: '60px', padding: '4px 8px', textAlign: 'center', cursor: 'pointer', borderRadius: '4px', border: '1px solid transparent', background: saved ? '#e6f5ec' : 'transparent', color: !value || value === 'N/A' ? '#ccc' : NAVY, fontWeight: value && value !== 'N/A' ? 600 : 400 }}
-      onMouseEnter={e => e.currentTarget.style.border = `1px solid ${BLUE}`}
-      onMouseLeave={e => e.currentTarget.style.border = '1px solid transparent'}
-    >
-      {saving ? '...' : saved ? '✓' : (value || '—')}
-    </div>
-  );
+function BookCell({value,onSave,saving,saved}){
+  const[editing,setEditing]=useState(false);const[local,setLocal]=useState(value);
+  useEffect(()=>{setLocal(value);},[value]);
+  if(editing)return<input autoFocus value={local} onChange={e=>setLocal(e.target.value)} onBlur={()=>{setEditing(false);onSave(local);}} onKeyDown={e=>{if(e.key==='Enter'){setEditing(false);onSave(local);}if(e.key==='Escape'){setEditing(false);setLocal(value);}}} style={{width:'60px',textAlign:'center',border:`1.5px solid ${BLUE}`,borderRadius:'4px',padding:'3px 4px',fontSize:'12px',outline:'none'}}/>;
+  return<div onClick={()=>setEditing(true)} style={{minWidth:'60px',padding:'4px 8px',textAlign:'center',cursor:'pointer',borderRadius:'4px',border:'1px solid transparent',background:saved?'#e6f5ec':'transparent',color:!value||value==='N/A'?'#ccc':NAVY,fontWeight:value&&value!=='N/A'?600:400}} onMouseEnter={e=>e.currentTarget.style.border=`1px solid ${BLUE}`} onMouseLeave={e=>e.currentTarget.style.border='1px solid transparent'}>{saving?'...':saved?'✓':(value||'—')}</div>;
 }
 
 // ── DEVICES & REPAIRS ────────────────────────────────────────
-function DevicesEditor() {
-  const [deviceTypes, setDeviceTypes] = useState([]);
-  const [deviceModels, setDeviceModels] = useState([]);
-  const [repairTypes, setRepairTypes] = useState([]);
-  const [selectedType, setSelectedType] = useState('');
-  const [newModel, setNewModel] = useState('');
-  const [newRepair, setNewRepair] = useState('');
-  const [newRepairDiag, setNewRepairDiag] = useState(false);
-  const [newRepairLabor, setNewRepairLabor] = useState(false);
-  const [newRepairMultiplier, setNewRepairMultiplier] = useState('0.3');
-  const [msg, setMsg] = useState('');
+function DevicesEditor(){
+  const [deviceTypes,setDeviceTypes]=useState([]);
+  const [deviceModels,setDeviceModels]=useState([]);
+  const [repairTypes,setRepairTypes]=useState([]);
+  const [selectedType,setSelectedType]=useState('');
+  const [newTypeName,setNewTypeName]=useState('');
+  const [newModel,setNewModel]=useState('');
+  const [newRepair,setNewRepair]=useState('');
+  const [newRepairDiag,setNewRepairDiag]=useState(false);
+  const [newRepairLabor,setNewRepairLabor]=useState(false);
+  const [newRepairMult,setNewRepairMult]=useState('0.3');
+  const [msg,setMsg]=useState('');
+  const dragItem=useRef(null);const dragOver=useRef(null);
 
-  useEffect(() => {
-    const load = async () => {
-      const [dt, dm, rt] = await Promise.all([
-        supabase.from('device_types').select('*').order('sort_order'),
-        supabase.from('device_models').select('*').order('sort_order'),
-        supabase.from('repair_types').select('*').order('sort_order'),
-      ]);
-      setDeviceTypes(dt.data || []);
-      setDeviceModels(dm.data || []);
-      setRepairTypes(rt.data || []);
-    };
-    load();
-  }, []);
+  useEffect(()=>{
+    Promise.all([
+      supabase.from('device_types').select('*').order('sort_order'),
+      supabase.from('device_models').select('*').order('sort_order'),
+      supabase.from('repair_types').select('*').order('sort_order'),
+    ]).then(([dt,dm,rt])=>{setDeviceTypes(dt.data||[]);setDeviceModels(dm.data||[]);setRepairTypes(rt.data||[]);});
+  },[]);
 
-  const flash = (m) => { setMsg(m); setTimeout(() => setMsg(''), 2500); };
+  const flash=m=>{setMsg(m);setTimeout(()=>setMsg(''),2500);};
 
-  const modelsForType = deviceModels.filter(m => m.device_type_id === selectedType);
-  const repairsForType = repairTypes.filter(r => r.device_type_id === selectedType);
-
-  // Move item up/down in sort order
-  const moveItem = async (list, item, dir, table, setList) => {
-    const sorted = [...list].sort((a, b) => a.sort_order - b.sort_order);
-    const idx = sorted.findIndex(x => x.id === item.id);
-    const swapIdx = idx + dir;
-    if (swapIdx < 0 || swapIdx >= sorted.length) return;
-    const other = sorted[swapIdx];
-    const aOrd = item.sort_order;
-    const bOrd = other.sort_order;
-    await Promise.all([
-      supabase.from(table).update({ sort_order: bOrd }).eq('id', item.id),
-      supabase.from(table).update({ sort_order: aOrd }).eq('id', other.id),
-    ]);
-    setList(prev => prev.map(x => {
-      if (x.id === item.id) return { ...x, sort_order: bOrd };
-      if (x.id === other.id) return { ...x, sort_order: aOrd };
-      return x;
-    }));
+  const addDeviceType=async()=>{
+    if(!newTypeName.trim())return;
+    const maxOrd=Math.max(0,...deviceTypes.map(d=>d.sort_order));
+    const{data}=await supabase.from('device_types').insert({name:newTypeName.trim(),sort_order:maxOrd+1,active:true}).select().single();
+    if(data){setDeviceTypes(p=>[...p,data]);setNewTypeName('');flash('Device type added!');}
   };
 
-  const moveDeviceType = (item, dir) => moveItem(deviceTypes, item, dir, 'device_types', setDeviceTypes);
-  const moveModel = (item, dir) => moveItem(modelsForType, item, dir, 'device_models', setDeviceModels);
-  const moveRepair = (item, dir) => moveItem(repairsForType, item, dir, 'repair_types', setRepairTypes);
-
-  // Inline name editing
-  const updateName = async (table, id, name, setList) => {
-    await supabase.from(table).update({ name }).eq('id', id);
-    setList(prev => prev.map(x => x.id === id ? { ...x, name } : x));
-    flash('Name updated!');
+  const handleDrop=async(list,setList,table,fromId,toId)=>{
+    if(fromId===toId)return;
+    const sorted=[...list].sort((a,b)=>a.sort_order-b.sort_order);
+    const fromIdx=sorted.findIndex(x=>x.id===fromId);
+    const toIdx=sorted.findIndex(x=>x.id===toId);
+    const reordered=[...sorted];const[moved]=reordered.splice(fromIdx,1);reordered.splice(toIdx,0,moved);
+    const updates=reordered.map((item,i)=>({...item,sort_order:i+1}));
+    setList(updates);
+    await Promise.all(updates.map(item=>supabase.from(table).update({sort_order:item.sort_order}).eq('id',item.id)));
   };
 
-  const addModel = async () => {
-    if (!newModel.trim() || !selectedType) return;
-    const maxOrd = Math.max(0, ...modelsForType.map(m => m.sort_order));
-    const { data } = await supabase.from('device_models').insert({ device_type_id: selectedType, name: newModel.trim(), sort_order: maxOrd + 1 }).select().single();
-    if (data) { setDeviceModels(p => [...p, data]); setNewModel(''); flash('Model added!'); }
+  const updateName=async(table,id,name,setList)=>{
+    await supabase.from(table).update({name}).eq('id',id);
+    setList(prev=>prev.map(x=>x.id===id?{...x,name}:x));flash('Updated!');
   };
 
-  const addRepair = async () => {
-    if (!newRepair.trim() || !selectedType) return;
-    const maxOrd = Math.max(0, ...repairsForType.map(r => r.sort_order));
-    const multiplier = newRepairLabor ? parseFloat(newRepairMultiplier) || 0.3 : null;
-    const repairName = newRepairLabor ? `${newRepair.trim()} (Labor x ${multiplier})` : newRepair.trim();
-    const { data } = await supabase.from('repair_types').insert({
-      device_type_id: selectedType, name: repairName,
-      is_diagnosis: newRepairDiag, is_labor: newRepairLabor,
-      labor_multiplier: multiplier, sort_order: maxOrd + 1,
-    }).select().single();
-    if (data) { setRepairTypes(p => [...p, data]); setNewRepair(''); flash('Repair type added!'); }
+  const toggleActive=async(table,id,current,setList)=>{
+    await supabase.from(table).update({active:!current}).eq('id',id);
+    setList(prev=>prev.map(x=>x.id===id?{...x,active:!current}:x));
   };
 
-  const toggleActive = async (table, id, current, setList) => {
-    await supabase.from(table).update({ active: !current }).eq('id', id);
-    setList(prev => prev.map(x => x.id === id ? { ...x, active: !current } : x));
+  const addModel=async()=>{
+    if(!newModel.trim()||!selectedType)return;
+    const list=deviceModels.filter(m=>m.device_type_id===selectedType);
+    const maxOrd=Math.max(0,...list.map(m=>m.sort_order));
+    const{data}=await supabase.from('device_models').insert({device_type_id:selectedType,name:newModel.trim(),sort_order:maxOrd+1}).select().single();
+    if(data){setDeviceModels(p=>[...p,data]);setNewModel('');flash('Model added!');}
   };
 
-  const sortedDeviceTypes = [...deviceTypes].sort((a, b) => a.sort_order - b.sort_order);
-  const sortedModels = [...modelsForType].sort((a, b) => a.sort_order - b.sort_order);
-  const sortedRepairs = [...repairsForType].sort((a, b) => a.sort_order - b.sort_order);
+  const addRepair=async()=>{
+    if(!newRepair.trim()||!selectedType)return;
+    const list=repairTypes.filter(r=>r.device_type_id===selectedType);
+    const maxOrd=Math.max(0,...list.map(r=>r.sort_order));
+    const mult=newRepairLabor?parseFloat(newRepairMult)||0.3:null;
+    const name=newRepairLabor?`${newRepair.trim()} (Labor x ${mult})`:newRepair.trim();
+    const{data}=await supabase.from('repair_types').insert({device_type_id:selectedType,name,is_diagnosis:newRepairDiag,is_labor:newRepairLabor,labor_multiplier:mult,sort_order:maxOrd+1}).select().single();
+    if(data){setRepairTypes(p=>[...p,data]);setNewRepair('');flash('Repair type added!');}
+  };
 
-  return (
+  const sortedTypes=[...deviceTypes].sort((a,b)=>a.sort_order-b.sort_order);
+  const sortedModels=[...deviceModels].filter(m=>m.device_type_id===selectedType).sort((a,b)=>a.sort_order-b.sort_order);
+  const sortedRepairs=[...repairTypes].filter(r=>r.device_type_id===selectedType).sort((a,b)=>a.sort_order-b.sort_order);
+
+  const DragRow=({item,list,setList,table,children})=>(
+    <div draggable onDragStart={()=>{dragItem.current=item.id;}} onDragEnter={()=>{dragOver.current=item.id;}} onDragEnd={()=>handleDrop(list,setList,table,dragItem.current,dragOver.current)} onDragOver={e=>e.preventDefault()} style={{display:'flex',alignItems:'center',gap:'6px',padding:'5px 8px',background:item.active?'#f8fbfd':'#fafafa',borderRadius:'6px',marginBottom:'4px',border:'1px solid #eef3f7',cursor:'grab'}}>
+      <span style={{color:'#bbb',fontSize:'14px',marginRight:'2px'}}>⠿</span>
+      {children}
+    </div>
+  );
+
+  return(
     <div>
-      {msg && <div style={{ background: '#e6f5ec', color: GREEN, borderRadius: '8px', padding: '8px 14px', fontSize: '13px', marginBottom: '1rem' }}>{msg}</div>}
+      {msg&&<div style={{background:'#e6f5ec',color:GREEN,borderRadius:'8px',padding:'8px 14px',fontSize:'13px',marginBottom:'1rem'}}>{msg}</div>}
 
-      {/* Device Types reorder */}
-      <div style={{ marginBottom: '1.5rem' }}>
-        <div style={{ fontWeight: 700, color: NAVY, marginBottom: '8px', fontSize: '13px' }}>Device Type Order</div>
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
-          {sortedDeviceTypes.map((dt, idx) => (
-            <div key={dt.id} style={{ display: 'flex', alignItems: 'center', gap: '4px', background: '#f8fbfd', border: '1px solid #eef3f7', borderRadius: '6px', padding: '4px 8px' }}>
-              <span style={{ fontSize: '12px', color: NAVY, fontWeight: 600 }}>{dt.name}</span>
-              <button onClick={() => moveDeviceType(dt, -1)} disabled={idx === 0} style={arrowBtn}>↑</button>
-              <button onClick={() => moveDeviceType(dt, 1)} disabled={idx === sortedDeviceTypes.length - 1} style={arrowBtn}>↓</button>
-            </div>
-          ))}
+      <div style={{marginBottom:'1.5rem'}}>
+        <div style={{fontWeight:700,color:NAVY,marginBottom:'8px',fontSize:'13px'}}>Device Types <span style={{fontWeight:400,color:'#888',fontSize:'11px'}}>(drag to reorder)</span></div>
+        {sortedTypes.map(dt=>(
+          <DragRow key={dt.id} item={dt} list={deviceTypes} setList={setDeviceTypes} table="device_types">
+            <InlineEdit value={dt.name} onSave={v=>updateName('device_types',dt.id,v,setDeviceTypes)} active={dt.active}/>
+            <button onClick={()=>toggleActive('device_types',dt.id,dt.active,setDeviceTypes)} style={{fontSize:'10px',border:`1px solid ${dt.active?'#f0aaaa':'#a8dbb8'}`,background:'transparent',color:dt.active?RED:GREEN,borderRadius:'4px',padding:'2px 6px',cursor:'pointer',whiteSpace:'nowrap'}}>{dt.active?'Disable':'Enable'}</button>
+          </DragRow>
+        ))}
+        <div style={{display:'flex',gap:'6px',marginTop:'8px'}}>
+          <input value={newTypeName} onChange={e=>setNewTypeName(e.target.value)} onKeyDown={e=>e.key==='Enter'&&addDeviceType()} placeholder="New device type..." style={{...inp,flex:1}}/>
+          <button onClick={addDeviceType} style={addBtnStyle}>Add</button>
         </div>
       </div>
 
-      {/* Select device type */}
-      <div style={{ marginBottom: '1rem' }}>
-        <label style={labelStyle}>Edit models & repairs for</label>
-        <select value={selectedType} onChange={e => setSelectedType(e.target.value)} style={inputStyle}>
-          <option value="">— Select device type —</option>
-          {sortedDeviceTypes.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
-        </select>
-      </div>
+      <div style={{marginBottom:'1rem'}}><label style={lbl}>Edit models & repairs for</label><select value={selectedType} onChange={e=>setSelectedType(e.target.value)} style={inp}><option value="">— Select device type —</option>{sortedTypes.map(d=><option key={d.id} value={d.id}>{d.name}</option>)}</select></div>
 
-      {selectedType && (
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '24px' }}>
-          {/* Models */}
+      {selectedType&&(
+        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'24px'}}>
           <div>
-            <div style={{ fontWeight: 700, color: NAVY, marginBottom: '8px', fontSize: '13px' }}>Models</div>
-            {sortedModels.map((m, idx) => (
-              <div key={m.id} style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '5px 8px', background: m.active ? '#f8fbfd' : '#fafafa', borderRadius: '6px', marginBottom: '4px', border: '1px solid #eef3f7' }}>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '1px' }}>
-                  <button onClick={() => moveModel(m, -1)} disabled={idx === 0} style={arrowBtn}>↑</button>
-                  <button onClick={() => moveModel(m, 1)} disabled={idx === sortedModels.length - 1} style={arrowBtn}>↓</button>
-                </div>
-                <InlineEdit value={m.name} onSave={v => updateName('device_models', m.id, v, setDeviceModels)} active={m.active} />
-                <button onClick={() => toggleActive('device_models', m.id, m.active, setDeviceModels)}
-                  style={{ fontSize: '10px', border: `1px solid ${m.active ? '#f0aaaa' : '#a8dbb8'}`, background: 'transparent', color: m.active ? RED : GREEN, borderRadius: '4px', padding: '2px 6px', cursor: 'pointer', whiteSpace: 'nowrap' }}>
-                  {m.active ? 'Disable' : 'Enable'}
-                </button>
-              </div>
+            <div style={{fontWeight:700,color:NAVY,marginBottom:'8px',fontSize:'13px'}}>Models <span style={{fontWeight:400,color:'#888',fontSize:'11px'}}>(drag to reorder)</span></div>
+            {sortedModels.map(m=>(
+              <DragRow key={m.id} item={m} list={deviceModels} setList={setDeviceModels} table="device_models">
+                <InlineEdit value={m.name} onSave={v=>updateName('device_models',m.id,v,setDeviceModels)} active={m.active}/>
+                <button onClick={()=>toggleActive('device_models',m.id,m.active,setDeviceModels)} style={{fontSize:'10px',border:`1px solid ${m.active?'#f0aaaa':'#a8dbb8'}`,background:'transparent',color:m.active?RED:GREEN,borderRadius:'4px',padding:'2px 6px',cursor:'pointer',whiteSpace:'nowrap'}}>{m.active?'Disable':'Enable'}</button>
+              </DragRow>
             ))}
-            <div style={{ display: 'flex', gap: '6px', marginTop: '8px' }}>
-              <input value={newModel} onChange={e => setNewModel(e.target.value)} onKeyDown={e => e.key === 'Enter' && addModel()} placeholder="New model name..." style={{ ...inputStyle, flex: 1 }} />
-              <button onClick={addModel} style={addBtn}>Add</button>
+            <div style={{display:'flex',gap:'6px',marginTop:'8px'}}>
+              <input value={newModel} onChange={e=>setNewModel(e.target.value)} onKeyDown={e=>e.key==='Enter'&&addModel()} placeholder="New model..." style={{...inp,flex:1}}/>
+              <button onClick={addModel} style={addBtnStyle}>Add</button>
             </div>
           </div>
-
-          {/* Repair types */}
           <div>
-            <div style={{ fontWeight: 700, color: NAVY, marginBottom: '8px', fontSize: '13px' }}>Repair Types</div>
-            {sortedRepairs.map((r, idx) => (
-              <div key={r.id} style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '5px 8px', background: r.active ? '#f8fbfd' : '#fafafa', borderRadius: '6px', marginBottom: '4px', border: '1px solid #eef3f7' }}>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '1px' }}>
-                  <button onClick={() => moveRepair(r, -1)} disabled={idx === 0} style={arrowBtn}>↑</button>
-                  <button onClick={() => moveRepair(r, 1)} disabled={idx === sortedRepairs.length - 1} style={arrowBtn}>↓</button>
-                </div>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <InlineEdit value={r.name} onSave={v => updateName('repair_types', r.id, v, setRepairTypes)} active={r.active} />
-                  <div style={{ display: 'flex', gap: '4px', marginTop: '2px' }}>
-                    {r.is_diagnosis && <span style={{ fontSize: '9px', background: '#e8f6fc', color: BLUE, borderRadius: '4px', padding: '1px 4px' }}>diag</span>}
-                    {r.is_labor && <span style={{ fontSize: '9px', background: '#fff3d0', color: '#9a6000', borderRadius: '4px', padding: '1px 4px' }}>labor x {r.labor_multiplier || 0.3}</span>}
+            <div style={{fontWeight:700,color:NAVY,marginBottom:'8px',fontSize:'13px'}}>Repair Types <span style={{fontWeight:400,color:'#888',fontSize:'11px'}}>(drag to reorder)</span></div>
+            {sortedRepairs.map(r=>(
+              <DragRow key={r.id} item={r} list={repairTypes} setList={setRepairTypes} table="repair_types">
+                <div style={{flex:1,minWidth:0}}>
+                  <InlineEdit value={r.name} onSave={v=>updateName('repair_types',r.id,v,setRepairTypes)} active={r.active}/>
+                  <div style={{display:'flex',gap:'4px',marginTop:'2px'}}>
+                    {r.is_diagnosis&&<span style={{fontSize:'9px',background:'#e8f6fc',color:BLUE,borderRadius:'4px',padding:'1px 4px'}}>diag</span>}
+                    {r.is_labor&&<span style={{fontSize:'9px',background:'#fff3d0',color:'#9a6000',borderRadius:'4px',padding:'1px 4px'}}>labor x {r.labor_multiplier||0.3}</span>}
                   </div>
                 </div>
-                <button onClick={() => toggleActive('repair_types', r.id, r.active, setRepairTypes)}
-                  style={{ fontSize: '10px', border: `1px solid ${r.active ? '#f0aaaa' : '#a8dbb8'}`, background: 'transparent', color: r.active ? RED : GREEN, borderRadius: '4px', padding: '2px 6px', cursor: 'pointer', whiteSpace: 'nowrap' }}>
-                  {r.active ? 'Disable' : 'Enable'}
-                </button>
-              </div>
+                <button onClick={()=>toggleActive('repair_types',r.id,r.active,setRepairTypes)} style={{fontSize:'10px',border:`1px solid ${r.active?'#f0aaaa':'#a8dbb8'}`,background:'transparent',color:r.active?RED:GREEN,borderRadius:'4px',padding:'2px 6px',cursor:'pointer',whiteSpace:'nowrap'}}>{r.active?'Disable':'Enable'}</button>
+              </DragRow>
             ))}
-            {/* Add repair form */}
-            <div style={{ marginTop: '10px', background: '#f8fbfd', borderRadius: '8px', padding: '10px', border: '1px solid #eef3f7' }}>
-              <input value={newRepair} onChange={e => setNewRepair(e.target.value)} placeholder="Repair type name..." style={{ ...inputStyle, width: '100%', marginBottom: '8px' }} />
-              <div style={{ display: 'flex', gap: '12px', alignItems: 'center', flexWrap: 'wrap', marginBottom: '8px' }}>
-                <label style={{ display: 'flex', gap: '4px', alignItems: 'center', fontSize: '12px', color: '#555', cursor: 'pointer' }}>
-                  <input type="checkbox" checked={newRepairDiag} onChange={e => setNewRepairDiag(e.target.checked)} /> Diagnosis
-                </label>
-                <label style={{ display: 'flex', gap: '4px', alignItems: 'center', fontSize: '12px', color: '#555', cursor: 'pointer' }}>
-                  <input type="checkbox" checked={newRepairLabor} onChange={e => setNewRepairLabor(e.target.checked)} /> Labor
-                </label>
-                {newRepairLabor && (
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                    <span style={{ fontSize: '12px', color: '#555' }}>Multiplier:</span>
-                    <input type="number" step="0.01" min="0.01" value={newRepairMultiplier}
-                      onChange={e => setNewRepairMultiplier(e.target.value)}
-                      style={{ ...inputStyle, width: '70px' }} />
-                    <span style={{ fontSize: '11px', color: '#888' }}>(e.g. 0.3)</span>
-                  </div>
-                )}
+            <div style={{marginTop:'10px',background:'#f8fbfd',borderRadius:'8px',padding:'10px',border:'1px solid #eef3f7'}}>
+              <input value={newRepair} onChange={e=>setNewRepair(e.target.value)} placeholder="Repair type name..." style={{...inp,width:'100%',marginBottom:'8px'}}/>
+              <div style={{display:'flex',gap:'12px',alignItems:'center',flexWrap:'wrap',marginBottom:'8px'}}>
+                <label style={{display:'flex',gap:'4px',alignItems:'center',fontSize:'12px',color:'#555',cursor:'pointer'}}><input type="checkbox" checked={newRepairDiag} onChange={e=>setNewRepairDiag(e.target.checked)}/> Diagnosis</label>
+                <label style={{display:'flex',gap:'4px',alignItems:'center',fontSize:'12px',color:'#555',cursor:'pointer'}}><input type="checkbox" checked={newRepairLabor} onChange={e=>setNewRepairLabor(e.target.checked)}/> Labor</label>
+                {newRepairLabor&&<div style={{display:'flex',alignItems:'center',gap:'4px'}}><span style={{fontSize:'12px',color:'#555'}}>Multiplier:</span><input type="number" step="0.01" min="0.01" value={newRepairMult} onChange={e=>setNewRepairMult(e.target.value)} style={{...inp,width:'70px'}}/></div>}
               </div>
-              <button onClick={addRepair} style={{ ...addBtn, width: '100%' }}>Add repair type</button>
+              <button onClick={addRepair} style={{...addBtnStyle,width:'100%'}}>Add repair type</button>
             </div>
           </div>
         </div>
@@ -352,133 +240,117 @@ function DevicesEditor() {
   );
 }
 
-function InlineEdit({ value, onSave, active }) {
-  const [editing, setEditing] = useState(false);
-  const [local, setLocal] = useState(value);
-  useEffect(() => { setLocal(value); }, [value]);
-  if (editing) {
-    return (
-      <input autoFocus value={local} onChange={e => setLocal(e.target.value)}
-        onBlur={() => { setEditing(false); if (local.trim() && local !== value) onSave(local.trim()); }}
-        onKeyDown={e => { if (e.key === 'Enter') { setEditing(false); if (local.trim() && local !== value) onSave(local.trim()); } if (e.key === 'Escape') { setEditing(false); setLocal(value); } }}
-        style={{ flex: 1, border: `1.5px solid ${BLUE}`, borderRadius: '4px', padding: '2px 6px', fontSize: '12px', outline: 'none', minWidth: 0 }}
-      />
-    );
-  }
-  return (
-    <span onClick={() => setEditing(true)} title="Click to rename"
-      style={{ flex: 1, fontSize: '12px', color: active ? NAVY : '#aaa', textDecoration: active ? 'none' : 'line-through', cursor: 'text', padding: '2px 4px', borderRadius: '4px', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
-      onMouseEnter={e => e.currentTarget.style.background = '#e8f6fc'}
-      onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
-    >{local}</span>
+// ── ADD-ONS ──────────────────────────────────────────────────
+function AddOnsEditor(){
+  const [deviceTypes,setDeviceTypes]=useState([]);
+  const [addOns,setAddOns]=useState([]);
+  const [selectedType,setSelectedType]=useState('');
+  const [newName,setNewName]=useState('');
+  const [newMins,setNewMins]=useState('');
+  const [msg,setMsg]=useState('');
+  const dragItem=useRef(null);const dragOver=useRef(null);
+
+  useEffect(()=>{
+    Promise.all([
+      supabase.from('device_types').select('*').eq('active',true).order('sort_order'),
+      supabase.from('add_ons').select('*').order('sort_order'),
+    ]).then(([dt,ao])=>{setDeviceTypes(dt.data||[]);setAddOns(ao.data||[]);});
+  },[]);
+
+  const flash=m=>{setMsg(m);setTimeout(()=>setMsg(''),2500);};
+
+  const addOnForType=addOns.filter(a=>a.device_type_id===selectedType).sort((a,b)=>a.sort_order-b.sort_order);
+
+  const addAddOn=async()=>{
+    if(!newName.trim()||!selectedType||!newMins)return;
+    const maxOrd=Math.max(0,...addOnForType.map(a=>a.sort_order));
+    const{data}=await supabase.from('add_ons').insert({device_type_id:selectedType,name:newName.trim(),book_minutes:parseInt(newMins)||0,sort_order:maxOrd+1}).select().single();
+    if(data){setAddOns(p=>[...p,data]);setNewName('');setNewMins('');flash('Add-on added!');}
+  };
+
+  const updateAddOn=async(id,updates)=>{
+    await supabase.from('add_ons').update(updates).eq('id',id);
+    setAddOns(prev=>prev.map(a=>a.id===id?{...a,...updates}:a));flash('Saved!');
+  };
+
+  const handleDrop=async(fromId,toId)=>{
+    if(fromId===toId)return;
+    const sorted=[...addOnForType];
+    const fromIdx=sorted.findIndex(x=>x.id===fromId);const toIdx=sorted.findIndex(x=>x.id===toId);
+    const reordered=[...sorted];const[moved]=reordered.splice(fromIdx,1);reordered.splice(toIdx,0,moved);
+    const updates=reordered.map((item,i)=>({...item,sort_order:i+1}));
+    setAddOns(prev=>{const others=prev.filter(a=>a.device_type_id!==selectedType);return[...others,...updates];});
+    await Promise.all(updates.map(item=>supabase.from('add_ons').update({sort_order:item.sort_order}).eq('id',item.id)));
+  };
+
+  return(
+    <div>
+      {msg&&<div style={{background:'#e6f5ec',color:GREEN,borderRadius:'8px',padding:'8px 14px',fontSize:'13px',marginBottom:'1rem'}}>{msg}</div>}
+      <div style={{marginBottom:'1rem'}}><label style={lbl}>Device type</label><select value={selectedType} onChange={e=>setSelectedType(e.target.value)} style={inp}><option value="">— Select device type —</option>{deviceTypes.map(d=><option key={d.id} value={d.id}>{d.name}</option>)}</select></div>
+      {selectedType&&(
+        <div>
+          <div style={{fontWeight:700,color:NAVY,marginBottom:'8px',fontSize:'13px'}}>Add-ons <span style={{fontWeight:400,color:'#888',fontSize:'11px'}}>(drag to reorder)</span></div>
+          {addOnForType.map(a=>(
+            <div key={a.id} draggable onDragStart={()=>{dragItem.current=a.id;}} onDragEnter={()=>{dragOver.current=a.id;}} onDragEnd={()=>handleDrop(dragItem.current,dragOver.current)} onDragOver={e=>e.preventDefault()} style={{display:'flex',alignItems:'center',gap:'8px',padding:'6px 10px',background:a.active?'#f8fbfd':'#fafafa',borderRadius:'6px',marginBottom:'4px',border:'1px solid #eef3f7',cursor:'grab'}}>
+              <span style={{color:'#bbb',fontSize:'14px'}}>⠿</span>
+              <InlineEdit value={a.name} onSave={v=>updateAddOn(a.id,{name:v})} active={a.active}/>
+              <div style={{display:'flex',alignItems:'center',gap:'4px'}}>
+                <span style={{fontSize:'11px',color:'#888'}}>Book mins:</span>
+                <input type="number" value={a.book_minutes} onChange={e=>updateAddOn(a.id,{book_minutes:parseInt(e.target.value)||0})} style={{...inp,width:'60px',textAlign:'center'}}/>
+              </div>
+              <button onClick={()=>updateAddOn(a.id,{active:!a.active})} style={{fontSize:'10px',border:`1px solid ${a.active?'#f0aaaa':'#a8dbb8'}`,background:'transparent',color:a.active?RED:GREEN,borderRadius:'4px',padding:'2px 6px',cursor:'pointer',whiteSpace:'nowrap'}}>{a.active?'Disable':'Enable'}</button>
+            </div>
+          ))}
+          <div style={{display:'flex',gap:'8px',marginTop:'12px',alignItems:'flex-end',background:'#f8fbfd',padding:'10px',borderRadius:'8px',border:'1px solid #eef3f7'}}>
+            <div style={{flex:1}}><label style={lbl}>Name</label><input value={newName} onChange={e=>setNewName(e.target.value)} placeholder="e.g. Advanced Cleaning" style={inp}/></div>
+            <div><label style={lbl}>Book mins</label><input type="number" value={newMins} onChange={e=>setNewMins(e.target.value)} placeholder="20" style={{...inp,width:'80px'}}/></div>
+            <button onClick={addAddOn} style={addBtnStyle}>Add</button>
+          </div>
+        </div>
+      )}
+    </div>
   );
 }
 
 // ── TECHNICIANS ──────────────────────────────────────────────
-function TechniciansEditor() {
-  const [technicians, setTechnicians] = useState([]);
-  const [newName, setNewName] = useState('');
-  const [newPin, setNewPin] = useState('');
-  const [newRole, setNewRole] = useState('tech');
-  const [editing, setEditing] = useState({});
-  const [msg, setMsg] = useState('');
+function TechniciansEditor(){
+  const [technicians,setTechnicians]=useState([]);
+  const [newName,setNewName]=useState('');const [newPin,setNewPin]=useState('');const [newRole,setNewRole]=useState('tech');
+  const [editing,setEditing]=useState({});const [msg,setMsg]=useState('');
 
-  useEffect(() => {
-    supabase.from('technicians').select('*').order('name').then(({ data }) => setTechnicians(data || []));
-  }, []);
+  useEffect(()=>{supabase.from('technicians').select('*').order('name').then(({data})=>setTechnicians(data||[]));},[]); 
+  const flash=m=>{setMsg(m);setTimeout(()=>setMsg(''),2000);};
+  const addTech=async()=>{if(!newName.trim()||!newPin.trim())return;const{data}=await supabase.from('technicians').insert({name:newName.trim(),pin:newPin.trim(),role:newRole}).select().single();if(data){setTechnicians(p=>[...p,data]);setNewName('');setNewPin('');flash('Added!');}};
+  const updateTech=async(id,updates)=>{await supabase.from('technicians').update(updates).eq('id',id);setTechnicians(p=>p.map(t=>t.id===id?{...t,...updates}:t));flash('Saved!');};
 
-  const flash = (m) => { setMsg(m); setTimeout(() => setMsg(''), 2000); };
-
-  const addTech = async () => {
-    if (!newName.trim() || !newPin.trim()) return;
-    const { data } = await supabase.from('technicians').insert({ name: newName.trim(), pin: newPin.trim(), role: newRole }).select().single();
-    if (data) { setTechnicians(p => [...p, data]); setNewName(''); setNewPin(''); flash('Technician added!'); }
-  };
-
-  const updateTech = async (id, updates) => {
-    await supabase.from('technicians').update(updates).eq('id', id);
-    setTechnicians(p => p.map(t => t.id === id ? { ...t, ...updates } : t));
-    flash('Saved!');
-  };
-
-  const roleLabel = (role) => {
-    if (role === 'admin') return { label: 'Admin', bg: '#fce8e8', color: RED };
-    if (role === 'manager') return { label: 'Manager', bg: '#fff3d0', color: '#9a6000' };
-    return { label: 'Tech', bg: '#e8f6fc', color: BLUE };
-  };
-
-  return (
+  return(
     <div>
-      {msg && <div style={{ background: '#e6f5ec', color: GREEN, borderRadius: '8px', padding: '8px 14px', fontSize: '13px', marginBottom: '1rem' }}>{msg}</div>}
-      <div style={{ fontSize: '12px', color: '#888', marginBottom: '1rem', background: '#f8fbfd', borderRadius: '8px', padding: '10px 14px', border: '1px solid #eef3f7' }}>
-        <strong>Roles:</strong> &nbsp;
-        <span style={{ color: BLUE, fontWeight: 600 }}>Tech</span> — daily sheet only &nbsp;|&nbsp;
-        <span style={{ color: '#9a6000', fontWeight: 600 }}>Manager</span> — daily sheet + manager view &nbsp;|&nbsp;
-        <span style={{ color: RED, fontWeight: 600 }}>Admin</span> — full access including book times &amp; settings
+      {msg&&<div style={{background:'#e6f5ec',color:GREEN,borderRadius:'8px',padding:'8px 14px',fontSize:'13px',marginBottom:'1rem'}}>{msg}</div>}
+      <div style={{fontSize:'12px',color:'#888',marginBottom:'1rem',background:'#f8fbfd',borderRadius:'8px',padding:'10px 14px',border:'1px solid #eef3f7'}}>
+        <strong>Roles:</strong> &nbsp;<span style={{color:'#1B9BD4',fontWeight:600}}>Tech</span> — daily sheet only &nbsp;|&nbsp;<span style={{color:'#9a6000',fontWeight:600}}>Manager</span> — sheet + manager view &nbsp;|&nbsp;<span style={{color:RED,fontWeight:600}}>Admin</span> — full access
       </div>
-
-      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px', marginBottom: '1.5rem' }}>
-        <thead>
-          <tr style={{ background: '#f5f5f0' }}>
-            {['Name','PIN','Role','Status','Actions'].map(h => (
-              <th key={h} style={{ padding: '8px 10px', textAlign: 'left', fontSize: '11px', color: '#555', textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 700, borderBottom: '1px solid #e0ddd5' }}>{h}</th>
-            ))}
+      <table style={{width:'100%',borderCollapse:'collapse',fontSize:'13px',marginBottom:'1.5rem'}}>
+        <thead><tr style={{background:'#f5f5f0'}}>{['Name','PIN','Role','Status','Actions'].map(h=><th key={h} style={{padding:'8px 10px',textAlign:'left',fontSize:'11px',color:'#555',textTransform:'uppercase',letterSpacing:'0.05em',fontWeight:700,borderBottom:'1px solid #e0ddd5'}}>{h}</th>)}</tr></thead>
+        <tbody>{technicians.map(t=>(
+          <tr key={t.id} style={{borderBottom:'1px solid #f0ede5'}}>
+            <td style={{padding:'8px 10px',fontWeight:600,color:NAVY}}>{t.name}</td>
+            <td style={{padding:'8px 10px'}}>{editing[t.id]?<input defaultValue={t.pin} onBlur={e=>{updateTech(t.id,{pin:e.target.value});setEditing(p=>({...p,[t.id]:false}));}} style={{...inp,width:'80px'}} autoFocus/>:<span style={{fontFamily:'monospace',background:'#f0f0f0',padding:'2px 8px',borderRadius:'4px'}}>{'•'.repeat(t.pin?.length||4)}</span>}</td>
+            <td style={{padding:'8px 10px'}}><select value={t.role} onChange={e=>updateTech(t.id,{role:e.target.value})} style={{...inp,width:'110px'}}><option value="tech">Tech</option><option value="manager">Manager</option><option value="admin">Admin</option></select></td>
+            <td style={{padding:'8px 10px'}}><span style={{background:t.active?'#e6f5ec':'#fce8e8',color:t.active?GREEN:RED,borderRadius:'20px',padding:'2px 10px',fontSize:'11px',fontWeight:700}}>{t.active?'Active':'Inactive'}</span></td>
+            <td style={{padding:'8px 10px',display:'flex',gap:'6px'}}>
+              <button onClick={()=>setEditing(p=>({...p,[t.id]:!p[t.id]}))} style={{fontSize:'11px',border:`1px solid ${BLUE}`,background:'transparent',color:BLUE,borderRadius:'4px',padding:'2px 8px',cursor:'pointer'}}>{editing[t.id]?'Done':'Change PIN'}</button>
+              <button onClick={()=>updateTech(t.id,{active:!t.active})} style={{fontSize:'11px',border:`1px solid ${t.active?'#f0aaaa':'#a8dbb8'}`,background:'transparent',color:t.active?RED:GREEN,borderRadius:'4px',padding:'2px 8px',cursor:'pointer'}}>{t.active?'Disable':'Enable'}</button>
+            </td>
           </tr>
-        </thead>
-        <tbody>
-          {technicians.map(t => {
-            const rl = roleLabel(t.role);
-            return (
-              <tr key={t.id} style={{ borderBottom: '1px solid #f0ede5' }}>
-                <td style={{ padding: '8px 10px', fontWeight: 600, color: NAVY }}>{t.name}</td>
-                <td style={{ padding: '8px 10px' }}>
-                  {editing[t.id] ? (
-                    <input defaultValue={t.pin} onBlur={e => { updateTech(t.id, { pin: e.target.value }); setEditing(p => ({ ...p, [t.id]: false })); }} style={{ ...inputStyle, width: '80px' }} autoFocus />
-                  ) : (
-                    <span style={{ fontFamily: 'monospace', background: '#f0f0f0', padding: '2px 8px', borderRadius: '4px' }}>{'•'.repeat(t.pin?.length || 4)}</span>
-                  )}
-                </td>
-                <td style={{ padding: '8px 10px' }}>
-                  <select value={t.role} onChange={e => updateTech(t.id, { role: e.target.value })} style={{ ...inputStyle, width: '110px' }}>
-                    <option value="tech">Tech</option>
-                    <option value="manager">Manager</option>
-                    <option value="admin">Admin</option>
-                  </select>
-                </td>
-                <td style={{ padding: '8px 10px' }}>
-                  <span style={{ background: t.active ? '#e6f5ec' : '#fce8e8', color: t.active ? GREEN : RED, borderRadius: '20px', padding: '2px 10px', fontSize: '11px', fontWeight: 700 }}>
-                    {t.active ? 'Active' : 'Inactive'}
-                  </span>
-                </td>
-                <td style={{ padding: '8px 10px', display: 'flex', gap: '6px' }}>
-                  <button onClick={() => setEditing(p => ({ ...p, [t.id]: !p[t.id] }))}
-                    style={{ fontSize: '11px', border: `1px solid ${BLUE}`, background: 'transparent', color: BLUE, borderRadius: '4px', padding: '2px 8px', cursor: 'pointer' }}>
-                    {editing[t.id] ? 'Done' : 'Change PIN'}
-                  </button>
-                  <button onClick={() => updateTech(t.id, { active: !t.active })}
-                    style={{ fontSize: '11px', border: `1px solid ${t.active ? '#f0aaaa' : '#a8dbb8'}`, background: 'transparent', color: t.active ? RED : GREEN, borderRadius: '4px', padding: '2px 8px', cursor: 'pointer' }}>
-                    {t.active ? 'Disable' : 'Enable'}
-                  </button>
-                </td>
-              </tr>
-            );
-          })}
-        </tbody>
+        ))}</tbody>
       </table>
-
-      <div style={{ background: '#f8fbfd', borderRadius: '10px', padding: '1rem', border: `1px solid ${BORDER}` }}>
-        <div style={{ fontWeight: 700, color: NAVY, marginBottom: '12px', fontSize: '13px' }}>Add Technician</div>
-        <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', alignItems: 'flex-end' }}>
-          <div><label style={labelStyle}>Name</label><input value={newName} onChange={e => setNewName(e.target.value)} placeholder="Full name" style={inputStyle} /></div>
-          <div><label style={labelStyle}>PIN</label><input value={newPin} onChange={e => setNewPin(e.target.value)} placeholder="e.g. 1234" maxLength={6} style={{ ...inputStyle, width: '100px' }} /></div>
-          <div><label style={labelStyle}>Role</label>
-            <select value={newRole} onChange={e => setNewRole(e.target.value)} style={inputStyle}>
-              <option value="tech">Tech</option>
-              <option value="manager">Manager</option>
-              <option value="admin">Admin</option>
-            </select>
-          </div>
-          <button onClick={addTech} style={addBtn}>Add</button>
+      <div style={{background:'#f8fbfd',borderRadius:'10px',padding:'1rem',border:`1px solid ${BORDER}`}}>
+        <div style={{fontWeight:700,color:NAVY,marginBottom:'12px',fontSize:'13px'}}>Add Technician</div>
+        <div style={{display:'flex',gap:'10px',flexWrap:'wrap',alignItems:'flex-end'}}>
+          <div><label style={lbl}>Name</label><input value={newName} onChange={e=>setNewName(e.target.value)} placeholder="Full name" style={inp}/></div>
+          <div><label style={lbl}>PIN</label><input value={newPin} onChange={e=>setNewPin(e.target.value)} placeholder="e.g. 1234" maxLength={6} style={{...inp,width:'100px'}}/></div>
+          <div><label style={lbl}>Role</label><select value={newRole} onChange={e=>setNewRole(e.target.value)} style={inp}><option value="tech">Tech</option><option value="manager">Manager</option><option value="admin">Admin</option></select></div>
+          <button onClick={addTech} style={addBtnStyle}>Add</button>
         </div>
       </div>
     </div>
@@ -486,81 +358,38 @@ function TechniciansEditor() {
 }
 
 // ── SETTINGS ─────────────────────────────────────────────────
-function SettingsEditor() {
-  const [settings, setSettings] = useState([]);
-  const [saving, setSaving] = useState({});
-  const [saved, setSaved] = useState({});
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    supabase.from('settings').select('*').order('key').then(({ data }) => {
-      setSettings(data || []);
-      setLoading(false);
-    });
-  }, []);
-
-  const updateSetting = async (key, value) => {
-    setSaving(s => ({ ...s, [key]: true }));
-    await supabase.from('settings').update({ value, updated_at: new Date().toISOString() }).eq('key', key);
-    setSettings(prev => prev.map(s => s.key === key ? { ...s, value } : s));
-    clearSettingsCache();
-    setSaving(s => ({ ...s, [key]: false }));
-    setSaved(s => ({ ...s, [key]: true }));
-    setTimeout(() => setSaved(s => ({ ...s, [key]: false })), 1500);
+function SettingsEditor(){
+  const [settings,setSettings]=useState([]);const [saving,setSaving]=useState({});const [saved,setSaved]=useState({});const [loading,setLoading]=useState(true);
+  useEffect(()=>{supabase.from('settings').select('*').order('key').then(({data})=>{setSettings(data||[]);setLoading(false);});},[]); 
+  const updateSetting=async(key,value)=>{
+    setSaving(s=>({...s,[key]:true}));
+    await supabase.from('settings').update({value,updated_at:new Date().toISOString()}).eq('key',key);
+    setSettings(prev=>prev.map(s=>s.key===key?{...s,value}:s));
+    clearSettingsCache();setSaving(s=>({...s,[key]:false}));setSaved(s=>({...s,[key]:true}));setTimeout(()=>setSaved(s=>({...s,[key]:false})),1500);
   };
-
-  const GROUPS = [
-    {
-      title: 'Efficiency Thresholds',
-      desc: 'Controls the green/yellow/red color coding on the tracker and manager view.',
-      keys: ['efficiency_green', 'efficiency_yellow'],
-    },
-    {
-      title: 'Sheet Defaults',
-      desc: 'Default values used when a tech opens a fresh daily sheet.',
-      keys: ['default_rows', 'default_labor_multiplier'],
-    },
-    {
-      title: 'General',
-      desc: 'General app settings.',
-      keys: ['shop_name'],
-    },
+  const GROUPS=[
+    {title:'Efficiency Thresholds',desc:'Controls green/yellow/red color coding.',keys:['efficiency_green','efficiency_yellow']},
+    {title:'Sheet Defaults',desc:'Default values for a fresh daily sheet.',keys:['default_rows','default_labor_multiplier']},
+    {title:'General',desc:'General app settings.',keys:['shop_name']},
   ];
-
-  if (loading) return <div style={{ color: '#888', padding: '2rem', textAlign: 'center' }}>Loading...</div>;
-
-  return (
+  if(loading)return<div style={{color:'#888',padding:'2rem',textAlign:'center'}}>Loading...</div>;
+  return(
     <div>
-      <div style={{ fontSize: '12px', color: '#888', marginBottom: '1.5rem', background: '#f8fbfd', borderRadius: '8px', padding: '10px 14px', border: '1px solid #eef3f7' }}>
-        Changes take effect immediately for all users. No redeploy needed.
-      </div>
-
-      {/* Efficiency preview */}
-      <div style={{ marginBottom: '1.5rem', background: '#f8fbfd', borderRadius: '10px', padding: '1rem', border: '1px solid #eef3f7' }}>
-        <div style={{ fontWeight: 700, color: '#1a2a3a', marginBottom: '8px', fontSize: '13px' }}>Color preview</div>
-        <div style={{ display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
-          {(() => {
-            const green = parseInt(settings.find(s => s.key === 'efficiency_green')?.value || 90);
-            const yellow = parseInt(settings.find(s => s.key === 'efficiency_yellow')?.value || 79);
-            return <>
-              <span style={{ background: '#e6f5ec', color: '#2d8a4e', fontWeight: 700, padding: '4px 12px', borderRadius: '20px', fontSize: '12px' }}>{green}–100%+ Green</span>
-              <span style={{ background: '#fff3d0', color: '#9a6000', fontWeight: 700, padding: '4px 12px', borderRadius: '20px', fontSize: '12px' }}>{yellow}–{green - 1}% Yellow</span>
-              <span style={{ background: '#fce8e8', color: '#b52020', fontWeight: 700, padding: '4px 12px', borderRadius: '20px', fontSize: '12px' }}>0–{yellow - 1}% Red</span>
-            </>;
-          })()}
+      <div style={{marginBottom:'1.5rem',background:'#f8fbfd',borderRadius:'10px',padding:'1rem',border:'1px solid #eef3f7'}}>
+        <div style={{fontWeight:700,color:NAVY,marginBottom:'8px',fontSize:'13px'}}>Color preview</div>
+        <div style={{display:'flex',gap:'10px',alignItems:'center',flexWrap:'wrap'}}>
+          {(()=>{const g=parseInt(settings.find(s=>s.key==='efficiency_green')?.value||90);const y=parseInt(settings.find(s=>s.key==='efficiency_yellow')?.value||79);return<>
+            <span style={{background:'#e6f5ec',color:'#3B6D11',fontWeight:700,padding:'4px 12px',borderRadius:'20px',fontSize:'12px'}}>{g}–100%+ Green</span>
+            <span style={{background:'#fff3d0',color:'#9a6000',fontWeight:700,padding:'4px 12px',borderRadius:'20px',fontSize:'12px'}}>{y}–{g-1}% Yellow</span>
+            <span style={{background:'#fce8e8',color:'#b52020',fontWeight:700,padding:'4px 12px',borderRadius:'20px',fontSize:'12px'}}>0–{y-1}% Red</span>
+          </>})()}
         </div>
       </div>
-
-      {GROUPS.map(group => (
-        <div key={group.title} style={{ marginBottom: '1.5rem' }}>
-          <div style={{ fontWeight: 700, color: '#1a2a3a', fontSize: '14px', marginBottom: '4px' }}>{group.title}</div>
-          <div style={{ fontSize: '12px', color: '#888', marginBottom: '10px' }}>{group.desc}</div>
-          {group.keys.map(key => {
-            const s = settings.find(x => x.key === key);
-            if (!s) return null;
-            return (
-              <SettingRow key={key} setting={s} onSave={v => updateSetting(key, v)} saving={saving[key]} saved={saved[key]} />
-            );
+      {GROUPS.map(group=>(
+        <div key={group.title} style={{marginBottom:'1.5rem'}}>
+          <div style={{fontWeight:700,color:NAVY,fontSize:'14px',marginBottom:'4px'}}>{group.title}</div>
+          <div style={{fontSize:'12px',color:'#888',marginBottom:'10px'}}>{group.desc}</div>
+          {group.keys.map(key=>{const s=settings.find(x=>x.key===key);if(!s)return null;return<SettingRow key={key} setting={s} onSave={v=>updateSetting(key,v)} saving={saving[key]} saved={saved[key]}/>;
           })}
         </div>
       ))}
@@ -568,33 +397,27 @@ function SettingsEditor() {
   );
 }
 
-function SettingRow({ setting, onSave, saving, saved }) {
-  const [local, setLocal] = useState(setting.value);
-  useEffect(() => { setLocal(setting.value); }, [setting.value]);
-
-  return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: '16px', padding: '10px 14px', background: '#fff', borderRadius: '8px', border: '1px solid #eef3f7', marginBottom: '6px' }}>
-      <div style={{ flex: 1 }}>
-        <div style={{ fontWeight: 600, fontSize: '13px', color: '#1a2a3a' }}>{setting.label}</div>
-        <div style={{ fontSize: '11px', color: '#888', marginTop: '2px' }}>{setting.description}</div>
-      </div>
-      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-        <input
-          value={local}
-          onChange={e => setLocal(e.target.value)}
-          onBlur={() => { if (local !== setting.value) onSave(local); }}
-          onKeyDown={e => { if (e.key === 'Enter') onSave(local); }}
-          style={{ border: '1.5px solid #d0cdc5', borderRadius: '8px', padding: '6px 10px', fontSize: '13px', outline: 'none', fontFamily: 'inherit', color: '#1a2a3a', width: '140px', textAlign: 'right' }}
-        />
-        {saving && <span style={{ fontSize: '12px', color: '#888' }}>Saving...</span>}
-        {saved && <span style={{ fontSize: '12px', color: '#2d8a4e', fontWeight: 700 }}>✓ Saved</span>}
+function SettingRow({setting,onSave,saving,saved}){
+  const[local,setLocal]=useState(setting.value);useEffect(()=>{setLocal(setting.value);},[setting.value]);
+  return(
+    <div style={{display:'flex',alignItems:'center',gap:'16px',padding:'10px 14px',background:'#fff',borderRadius:'8px',border:'1px solid #eef3f7',marginBottom:'6px'}}>
+      <div style={{flex:1}}><div style={{fontWeight:600,fontSize:'13px',color:NAVY}}>{setting.label}</div><div style={{fontSize:'11px',color:'#888',marginTop:'2px'}}>{setting.description}</div></div>
+      <div style={{display:'flex',alignItems:'center',gap:'8px'}}>
+        <input value={local} onChange={e=>setLocal(e.target.value)} onBlur={()=>{if(local!==setting.value)onSave(local);}} onKeyDown={e=>{if(e.key==='Enter')onSave(local);}} style={{border:'1.5px solid #d0cdc5',borderRadius:'8px',padding:'6px 10px',fontSize:'13px',outline:'none',fontFamily:'inherit',color:NAVY,width:'140px',textAlign:'right'}}/>
+        {saving&&<span style={{fontSize:'12px',color:'#888'}}>Saving...</span>}
+        {saved&&<span style={{fontSize:'12px',color:GREEN,fontWeight:700}}>✓ Saved</span>}
       </div>
     </div>
   );
 }
 
-const labelStyle = { display: 'block', fontSize: '11px', fontWeight: 600, color: '#555', marginBottom: '4px', textTransform: 'uppercase', letterSpacing: '0.05em' };
-const inputStyle = { border: '1.5px solid #d0cdc5', borderRadius: '8px', padding: '7px 10px', fontSize: '13px', outline: 'none', fontFamily: 'inherit', color: '#1a2a3a', background: '#fff' };
-const thStyle = { padding: '8px 10px', textAlign: 'center', fontSize: '11px', color: '#7aafc8', textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 700, borderBottom: '2px solid #1B9BD4', whiteSpace: 'nowrap', minWidth: '80px' };
-const arrowBtn = { background: 'transparent', border: '1px solid #d0cdc5', borderRadius: '3px', padding: '1px 4px', fontSize: '10px', cursor: 'pointer', color: '#666', lineHeight: 1 };
-const addBtn = { background: '#1B9BD4', color: '#fff', border: 'none', borderRadius: '8px', padding: '8px 16px', fontSize: '13px', fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' };
+function InlineEdit({value,onSave,active}){
+  const[editing,setEditing]=useState(false);const[local,setLocal]=useState(value);useEffect(()=>{setLocal(value);},[value]);
+  if(editing)return<input autoFocus value={local} onChange={e=>setLocal(e.target.value)} onBlur={()=>{setEditing(false);if(local.trim()&&local!==value)onSave(local.trim());}} onKeyDown={e=>{if(e.key==='Enter'){setEditing(false);if(local.trim()&&local!==value)onSave(local.trim());}if(e.key==='Escape'){setEditing(false);setLocal(value);}}} style={{flex:1,border:`1.5px solid ${BLUE}`,borderRadius:'4px',padding:'2px 6px',fontSize:'12px',outline:'none',minWidth:0}}/>;
+  return<span onClick={()=>setEditing(true)} title="Click to rename" style={{flex:1,fontSize:'12px',color:active?NAVY:'#aaa',textDecoration:active?'none':'line-through',cursor:'text',padding:'2px 4px',borderRadius:'4px',minWidth:0,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}} onMouseEnter={e=>e.currentTarget.style.background='#e8f6fc'} onMouseLeave={e=>e.currentTarget.style.background='transparent'}>{local}</span>;
+}
+
+const lbl={display:'block',fontSize:'11px',fontWeight:600,color:'#555',marginBottom:'4px',textTransform:'uppercase',letterSpacing:'0.05em'};
+const inp={border:'1.5px solid #d0cdc5',borderRadius:'8px',padding:'7px 10px',fontSize:'13px',outline:'none',fontFamily:'inherit',color:'#1a2a3a',background:'#fff'};
+const th={padding:'8px 10px',textAlign:'center',fontSize:'11px',color:'#7aafc8',textTransform:'uppercase',letterSpacing:'0.05em',fontWeight:700,borderBottom:'2px solid #1B9BD4',whiteSpace:'nowrap',minWidth:'80px'};
+const addBtnStyle={background:'#1B9BD4',color:'#fff',border:'none',borderRadius:'8px',padding:'8px 16px',fontSize:'13px',fontWeight:700,cursor:'pointer',fontFamily:'inherit'};
