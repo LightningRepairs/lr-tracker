@@ -357,11 +357,11 @@ function TechniciansEditor(){
         <tbody>{technicians.map(t=>(
           <tr key={t.id} style={{borderBottom:'1px solid #f0ede5'}}>
             <td style={{padding:'8px 10px',fontWeight:600,color:NAVY}}>{t.name}</td>
-            <td style={{padding:'8px 10px'}}>{editing[t.id]?<input defaultValue={t.pin} onBlur={e=>{updateTech(t.id,{pin:e.target.value});setEditing(p=>({...p,[t.id]:false}));}} style={{...inp,width:'80px'}} autoFocus/>:<span style={{fontFamily:'monospace',background:'#f0f0f0',padding:'2px 8px',borderRadius:'4px'}}>{'•'.repeat(t.pin?.length||4)}</span>}</td>
+            <td style={{padding:'8px 10px'}}>{editing[t.id]?<PinEditor onSave={pin=>{if(pin){updateTech(t.id,{pin});}setEditing(p=>({...p,[t.id]:false}));}}/>:<span style={{fontFamily:'monospace',background:'#f0f0f0',padding:'2px 8px',borderRadius:'4px'}}>{'•'.repeat(t.pin?.length||4)}</span>}</td>
             <td style={{padding:'8px 10px'}}><select value={t.role} onChange={e=>updateTech(t.id,{role:e.target.value})} style={{...inp,width:'110px'}}><option value="tech">Tech</option><option value="manager">Keyholder</option><option value="admin">Admin</option></select></td>
             <td style={{padding:'8px 10px'}}><span style={{background:t.active?'#e6f5ec':'#fce8e8',color:t.active?GREEN:RED,borderRadius:'20px',padding:'2px 10px',fontSize:'11px',fontWeight:700}}>{t.active?'Active':'Inactive'}</span></td>
             <td style={{padding:'8px 10px',display:'flex',gap:'6px'}}>
-              <button onClick={()=>setEditing(p=>({...p,[t.id]:!p[t.id]}))} style={{fontSize:'11px',border:`1px solid ${BLUE}`,background:'transparent',color:BLUE,borderRadius:'4px',padding:'2px 8px',cursor:'pointer'}}>{editing[t.id]?'Done':'Change PIN'}</button>
+              {!editing[t.id]&&<button onClick={()=>setEditing(p=>({...p,[t.id]:true}))} style={{fontSize:'11px',border:`1px solid ${BLUE}`,background:'transparent',color:BLUE,borderRadius:'4px',padding:'2px 8px',cursor:'pointer'}}>Change PIN</button>}
               <button onClick={()=>updateTech(t.id,{active:!t.active})} style={{fontSize:'11px',border:`1px solid ${t.active?'#f0aaaa':'#a8dbb8'}`,background:'transparent',color:t.active?RED:GREEN,borderRadius:'4px',padding:'2px 8px',cursor:'pointer'}}>{t.active?'Disable':'Enable'}</button>
             </td>
           </tr>
