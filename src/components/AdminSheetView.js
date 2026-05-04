@@ -64,7 +64,10 @@ export default function AdminSheetView({tech, onBack, viewDate, currentUser}){
         prev.forEach(r=>{if(r.dbId)prevMap[r.dbId]=r;});
         return [...loaded.map(r=>{
           const existing=prevMap[r.dbId];
-          if(existing&&existing.timerState==='running')return{...r,timerMs:existing.timerMs,timerState:'running',timerStart:existing.timerStart};
+          // Only preserve running state if DB still confirms timer is active
+          if(existing&&existing.timerState==='running'&&r.timerState==='running'){
+            return{...r,timerMs:existing.timerMs,timerState:'running',timerStart:existing.timerStart};
+          }
           return r;
         }),...Array.from({length:blanks},EMPTY_ROW)];
       });
