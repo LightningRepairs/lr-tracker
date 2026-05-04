@@ -11,7 +11,7 @@ function effColor(pct,g=90,y=79){if(pct===null)return'#aac8d8';return pct>=g?GRE
 function rowBg(pct,g=90,y=79){if(pct===null)return'transparent';return pct>=g?GREEN_BG:pct>=y?AMBER_BG:RED_BG;}
 const EMPTY_ROW=()=>({_id:Math.random().toString(36).slice(2),dbId:null,ticketNumber:'',deviceTypeId:'',deviceModelId:'',repairTypeId:'',actualMinutes:'',laborCost:'',isFullSet:false,notes:'',addOns:[],timerMs:0,timerState:'idle'});
 
-export default function AdminSheetView({tech, onBack, viewDate}){
+export default function AdminSheetView({tech, onBack, viewDate, currentUser}){
   const [rows,setRows]=useState([]);
   const [deviceTypes,setDeviceTypes]=useState([]);
   const [deviceModels,setDeviceModels]=useState([]);
@@ -182,17 +182,17 @@ export default function AdminSheetView({tech, onBack, viewDate}){
       {/* Top bar */}
       <div style={{display:'flex',alignItems:'center',gap:'12px',marginBottom:'1rem',flexWrap:'wrap'}}>
         <button onClick={onBack} style={{background:'#fff',border:`1px solid ${BORDER}`,borderRadius:'8px',padding:'6px 14px',fontSize:'13px',cursor:'pointer',fontFamily:'inherit',color:NAVY}}>← Back to Team Overview</button>
-        {!editMode?(
-          currentUser?.role==='admin'&&<button onClick={()=>{if(window.confirm(`Enter edit mode for ${tech.name}'s sheet? Their timers will not be affected.`))setEditMode(true);}}
-            style={{background:YELLOW,color:NAVY,border:'none',borderRadius:'8px',padding:'6px 16px',fontSize:'13px',fontWeight:700,cursor:'pointer'}}>
-            ✏️ Enter Edit Mode
-          </button>
-        ):(
+        {editMode?(
           <div style={{display:'flex',alignItems:'center',gap:'8px'}}>
             <div style={{background:'#fce8e8',border:'1px solid #f0aaaa',borderRadius:'8px',padding:'5px 14px',fontSize:'12px',fontWeight:700,color:RED}}>⚠️ Edit Mode Active</div>
             <button onClick={()=>setEditMode(false)} style={{background:'transparent',border:'1px solid #d0cdc5',borderRadius:'8px',padding:'5px 12px',fontSize:'12px',cursor:'pointer',color:'#666'}}>Exit Edit Mode</button>
           </div>
-        )}
+        ):currentUser?.role==='admin'?(
+          <button onClick={()=>{if(window.confirm(`Enter edit mode for ${tech.name}'s sheet? Their timers will not be affected.`))setEditMode(true);}}
+            style={{background:YELLOW,color:NAVY,border:'none',borderRadius:'8px',padding:'6px 16px',fontSize:'13px',fontWeight:700,cursor:'pointer'}}>
+            ✏️ Enter Edit Mode
+          </button>
+        ):null}
         <div style={{display:'flex',alignItems:'center',gap:'6px',marginLeft:'auto'}}>
           <div style={{width:8,height:8,borderRadius:'50%',background:isToday?GREEN:'#aaa'}}/>
           <span style={{fontSize:'12px',color:'rgba(255,255,255,0.7)'}}>{isToday?'Live':'Historical view'}</span>
