@@ -53,9 +53,9 @@ export default function App() {
         onLogout={handleLogout}
       />
       <div style={{ padding: '1rem' }}>
-        {view === 'tech' && <TechSheet key={navKey} tech={currentTech} />}
-        {view === 'manager' && <ManagerDashboard key={navKey} tech={currentTech} />}
-        {view === 'admin' && <AdminPanel key={navKey} />}
+        {view === 'tech' && <TechSheet key={`tech-${navKey}`} tech={currentTech} />}
+        {view === 'manager' && <ManagerDashboard key={`manager-${navKey}`} tech={currentTech} />}
+        {view === 'admin' && <AdminPanel key={`admin-${navKey}`} />}
       </div>
     </div>
   );
