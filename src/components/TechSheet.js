@@ -99,7 +99,7 @@ export default function TechSheet({tech}){
   },[calcBook]);
 
   const saveRow=useCallback(async(row)=>{
-    if(!row.ticketNumber&&!row.repairTypeId)return;
+    if(!row.ticketNumber&&!row.repairTypeId&&row.addOns.length===0)return;
     const rt=repairTypes.find(r=>r.id===row.repairTypeId);
     const base=rt?.is_labor?getLaborBookMinutes(row.repairTypeId,row.laborCost):getBookMinutes(row.repairTypeId,row.deviceModelId,row.isFullSet);
     const actual=parseFloat(row.actualMinutes)||null;
@@ -255,8 +255,8 @@ export default function TechSheet({tech}){
         </div>
       </div>
       <div style={{background:'#fff',borderRadius:'0 0 12px 12px',border:`1.5px solid ${BORDER}`,borderTop:'none',overflow:'hidden'}}>
-        <div style={{overflowX:'auto'}}>
-          <table style={{width:'100%',borderCollapse:'collapse',fontSize:'12px',minWidth:'1200px'}}>
+        <div style={{overflowX:'auto',overflowY:'visible'}}>
+          <table style={{width:'100%',borderCollapse:'collapse',fontSize:'12px',minWidth:'1200px',overflow:'visible'}}>
             <thead>
               <tr style={{background:NAVY}}>
                 {['Ticket #','Device Type','Model','Repair Type','Book','Actual (min)','+/− min','Efficiency','Timer','Add-ons','Notes',''].map(h=>(
@@ -272,6 +272,9 @@ export default function TechSheet({tech}){
                 const rt=repairTypes.find(r=>r.id===row.repairTypeId);
                 const isLabor=rt?.is_labor||false;
                 const isJoycon=deviceModels.find(m=>m.id===row.deviceModelId)?.name?.includes('Joycon');
+                const hasDeviceType=!!row.deviceTypeId;
+                const hasModel=!!row.deviceModelId;
+                const dimStyle={opacity:0.35,pointerEvents:'none'};
                 const book=calcBook(row);
                 const actual=parseFloat(row.actualMinutes)||0;
                 const pct=calcEfficiency(row);
@@ -285,34 +288,34 @@ export default function TechSheet({tech}){
                     <tr style={{background:bg,borderBottom:`1px solid ${BLUE_MID}`}}>
                       <td style={{padding:'4px'}}><input value={row.ticketNumber} onChange={e=>updateRow(row._id,{ticketNumber:e.target.value})} placeholder={String(idx+1)} style={inpStyle}/></td>
                       <td style={{padding:'4px'}}><select value={row.deviceTypeId} onChange={e=>updateRow(row._id,{deviceTypeId:e.target.value,deviceModelId:'',repairTypeId:'',addOns:[]})} style={selStyle}><option value="">— select —</option>{deviceTypes.map(d=><option key={d.id} value={d.id}>{d.name}</option>)}</select></td>
-                      <td style={{padding:'4px'}}><select value={row.deviceModelId} onChange={e=>updateRow(row._id,{deviceModelId:e.target.value,repairTypeId:''})} disabled={!row.deviceTypeId} style={selStyle}><option value="">— select —</option>{modelsForType.map(m=><option key={m.id} value={m.id}>{m.name}</option>)}</select></td>
-                      <td style={{padding:'4px'}}><select value={row.repairTypeId} onChange={e=>updateRow(row._id,{repairTypeId:e.target.value})} disabled={!row.deviceModelId} style={selStyle}><option value="">— select —</option>{repairsForType.map(r=><option key={r.id} value={r.id}>{r.name}</option>)}</select></td>
-                      <td style={{padding:'4px',textAlign:'center',fontWeight:700,fontSize:'12px',color:BLUE}}>{book!==null?book:'—'}</td>
-                      <td style={{padding:'4px'}}>
+                      <td style={{padding:'4px',...(!hasDeviceType?dimStyle:{})}}><select value={row.deviceModelId} onChange={e=>updateRow(row._id,{deviceModelId:e.target.value,repairTypeId:''})} disabled={!row.deviceTypeId} style={!hasDeviceType?selDisabled:selStyle}><option value="">— select —</option>{modelsForType.map(m=><option key={m.id} value={m.id}>{m.name}</option>)}</select></td>
+                      <td style={{padding:'4px',...(!hasModel?dimStyle:{})}}><select value={row.repairTypeId} onChange={e=>updateRow(row._id,{repairTypeId:e.target.value})} disabled={!row.deviceModelId} style={!hasModel?selDisabled:selStyle}><option value="">— select —</option>{repairsForType.map(r=><option key={r.id} value={r.id}>{r.name}</option>)}</select></td>
+                      <td style={{padding:'4px',textAlign:'center',fontWeight:700,fontSize:'12px',color:hasDeviceType?BLUE:'#ccc',...(!hasDeviceType?{opacity:0.4}:{})}}>{book!==null?book:'—'}</td>
+                      <td style={{padding:'4px',...(!hasDeviceType?dimStyle:{})}}>
                         {isLabor&&<div style={{display:'flex',alignItems:'center',gap:'3px',marginBottom:'3px'}}><span style={{fontSize:'10px',color:'#888'}}>$</span><input type="number" value={row.laborCost} onChange={e=>updateRow(row._id,{laborCost:e.target.value})} placeholder="0" style={{...inpStyle,width:'50px'}}/><span style={{fontSize:'10px',color:'#888'}}>labor{baseBook?` = ${baseBook}m`:''}</span></div>}
-                        <input type="number" value={row.actualMinutes} onChange={e=>updateRow(row._id,{actualMinutes:e.target.value})} placeholder={isLabor?'actual mins':'0'} style={inpStyle}/>
+                        <input type="number" value={row.actualMinutes} onChange={e=>updateRow(row._id,{actualMinutes:e.target.value})} placeholder={isLabor?'actual mins':'0'} style={!hasDeviceType?inpDisabled:inpStyle}/>
                         {isJoycon&&<div style={{display:'flex',alignItems:'center',gap:'4px',marginTop:'3px'}}><input type="checkbox" checked={row.isFullSet} onChange={e=>updateRow(row._id,{isFullSet:e.target.checked})}/><span style={{fontSize:'11px',color:'#666'}}>full set</span></div>}
                       </td>
                       <td style={{padding:'4px',textAlign:'center',fontWeight:700,fontSize:'12px',color:diffColor}}>{diff===null?'—':diff>0?`+${diff}`:String(diff)}</td>
                       <td style={{padding:'4px',textAlign:'center'}}>{pct!==null?<span style={{display:'inline-block',fontSize:'11px',fontWeight:700,padding:'2px 7px',borderRadius:'20px',background:rowBg(pct,effGreen,effYellow),color:effColor(pct,effGreen,effYellow)}}>{pct}%</span>:<span style={{color:'#aac8d8',fontSize:'11px'}}>—</span>}</td>
-                      <td style={{padding:'4px',minWidth:'110px'}}>
+                      <td style={{padding:'4px',minWidth:'110px',...(!hasDeviceType?{opacity:0.35}:{})}}>
                         <div style={{fontSize:'13px',fontWeight:700,fontVariantNumeric:'tabular-nums',textAlign:'center',padding:'2px 0',background:row.timerState==='running'?GREEN_BG:row.timerState==='paused'?AMBER_BG:row.timerState==='logged'?'#e8f6fc':'#f5f5f0',borderRadius:'5px',border:`1px solid ${row.timerState==='running'?'#a8dbb8':row.timerState==='paused'?'#fcd98a':row.timerState==='logged'?BORDER:BORDER}`,color:row.timerState==='running'?GREEN:row.timerState==='paused'?AMBER:row.timerState==='logged'?BLUE:NAVY,marginBottom:'3px'}}>{fmtTimer(row.timerMs)}</div>
                         {row.timerState==='logged'&&<div style={{fontSize:'9px',color:BLUE,textAlign:'center',marginBottom:'2px',fontWeight:600}}>✓ Logged to actual</div>}
                         <div style={{display:'flex',gap:'3px'}}>
-                          {row.timerState==='idle'&&<TBtn color={GREEN} bg={GREEN_BG} border="#a8dbb8" onClick={()=>timerStart(row._id)}>▶ Start</TBtn>}
+                          {row.timerState==='idle'&&<TBtn color={hasDeviceType?GREEN:'#bbb'} bg={hasDeviceType?GREEN_BG:'#f5f5f0'} border={hasDeviceType?'#a8dbb8':'#e0ddd5'} onClick={()=>hasDeviceType&&timerStart(row._id)}>▶ Start</TBtn>}
                           {row.timerState==='running'&&<><TBtn color={AMBER} bg={AMBER_BG} border="#fcd98a" onClick={()=>timerPause(row._id)}>⏸ Pause</TBtn><TBtn color={BLUE} bg={BLUE_LIGHT} border={BORDER} onClick={()=>timerStop(row._id)}>✓ Log Time</TBtn></>}
                           {row.timerState==='paused'&&<><TBtn color={GREEN} bg={GREEN_BG} border="#a8dbb8" onClick={()=>timerStart(row._id)}>▶ Resume</TBtn><TBtn color={BLUE} bg={BLUE_LIGHT} border={BORDER} onClick={()=>timerStop(row._id)}>✓ Log Time</TBtn></>}
                           {row.timerState==='logged'&&<><TBtn color={GREEN} bg={GREEN_BG} border="#a8dbb8" onClick={()=>timerStart(row._id)}>▶ Resume</TBtn><TBtn color={RED} bg={RED_BG} border="#f0aaaa" onClick={()=>timerReset(row._id)}>✕ Reset</TBtn></>}
                         </div>
                       </td>
-                      <td style={{padding:'4px',minWidth:'90px'}}>
+                      <td style={{padding:'4px',minWidth:'90px',overflow:'visible',position:'relative',...(!hasDeviceType?dimStyle:{})}}>
                         {row.deviceTypeId&&addOnsForType.length>0&&(
                           <div style={{position:'relative'}}>
                             <button onClick={()=>setOpenPopup(openPopup===row._id?null:row._id)} style={{width:'100%',background:row.addOns.length>0?BLUE_LIGHT:'#fff',border:`1px solid ${row.addOns.length>0?BORDER:'#d0cdc5'}`,borderRadius:'6px',padding:'3px 6px',fontSize:'10px',fontWeight:600,color:row.addOns.length>0?BLUE:'#666',cursor:'pointer'}}>
                               {row.addOns.length>0?`${row.addOns.length} add-on${row.addOns.length>1?'s':''}`:'+ Add-on'}
                             </button>
                             {openPopup===row._id&&(
-                              <div style={{position:'absolute',top:'calc(100% + 4px)',left:0,zIndex:200,background:'#fff',border:'1px solid #d0cdc5',borderRadius:'10px',padding:'10px',minWidth:'220px',boxShadow:'0 4px 20px rgba(0,0,0,0.15)'}}>
+                              <div style={{position:'absolute',top:'calc(100% + 4px)',right:0,zIndex:999,background:'#fff',border:'1px solid #d0cdc5',borderRadius:'10px',padding:'10px',minWidth:'220px',boxShadow:'0 4px 20px rgba(0,0,0,0.15)'}}>
                                 <div style={{fontSize:'11px',fontWeight:700,color:'#888',textTransform:'uppercase',letterSpacing:'0.05em',marginBottom:'6px'}}>Add-on services</div>
                                 {addOnsForType.map(ao=>{
                                   const checked=row.addOns.find(a=>a.id===ao.id);
@@ -335,7 +338,7 @@ export default function TechSheet({tech}){
                           </div>
                         )}
                       </td>
-                      <td style={{padding:'4px'}}><input value={row.notes} onChange={e=>updateRow(row._id,{notes:e.target.value})} placeholder="Notes (optional)" style={inpStyle}/></td>
+                      <td style={{padding:'4px',...(!hasDeviceType?dimStyle:{})}}><input value={row.notes} onChange={e=>updateRow(row._id,{notes:e.target.value})} placeholder="Notes (optional)" style={!hasDeviceType?inpDisabled:inpStyle}/></td>
                       <td style={{padding:'4px',textAlign:'center',width:'28px'}}>
                         <button onClick={()=>clearRow(row)} title="Remove row" style={{background:'none',border:'none',cursor:'pointer',color:'#ccc',fontSize:'15px',lineHeight:1,padding:'2px'}} onMouseEnter={e=>e.currentTarget.style.color='#b52020'} onMouseLeave={e=>e.currentTarget.style.color='#ccc'}>✕</button>
                       </td>
@@ -371,6 +374,8 @@ export default function TechSheet({tech}){
 }
 
 const inpStyle={width:'100%',background:'#fff',border:'1px solid #b8dff0',borderRadius:'6px',fontSize:'12px',fontFamily:'inherit',color:'#1a2a3a',padding:'4px 6px',outline:'none'};
+const inpDisabled={width:'100%',background:'#f5f5f0',border:'1px solid #e0ddd5',borderRadius:'6px',fontSize:'12px',fontFamily:'inherit',color:'#bbb',padding:'4px 6px',outline:'none',cursor:'not-allowed'};
+const selDisabled={width:'100%',background:'#f5f5f0',border:'1px solid #e0ddd5',borderRadius:'6px',fontSize:'12px',fontFamily:'inherit',color:'#bbb',padding:'4px 6px',outline:'none',cursor:'not-allowed'};
 const selStyle={width:'100%',background:'#fff',border:'1px solid #b8dff0',borderRadius:'6px',fontSize:'12px',fontFamily:'inherit',color:'#1a2a3a',padding:'4px 6px',outline:'none',cursor:'pointer'};
 function TBtn({color,bg,border,onClick,children}){return<button onClick={onClick} style={{flex:1,border:`1px solid ${border}`,background:bg,color,borderRadius:'5px',padding:'3px 4px',fontSize:'10px',fontWeight:700,cursor:'pointer',fontFamily:'inherit'}}>{children}</button>;}
 function Btn({onClick,children,danger,primary}){return<button onClick={onClick} style={{border:`1px solid ${danger?'#f0aaaa':primary?'#1480b0':'#d0cdc5'}`,background:primary?'#1B9BD4':'#fff',color:danger?'#b52020':primary?'#fff':'#1a2a3a',borderRadius:'8px',padding:'7px 16px',fontSize:'13px',fontWeight:primary?700:400,cursor:'pointer',fontFamily:'inherit'}}>{children}</button>;}
