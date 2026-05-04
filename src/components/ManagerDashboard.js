@@ -89,8 +89,8 @@ export default function ManagerDashboard({tech}){
 
   const getTechStats=(techId)=>{
     const tt=tickets.filter(t=>t.technician_id===techId);
-    const repaired=tt.filter(t=>{const rt=repairTypes.find(r=>r.id===t.repair_type_id);return rt&&!rt.is_diagnosis;});
-    const diagnosed=tt.filter(t=>{const rt=repairTypes.find(r=>r.id===t.repair_type_id);return rt?.is_diagnosis;});
+    const repaired=tt.filter(t=>{const rt=repairTypes.find(r=>r.id===t.repair_type_id);return rt&&!rt.is_diagnosis&&rt.name!=='Did Not Complete Repair';});
+    const diagnosed=tt.filter(t=>{const rt=repairTypes.find(r=>r.id===t.repair_type_id);return rt?.is_diagnosis&&rt.name!=='Did Not Complete Diagnosis';});
     const timed=tt.filter(t=>t.actual_minutes>0&&t.book_minutes>0);
     const totA=timed.reduce((s,t)=>s+t.actual_minutes,0);
     const totB=timed.reduce((s,t)=>s+t.book_minutes,0);

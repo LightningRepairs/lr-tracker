@@ -5,13 +5,13 @@ import { clearSettingsCache } from '../lib/settings';
 const BLUE='#1B9BD4',NAVY='#1a2a3a',BORDER='#b8dff0',GREEN='#2d8a4e',RED='#b52020';
 
 export default function AdminPanel(){
-  const [tab,setTab]=useState('booktimes');
+  const [tab,setTab]=useState('advanced');
   return(
     <div style={{maxWidth:'1100px',margin:'0 auto'}}>
       <div style={{background:'#fff',borderRadius:'12px',border:`1.5px solid ${BORDER}`,overflow:'hidden'}}>
         <div style={{background:NAVY,padding:'1rem 1.5rem',display:'flex',gap:'8px',alignItems:'center',flexWrap:'wrap'}}>
           <span style={{color:'#fff',fontWeight:700,fontSize:'15px',marginRight:'16px'}}>Admin Panel</span>
-          {[['booktimes','Book Times'],['devices','Devices & Repairs'],['addons','Add-ons'],['technicians','Technicians'],['advanced','Advanced Overview'],['settings','Settings']].map(([key,label])=>(
+          {[['advanced','Advanced Team Overview'],['booktimes','Book Times'],['devices','Devices & Repairs'],['addons','Add-ons'],['technicians','Technicians'],['settings','Settings']].map(([key,label])=>(
             <button key={key} onClick={()=>setTab(key)} style={{background:tab===key?BLUE:'transparent',border:`1px solid ${tab===key?BLUE:'rgba(255,255,255,0.2)'}`,color:tab===key?'#fff':'rgba(255,255,255,0.6)',borderRadius:'6px',padding:'5px 14px',fontSize:'12px',fontWeight:tab===key?700:400,cursor:'pointer'}}>{label}</button>
           ))}
         </div>
@@ -489,16 +489,173 @@ function InlineEdit({value,onSave,active}){
   return<span onClick={()=>setEditing(true)} title="Click to rename" style={{flex:1,fontSize:'12px',color:active?NAVY:'#aaa',textDecoration:active?'none':'line-through',cursor:'text',padding:'2px 4px',borderRadius:'4px',minWidth:0,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}} onMouseEnter={e=>e.currentTarget.style.background='#e8f6fc'} onMouseLeave={e=>e.currentTarget.style.background='transparent'}>{local}</span>;
 }
 
-// ── ADVANCED OVERVIEW ────────────────────────────────────────
+// ── ADVANCED TEAM OVERVIEW ───────────────────────────────────
 function AdvancedOverview(){
+  const [tickets,setTickets]=useState([]);
+  const [ticketAddOns,setTicketAddOns]=useState([]);
+  const [technicians,setTechnicians]=useState([]);
+  const [repairTypes,setRepairTypes]=useState([]);
+  const [deviceTypes,setDeviceTypes]=useState([]);
+  const [deviceModels,setDeviceModels]=useState([]);
+  const [selectedDate,setSelectedDate]=useState(new Date().toISOString().slice(0,10));
+  const [selectedTechs,setSelectedTechs]=useState(new Set(['all']));
+  const [loading,setLoading]=useState(true);
+
+  useEffect(()=>{
+    Promise.all([
+      supabase.from('technicians').select('*').eq('active',true).order('name'),
+      supabase.from('repair_types').select('*'),
+      supabase.from('device_types').select('*'),
+      supabase.from('device_models').select('*'),
+    ]).then(([tech,rt,dt,dm])=>{
+      setTechnicians(tech.data||[]);setRepairTypes(rt.data||[]);
+      setDeviceTypes(dt.data||[]);setDeviceModels(dm.data||[]);
+    });
+  },[]);
+
+  const loadTickets=async()=>{
+    setLoading(true);
+    const[t,ta]=await Promise.all([
+      supabase.from('tickets').select('*').eq('work_date',selectedDate).order('created_at'),
+      supabase.from('ticket_add_ons').select('*'),
+    ]);
+    setTickets(t.data||[]);setTicketAddOns(ta.data||[]);setLoading(false);
+  };
+
+  useEffect(()=>{loadTickets();},[selectedDate]);
+
+  useEffect(()=>{
+    if(technicians.length>0&&selectedTechs.has('all')){
+      setSelectedTechs(new Set(technicians.map(t=>t.id)));
+    }
+  },[technicians]);
+
+  const toggleTech=(id)=>{
+    if(id==='all'){setSelectedTechs(new Set(technicians.map(t=>t.id)));return;}
+    setSelectedTechs(prev=>{
+      const next=new Set(prev);
+      if(next.has(id))next.delete(id);else next.add(id);
+      if(next.size===0)return new Set(technicians.map(t=>t.id));
+      return next;
+    });
+  };
+
+  const visibleTechs=technicians.filter(t=>selectedTechs.has(t.id));
+
+  const getTechStats=(techId)=>{
+    const tt=tickets.filter(t=>t.technician_id===techId);
+    const repaired=tt.filter(t=>{const rt=repairTypes.find(r=>r.id===t.repair_type_id);return rt&&!rt.is_diagnosis&&rt.name!=='Did Not Complete Repair';});
+    const diagnosed=tt.filter(t=>{const rt=repairTypes.find(r=>r.id===t.repair_type_id);return rt?.is_diagnosis&&rt.name!=='Did Not Complete Diagnosis';});
+    const timed=tt.filter(t=>t.actual_minutes>0&&t.book_minutes>0);
+    const totA=timed.reduce((s,t)=>s+t.actual_minutes,0);
+    const totB=timed.reduce((s,t)=>s+t.book_minutes,0);
+    const avgEff=timed.length>0?Math.round((totB/totA)*100):null;
+    const addOnCount=ticketAddOns.filter(ta=>tt.find(t=>t.id===ta.ticket_id)).length;
+    return{tickets:tt,repaired,diagnosed,totA,totB,avgEff,addOnCount};
+  };
+
+  const BLUE='#1B9BD4',NAVY='#1a2a3a',YELLOW='#F5C518',BORDER='#b8dff0';
+  const GREEN='#2d8a4e',GREEN_BG='#e6f5ec',AMBER='#9a6000',AMBER_BG='#fff3d0',RED='#b52020',RED_BG='#fce8e8';
+  const effColor=(pct,g=90,y=79)=>pct===null?'#aac8d8':pct>=g?GREEN:pct>=y?AMBER:RED;
+  const effBg=(pct,g=90,y=79)=>pct===null?'rgba(255,255,255,0.1)':pct>=g?GREEN_BG:pct>=y?AMBER_BG:RED_BG;
+
   return(
     <div>
-      <div style={{background:'#f8fbfd',borderRadius:'10px',padding:'1.5rem',border:'1px solid #eef3f7',textAlign:'center'}}>
-        <div style={{fontSize:'16px',fontWeight:700,color:'#1a2a3a',marginBottom:'8px'}}>Advanced Team Overview</div>
-        <div style={{fontSize:'13px',color:'#888'}}>This area is reserved for advanced analytics and reporting features coming soon.</div>
+      {/* Controls */}
+      <div style={{display:'flex',gap:'20px',alignItems:'flex-start',flexWrap:'wrap',marginBottom:'1rem',padding:'1rem',background:'#f8fbfd',borderRadius:'10px',border:'1px solid #eef3f7'}}>
+        <div><label style={lbl}>Date</label><input type="date" value={selectedDate} onChange={e=>setSelectedDate(e.target.value)} style={inp}/></div>
+        <div>
+          <label style={lbl}>Technicians</label>
+          <div style={{display:'flex',gap:'6px',flexWrap:'wrap',marginTop:'4px'}}>
+            <AdvChip label="All" active={selectedTechs.size===technicians.length} onClick={()=>toggleTech('all')}/>
+            {technicians.map(t=><AdvChip key={t.id} label={t.name} active={selectedTechs.has(t.id)} onClick={()=>toggleTech(t.id)}/>)}
+          </div>
+        </div>
       </div>
+
+      {/* Revenue boxes - placeholder */}
+      <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:'12px',marginBottom:'16px'}}>
+        {[['Total Revenue','—'],['Total Profit','—'],['Avg Revenue / Ticket','—']].map(([label,val])=>(
+          <div key={label} style={{background:NAVY,borderRadius:'12px',padding:'1rem 1.25rem',border:'1px solid rgba(255,255,255,0.1)'}}>
+            <div style={{fontSize:'10px',color:'rgba(255,255,255,0.6)',textTransform:'uppercase',letterSpacing:'0.08em',fontWeight:700,marginBottom:'6px'}}>{label}</div>
+            <div style={{fontSize:'24px',fontWeight:800,color:YELLOW}}>{val}</div>
+            <div style={{fontSize:'10px',color:'rgba(255,255,255,0.3)',marginTop:'4px'}}>API integration coming soon</div>
+          </div>
+        ))}
+      </div>
+
+      {/* Tech cards */}
+      <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(280px,1fr))',gap:'12px',marginBottom:'16px'}}>
+        {visibleTechs.map(tech=>{
+          const{tickets:tt,repaired,diagnosed,totA,totB,avgEff,addOnCount}=getTechStats(tech.id);
+          return(
+            <div key={tech.id} style={{background:NAVY,borderRadius:'12px',padding:'1rem 1.25rem',border:'1px solid rgba(255,255,255,0.1)'}}>
+              <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'10px'}}>
+                <div style={{color:'#fff',fontWeight:700,fontSize:'16px'}}>{tech.name}</div>
+                <div style={{background:effBg(avgEff),color:avgEff===null?'#aac8d8':effColor(avgEff),fontWeight:800,fontSize:'16px',padding:'3px 12px',borderRadius:'20px'}}>{avgEff===null?'—':`${avgEff}%`}</div>
+              </div>
+              <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:'6px',marginBottom:'8px'}}>
+                {[['Repaired',repaired.length],['Diagnosed',diagnosed.length],['Tickets',tt.length]].map(([l,v])=>(
+                  <div key={l} style={{background:'rgba(255,255,255,0.05)',borderRadius:'6px',padding:'6px 8px'}}>
+                    <div style={{fontSize:'9px',color:'#7aafc8',textTransform:'uppercase',letterSpacing:'0.05em'}}>{l}</div>
+                    <div style={{fontSize:'18px',fontWeight:700,color:'#fff'}}>{v}</div>
+                  </div>
+                ))}
+              </div>
+              <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:'6px'}}>
+                {[['Book Time',totB>0?`${totB}m`:'—'],['Actual Time',totA>0?`${totA}m`:'—'],['Add-ons',addOnCount]].map(([l,v])=>(
+                  <div key={l} style={{background:'rgba(255,255,255,0.05)',borderRadius:'6px',padding:'6px 8px'}}>
+                    <div style={{fontSize:'9px',color:'#7aafc8',textTransform:'uppercase',letterSpacing:'0.05em'}}>{l}</div>
+                    <div style={{fontSize:'16px',fontWeight:700,color:YELLOW}}>{v}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Detail table */}
+      {tickets.filter(t=>selectedTechs.has(t.technician_id)).length>0&&(
+        <div style={{background:'#fff',borderRadius:'12px',border:`1.5px solid ${BORDER}`,overflow:'hidden'}}>
+          <div style={{overflowX:'auto'}}>
+            <table style={{width:'100%',borderCollapse:'collapse',fontSize:'12px',minWidth:'900px'}}>
+              <thead><tr style={{background:NAVY}}>{['Technician','Ticket #','Device','Repair','Book','Actual','Efficiency','Add-ons','Notes'].map(h=><th key={h} style={{padding:'8px',textAlign:'left',fontSize:'10px',color:'#7aafc8',textTransform:'uppercase',letterSpacing:'0.05em',fontWeight:700,borderBottom:`2px solid ${BLUE}`}}>{h}</th>)}</tr></thead>
+              <tbody>
+                {tickets.filter(t=>selectedTechs.has(t.technician_id)).map(t=>{
+                  const tech=technicians.find(x=>x.id===t.technician_id);
+                  const rt=repairTypes.find(x=>x.id===t.repair_type_id);
+                  const dt=deviceTypes.find(x=>x.id===t.device_type_id);
+                  const dm=deviceModels.find(x=>x.id===t.device_model_id);
+                  const pct=t.efficiency_pct;
+                  const aoCount=ticketAddOns.filter(ta=>ta.ticket_id===t.id).length;
+                  const bg=pct===null?'transparent':pct>=90?GREEN_BG:pct>=79?AMBER_BG:RED_BG;
+                  return(
+                    <tr key={t.id} style={{background:bg,borderBottom:'1px solid #e8f0f5'}}>
+                      <td style={{padding:'6px 8px',fontWeight:600,color:NAVY}}>{tech?.name||'—'}</td>
+                      <td style={{padding:'6px 8px'}}>{t.ticket_number||'—'}</td>
+                      <td style={{padding:'6px 8px'}}>{dt?.name}{dm?` / ${dm.name}`:''}</td>
+                      <td style={{padding:'6px 8px'}}>{rt?.name||'—'}</td>
+                      <td style={{padding:'6px 8px',fontWeight:700,color:BLUE}}>{t.book_minutes??'—'}</td>
+                      <td style={{padding:'6px 8px'}}>{t.actual_minutes??'—'}</td>
+                      <td style={{padding:'6px 8px'}}>{pct!==null?<span style={{display:'inline-block',fontSize:'11px',fontWeight:700,padding:'2px 7px',borderRadius:'20px',background:bg,color:pct>=90?GREEN:pct>=79?AMBER:RED}}>{pct}%</span>:'—'}</td>
+                      <td style={{padding:'6px 8px',color:'#666'}}>{aoCount>0?aoCount:''}</td>
+                      <td style={{padding:'6px 8px',color:'#666',maxWidth:'150px',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{t.notes||''}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
     </div>
   );
+}
+
+function AdvChip({label,active,onClick}){
+  const BLUE='#1B9BD4',BORDER='#b8dff0';
+  return<button onClick={onClick} style={{background:active?BLUE:'transparent',border:`1px solid ${active?BLUE:BORDER}`,color:active?'#fff':'#555',borderRadius:'20px',padding:'4px 12px',fontSize:'12px',fontWeight:active?700:400,cursor:'pointer',fontFamily:'inherit'}}>{label}</button>;
 }
 
 function ToggleSwitch({value, onChange, label}){

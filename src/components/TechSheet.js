@@ -213,8 +213,8 @@ export default function TechSheet({tech}){
   const effYellow=parseInt(settings.efficiency_yellow||79);
 
   const filledRows=rows.filter(r=>r.ticketNumber);
-  const repaired=filledRows.filter(r=>{const rt=repairTypes.find(x=>x.id===r.repairTypeId);return rt&&!rt.is_diagnosis;});
-  const diagnosed=filledRows.filter(r=>{const rt=repairTypes.find(x=>x.id===r.repairTypeId);return rt?.is_diagnosis;});
+  const repaired=filledRows.filter(r=>{const rt=repairTypes.find(x=>x.id===r.repairTypeId);return rt&&!rt.is_diagnosis&&rt.name!=='Did Not Complete Repair';});
+  const diagnosed=filledRows.filter(r=>{const rt=repairTypes.find(x=>x.id===r.repairTypeId);return rt?.is_diagnosis&&rt.name!=='Did Not Complete Diagnosis';});
   const timedRows=rows.filter(r=>{const a=parseFloat(r.actualMinutes)||0;return a>0&&calcBook(r)!==null;});
   const totalActual=timedRows.reduce((s,r)=>s+(parseFloat(r.actualMinutes)||0),0);
   const totalBook=timedRows.reduce((s,r)=>s+(calcBook(r)||0),0);
