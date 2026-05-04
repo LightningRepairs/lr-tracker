@@ -68,6 +68,11 @@ export default function AdminSheetView({tech, onBack, viewDate, currentUser}){
     if(!loading||Object.keys(settings).length>1){loadRows();}
   },[loadRows]);
 
+  const refresh=()=>{
+    setLoading(true);
+    loadRows();
+  };
+
   // Live reload subscription (today only)
   useEffect(()=>{
     if(!isToday)return;
@@ -182,6 +187,9 @@ export default function AdminSheetView({tech, onBack, viewDate, currentUser}){
       {/* Top bar */}
       <div style={{display:'flex',alignItems:'center',gap:'12px',marginBottom:'1rem',flexWrap:'wrap'}}>
         <button onClick={onBack} style={{background:'#fff',border:`1px solid ${BORDER}`,borderRadius:'8px',padding:'6px 14px',fontSize:'13px',cursor:'pointer',fontFamily:'inherit',color:NAVY}}>← Back to Team Overview</button>
+        <button onClick={refresh} style={{background:BLUE,color:'#fff',border:'none',borderRadius:'8px',padding:'6px 16px',fontSize:'13px',fontWeight:700,cursor:'pointer',fontFamily:'inherit',display:'flex',alignItems:'center',gap:'6px'}}>
+          ↻ Refresh Sheet
+        </button>
         {editMode?(
           <div style={{display:'flex',alignItems:'center',gap:'8px'}}>
             <div style={{background:'#fce8e8',border:'1px solid #f0aaaa',borderRadius:'8px',padding:'5px 14px',fontSize:'12px',fontWeight:700,color:RED}}>⚠️ Edit Mode Active</div>
