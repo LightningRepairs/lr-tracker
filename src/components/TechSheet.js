@@ -148,11 +148,17 @@ export default function TechSheet({tech}){
     setRows(prev=>prev.map(r=>{
       if(r._id!==id)return r;
       const mins=r.timerMs>0?Math.max(1,Math.round(r.timerMs/60000)):0;
-      const updated={...r,timerState:'idle',timerMs:0,timerStart:null,actualMinutes:mins>0?String(mins):r.actualMinutes};
+      // Log time to actual but keep elapsed visible, change state to 'logged'
+      const updated={...r,timerState:'logged',actualMinutes:mins>0?String(mins):r.actualMinutes};
       clearTimeout(timerRefs.current['save_'+id]);
       timerRefs.current['save_'+id]=setTimeout(()=>saveRow(updated),800);
       return updated;
     }));
+  };
+
+  const timerReset=(id)=>{
+    clearInterval(timerRefs.current['timer_'+id]);
+    setRows(prev=>prev.map(r=>r._id!==id?r:{...r,timerState:'idle',timerMs:0,timerStart:null}));
   };
 
   const toggleAddOn=(rowId,ao)=>{
@@ -282,11 +288,13 @@ export default function TechSheet({tech}){
                       <td style={{padding:'4px',textAlign:'center',fontWeight:700,fontSize:'12px',color:diffColor}}>{diff===null?'—':diff>0?`+${diff}`:String(diff)}</td>
                       <td style={{padding:'4px',textAlign:'center'}}>{pct!==null?<span style={{display:'inline-block',fontSize:'11px',fontWeight:700,padding:'2px 7px',borderRadius:'20px',background:rowBg(pct,effGreen,effYellow),color:effColor(pct,effGreen,effYellow)}}>{pct}%</span>:<span style={{color:'#aac8d8',fontSize:'11px'}}>—</span>}</td>
                       <td style={{padding:'4px',minWidth:'110px'}}>
-                        <div style={{fontSize:'13px',fontWeight:700,fontVariantNumeric:'tabular-nums',textAlign:'center',padding:'2px 0',background:row.timerState==='running'?GREEN_BG:row.timerState==='paused'?AMBER_BG:'#f5f5f0',borderRadius:'5px',border:`1px solid ${row.timerState==='running'?'#a8dbb8':row.timerState==='paused'?'#fcd98a':BORDER}`,color:row.timerState==='running'?GREEN:row.timerState==='paused'?AMBER:NAVY,marginBottom:'3px'}}>{fmtTimer(row.timerMs)}</div>
+                        <div style={{fontSize:'13px',fontWeight:700,fontVariantNumeric:'tabular-nums',textAlign:'center',padding:'2px 0',background:row.timerState==='running'?GREEN_BG:row.timerState==='paused'?AMBER_BG:row.timerState==='logged'?'#e8f6fc':'#f5f5f0',borderRadius:'5px',border:`1px solid ${row.timerState==='running'?'#a8dbb8':row.timerState==='paused'?'#fcd98a':row.timerState==='logged'?BORDER:BORDER}`,color:row.timerState==='running'?GREEN:row.timerState==='paused'?AMBER:row.timerState==='logged'?BLUE:NAVY,marginBottom:'3px'}}>{fmtTimer(row.timerMs)}</div>
+                        {row.timerState==='logged'&&<div style={{fontSize:'9px',color:BLUE,textAlign:'center',marginBottom:'2px',fontWeight:600}}>✓ Logged to actual</div>}
                         <div style={{display:'flex',gap:'3px'}}>
                           {row.timerState==='idle'&&<TBtn color={GREEN} bg={GREEN_BG} border="#a8dbb8" onClick={()=>timerStart(row._id)}>▶ Start</TBtn>}
-                          {row.timerState==='running'&&<><TBtn color={AMBER} bg={AMBER_BG} border="#fcd98a" onClick={()=>timerPause(row._id)}>⏸ Pause</TBtn><TBtn color={RED} bg={RED_BG} border="#f0aaaa" onClick={()=>timerStop(row._id)}>■ Stop</TBtn></>}
-                          {row.timerState==='paused'&&<><TBtn color={BLUE} bg={BLUE_LIGHT} border={BORDER} onClick={()=>timerStart(row._id)}>▶ Resume</TBtn><TBtn color={RED} bg={RED_BG} border="#f0aaaa" onClick={()=>timerStop(row._id)}>■ Stop</TBtn></>}
+                          {row.timerState==='running'&&<><TBtn color={AMBER} bg={AMBER_BG} border="#fcd98a" onClick={()=>timerPause(row._id)}>⏸ Pause</TBtn><TBtn color={BLUE} bg={BLUE_LIGHT} border={BORDER} onClick={()=>timerStop(row._id)}>✓ Log Time</TBtn></>}
+                          {row.timerState==='paused'&&<><TBtn color={GREEN} bg={GREEN_BG} border="#a8dbb8" onClick={()=>timerStart(row._id)}>▶ Resume</TBtn><TBtn color={BLUE} bg={BLUE_LIGHT} border={BORDER} onClick={()=>timerStop(row._id)}>✓ Log Time</TBtn></>}
+                          {row.timerState==='logged'&&<><TBtn color={GREEN} bg={GREEN_BG} border="#a8dbb8" onClick={()=>timerStart(row._id)}>▶ Resume</TBtn><TBtn color={RED} bg={RED_BG} border="#f0aaaa" onClick={()=>timerReset(row._id)}>✕ Reset</TBtn></>}
                         </div>
                       </td>
                       <td style={{padding:'4px',minWidth:'90px'}}>

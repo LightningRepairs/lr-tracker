@@ -251,7 +251,8 @@ export default function AdminSheetView({tech, onBack, viewDate}){
                 const addOnsForType=addOnOptions.filter(a=>a.device_type_id===row.deviceTypeId);
                 const rt=repairTypes.find(r=>r.id===row.repairTypeId);
                 const isLabor=rt?.is_labor||false;
-                const book=calcBook(row);
+                const bookRaw=calcBook(row);
+                const book=row._bookOverride!=null?row._bookOverride:bookRaw;
                 const actual=parseFloat(row.actualMinutes)||0;
                 const pct=(actual>0&&book!==null)?Math.round((book/actual)*100):null;
                 const diff=(actual>0&&book!==null)?Math.round(actual-book):null;
@@ -287,14 +288,16 @@ export default function AdminSheetView({tech, onBack, viewDate}){
                       </td>
                       <td style={{padding:'4px',textAlign:'center',fontWeight:700,fontSize:'12px',color:BLUE}}>
                         {editMode
-                          ? <BookOverride value={book} onSave={async v=>{
+                          ? <BookOverride value={row._bookOverride!=null?row._bookOverride:book} onSave={async v=>{
                               const mins=parseInt(v);
-                              if(!isNaN(mins)&&row.dbId){
-                                await supabase.from('tickets').update({book_minutes:mins}).eq('id',row.dbId);
+                              if(!isNaN(mins)){
                                 setRows(prev=>prev.map(r=>r._id===row._id?{...r,_bookOverride:mins}:r));
+                                if(row.dbId){
+                                  await supabase.from('tickets').update({book_minutes:mins}).eq('id',row.dbId);
+                                }
                               }
                             }}/>
-                          : (book!==null?book:'—')
+                          : (row._bookOverride!=null?row._bookOverride:(book!==null?book:'—'))
                         }
                       </td>
                       <td style={{padding:'4px'}}>

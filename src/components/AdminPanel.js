@@ -11,7 +11,7 @@ export default function AdminPanel(){
       <div style={{background:'#fff',borderRadius:'12px',border:`1.5px solid ${BORDER}`,overflow:'hidden'}}>
         <div style={{background:NAVY,padding:'1rem 1.5rem',display:'flex',gap:'8px',alignItems:'center',flexWrap:'wrap'}}>
           <span style={{color:'#fff',fontWeight:700,fontSize:'15px',marginRight:'16px'}}>Admin Panel</span>
-          {[['booktimes','Book Times'],['devices','Devices & Repairs'],['addons','Add-ons'],['technicians','Technicians'],['settings','Settings']].map(([key,label])=>(
+          {[['booktimes','Book Times'],['devices','Devices & Repairs'],['addons','Add-ons'],['technicians','Technicians'],['advanced','Advanced Overview'],['settings','Settings']].map(([key,label])=>(
             <button key={key} onClick={()=>setTab(key)} style={{background:tab===key?BLUE:'transparent',border:`1px solid ${tab===key?BLUE:'rgba(255,255,255,0.2)'}`,color:tab===key?'#fff':'rgba(255,255,255,0.6)',borderRadius:'6px',padding:'5px 14px',fontSize:'12px',fontWeight:tab===key?700:400,cursor:'pointer'}}>{label}</button>
           ))}
         </div>
@@ -21,6 +21,7 @@ export default function AdminPanel(){
           {tab==='addons'&&<AddOnsEditor/>}
           {tab==='technicians'&&<TechniciansEditor/>}
           {tab==='settings'&&<SettingsEditor/>}
+          {tab==='advanced'&&<AdvancedOverview/>}
         </div>
       </div>
     </div>
@@ -341,14 +342,27 @@ function TechniciansEditor(){
   const [newName,setNewName]=useState('');const [newPin,setNewPin]=useState('');const [newRole,setNewRole]=useState('tech');
   const [editing,setEditing]=useState({});const [msg,setMsg]=useState('');
 
+  const[showDisabled,setShowDisabled]=useState(false);
   useEffect(()=>{supabase.from('technicians').select('*').order('name').then(({data})=>setTechnicians(data||[]));},[]); 
   const flash=m=>{setMsg(m);setTimeout(()=>setMsg(''),2000);};
+  const deleteTech=async(id,name)=>{
+    if(!window.confirm(`Permanently delete ${name}? This will also delete all their ticket history. This cannot be undone.`))return;
+    await supabase.from('tickets').delete().eq('technician_id',id);
+    await supabase.from('technicians').delete().eq('id',id);
+    setTechnicians(prev=>prev.filter(t=>t.id!==id));
+    flash('Deleted.');
+  };
   const addTech=async()=>{if(!newName.trim()||!newPin.trim())return;const{data}=await supabase.from('technicians').insert({name:newName.trim(),pin:newPin.trim(),role:newRole}).select().single();if(data){setTechnicians(p=>[...p,data]);setNewName('');setNewPin('');flash('Added!');}};
   const updateTech=async(id,updates)=>{await supabase.from('technicians').update(updates).eq('id',id);setTechnicians(p=>p.map(t=>t.id===id?{...t,...updates}:t));flash('Saved!');};
 
   return(
     <div>
       {msg&&<div style={{background:'#e6f5ec',color:GREEN,borderRadius:'8px',padding:'8px 14px',fontSize:'13px',marginBottom:'1rem'}}>{msg}</div>}
+      <div style={{display:'flex',justifyContent:'flex-end',marginBottom:'8px'}}>
+        <button onClick={()=>setShowDisabled(p=>!p)} style={{fontSize:'12px',border:'1px solid #d0cdc5',background:'transparent',borderRadius:'6px',padding:'4px 12px',cursor:'pointer',color:'#666'}}>
+          {showDisabled?'Hide disabled users':'Show disabled users'}
+        </button>
+      </div>
       <div style={{fontSize:'12px',color:'#888',marginBottom:'1rem',background:'#f8fbfd',borderRadius:'8px',padding:'10px 14px',border:'1px solid #eef3f7'}}>
         <strong>Roles:</strong> &nbsp;<span style={{color:'#1B9BD4',fontWeight:600}}>Tech</span> — daily sheet only &nbsp;|&nbsp;<span style={{color:'#9a6000',fontWeight:600}}>Keyholder</span> — sheet + team overview &nbsp;|&nbsp;<span style={{color:RED,fontWeight:600}}>Admin</span> — full access
       </div>
@@ -363,6 +377,7 @@ function TechniciansEditor(){
             <td style={{padding:'8px 10px',display:'flex',gap:'6px'}}>
               {!editing[t.id]&&<button onClick={()=>setEditing(p=>({...p,[t.id]:true}))} style={{fontSize:'11px',border:`1px solid ${BLUE}`,background:'transparent',color:BLUE,borderRadius:'4px',padding:'2px 8px',cursor:'pointer'}}>Change PIN</button>}
               <button onClick={()=>updateTech(t.id,{active:!t.active})} style={{fontSize:'11px',border:`1px solid ${t.active?'#f0aaaa':'#a8dbb8'}`,background:'transparent',color:t.active?RED:GREEN,borderRadius:'4px',padding:'2px 8px',cursor:'pointer'}}>{t.active?'Disable':'Enable'}</button>
+              <button onClick={()=>deleteTech(t.id,t.name)} style={{fontSize:'11px',border:'1px solid #f0aaaa',background:'transparent',color:RED,borderRadius:'4px',padding:'2px 8px',cursor:'pointer'}}>Delete</button>
             </td>
           </tr>
         ))}</tbody>
@@ -453,6 +468,18 @@ function InlineEdit({value,onSave,active}){
   const[editing,setEditing]=useState(false);const[local,setLocal]=useState(value);useEffect(()=>{setLocal(value);},[value]);
   if(editing)return<input autoFocus value={local} onChange={e=>setLocal(e.target.value)} onBlur={()=>{setEditing(false);if(local.trim()&&local!==value)onSave(local.trim());}} onKeyDown={e=>{if(e.key==='Enter'){setEditing(false);if(local.trim()&&local!==value)onSave(local.trim());}if(e.key==='Escape'){setEditing(false);setLocal(value);}}} style={{flex:1,border:`1.5px solid ${BLUE}`,borderRadius:'4px',padding:'2px 6px',fontSize:'12px',outline:'none',minWidth:0}}/>;
   return<span onClick={()=>setEditing(true)} title="Click to rename" style={{flex:1,fontSize:'12px',color:active?NAVY:'#aaa',textDecoration:active?'none':'line-through',cursor:'text',padding:'2px 4px',borderRadius:'4px',minWidth:0,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}} onMouseEnter={e=>e.currentTarget.style.background='#e8f6fc'} onMouseLeave={e=>e.currentTarget.style.background='transparent'}>{local}</span>;
+}
+
+// ── ADVANCED OVERVIEW ────────────────────────────────────────
+function AdvancedOverview(){
+  return(
+    <div>
+      <div style={{background:'#f8fbfd',borderRadius:'10px',padding:'1.5rem',border:'1px solid #eef3f7',textAlign:'center'}}>
+        <div style={{fontSize:'16px',fontWeight:700,color:'#1a2a3a',marginBottom:'8px'}}>Advanced Team Overview</div>
+        <div style={{fontSize:'13px',color:'#888'}}>This area is reserved for advanced analytics and reporting features coming soon.</div>
+      </div>
+    </div>
+  );
 }
 
 const lbl={display:'block',fontSize:'11px',fontWeight:600,color:'#555',marginBottom:'4px',textTransform:'uppercase',letterSpacing:'0.05em'};

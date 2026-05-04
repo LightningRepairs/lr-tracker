@@ -58,17 +58,27 @@ export default function ManagerDashboard({tech}){
   const effGreen=parseInt(settings.efficiency_green||90);
   const effYellow=parseInt(settings.efficiency_yellow||79);
 
+  // Initialize full selection when technicians load
+  useEffect(()=>{
+    if(technicians.length>0&&selectedTechs.has('all')){
+      setSelectedTechs(new Set(technicians.map(t=>t.id)));
+    }
+  },[technicians]);
+
   const toggleTech=(id)=>{
+    if(id==='all'){
+      setSelectedTechs(new Set(technicians.map(t=>t.id)));
+      return;
+    }
     setSelectedTechs(prev=>{
-      if(id==='all')return new Set(['all']);
-      const next=new Set(prev);next.delete('all');
+      const next=new Set(prev);
       if(next.has(id))next.delete(id);else next.add(id);
-      if(next.size===0)return new Set(['all']);
+      if(next.size===0)return new Set(technicians.map(t=>t.id));
       return next;
     });
   };
 
-  const visibleTechs=selectedTechs.has('all')?technicians:technicians.filter(t=>selectedTechs.has(t.id));
+  const visibleTechs=technicians.filter(t=>selectedTechs.has(t.id));
 
   const getTechStats=(techId)=>{
     const tt=tickets.filter(t=>t.technician_id===techId);
@@ -93,7 +103,7 @@ export default function ManagerDashboard({tech}){
         <div>
           <label style={lbl}>Technicians</label>
           <div style={{display:'flex',gap:'6px',flexWrap:'wrap',marginTop:'4px'}}>
-            <TechChip label="All" active={selectedTechs.has('all')} onClick={()=>toggleTech('all')}/>
+            <TechChip label="All" active={selectedTechs.size===technicians.length} onClick={()=>toggleTech('all')}/>
             {technicians.map(t=><TechChip key={t.id} label={t.name} active={selectedTechs.has(t.id)} onClick={()=>toggleTech(t.id)}/>)}
           </div>
         </div>
@@ -136,13 +146,13 @@ export default function ManagerDashboard({tech}){
         })}
       </div>
 
-      {tickets.filter(t=>selectedTechs.has('all')||selectedTechs.has(t.technician_id)).length>0&&(
+      {tickets.filter(t=>selectedTechs.has(t.technician_id)).length>0&&(
         <div style={{background:'#fff',borderRadius:'12px',border:`1.5px solid ${BORDER}`,overflow:'hidden'}}>
           <div style={{overflowX:'auto'}}>
             <table style={{width:'100%',borderCollapse:'collapse',fontSize:'12px',minWidth:'900px'}}>
               <thead><tr style={{background:NAVY}}>{['Technician','Ticket #','Device','Repair','Book','Actual','+/−','Efficiency','Add-ons','Notes'].map(h=><th key={h} style={{padding:'8px',textAlign:'left',fontSize:'10px',color:'#7aafc8',textTransform:'uppercase',letterSpacing:'0.05em',fontWeight:700,borderBottom:`2px solid ${BLUE}`}}>{h}</th>)}</tr></thead>
               <tbody>
-                {tickets.filter(t=>selectedTechs.has('all')||selectedTechs.has(t.technician_id)).map(t=>{
+                {tickets.filter(t=>selectedTechs.has(t.technician_id)).map(t=>{
                   const tech=technicians.find(x=>x.id===t.technician_id);
                   const rt=repairTypes.find(x=>x.id===t.repair_type_id);
                   const dt=deviceTypes.find(x=>x.id===t.device_type_id);
