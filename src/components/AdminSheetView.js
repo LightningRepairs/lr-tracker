@@ -114,7 +114,8 @@ export default function AdminSheetView({tech, onBack, viewDate}){
     const book=calcBook(row);
     const actual=parseFloat(row.actualMinutes)||null;
     const pct=actual&&book?Math.round((book/actual)*100):null;
-    const payload={technician_id:tech.id,ticket_number:row.ticketNumber||null,device_type_id:row.deviceTypeId||null,device_model_id:row.deviceModelId||null,repair_type_id:row.repairTypeId||null,book_minutes:book,actual_minutes:actual,labor_cost:parseFloat(row.laborCost)||null,is_full_set:row.isFullSet,notes:row.notes||null,efficiency_pct:pct,work_date:targetDate};
+    const effPct=actual&&book&&actual>0?Math.round((book/actual)*100):null;
+    const payload={technician_id:tech.id,ticket_number:row.ticketNumber||null,device_type_id:row.deviceTypeId||null,device_model_id:row.deviceModelId||null,repair_type_id:row.repairTypeId||null,book_minutes:book,actual_minutes:actual,labor_cost:parseFloat(row.laborCost)||null,is_full_set:row.isFullSet,notes:row.notes||null,efficiency_pct:effPct,work_date:targetDate};
     let ticketId=row.dbId;
     if(row.dbId){
       await supabase.from('tickets').update(payload).eq('id',row.dbId);
@@ -182,7 +183,7 @@ export default function AdminSheetView({tech, onBack, viewDate}){
       <div style={{display:'flex',alignItems:'center',gap:'12px',marginBottom:'1rem',flexWrap:'wrap'}}>
         <button onClick={onBack} style={{background:'#fff',border:`1px solid ${BORDER}`,borderRadius:'8px',padding:'6px 14px',fontSize:'13px',cursor:'pointer',fontFamily:'inherit',color:NAVY}}>← Back to Team Overview</button>
         {!editMode?(
-          <button onClick={()=>{if(window.confirm(`Enter edit mode for ${tech.name}'s sheet? Their timers will not be affected.`))setEditMode(true);}}
+          currentUser?.role==='admin'&&<button onClick={()=>{if(window.confirm(`Enter edit mode for ${tech.name}'s sheet? Their timers will not be affected.`))setEditMode(true);}}
             style={{background:YELLOW,color:NAVY,border:'none',borderRadius:'8px',padding:'6px 16px',fontSize:'13px',fontWeight:700,cursor:'pointer'}}>
             ✏️ Enter Edit Mode
           </button>
@@ -293,7 +294,9 @@ export default function AdminSheetView({tech, onBack, viewDate}){
                               if(!isNaN(mins)){
                                 setRows(prev=>prev.map(r=>r._id===row._id?{...r,_bookOverride:mins}:r));
                                 if(row.dbId){
-                                  await supabase.from('tickets').update({book_minutes:mins}).eq('id',row.dbId);
+                                  const actualMins=parseFloat(row.actualMinutes)||null;
+                                  const newEff=actualMins&&actualMins>0?Math.round((mins/actualMins)*100):null;
+                                  await supabase.from('tickets').update({book_minutes:mins,efficiency_pct:newEff}).eq('id',row.dbId);
                                 }
                               }
                             }}/>

@@ -100,7 +100,7 @@ export default function ManagerDashboard({tech}){
   };
 
   if(drillTech){
-    return<AdminSheetView tech={drillTech} onBack={()=>setDrillTech(null)}/>;
+    return<AdminSheetView tech={drillTech} currentUser={tech} onBack={()=>setDrillTech(null)}/>;
   }
 
   return(
