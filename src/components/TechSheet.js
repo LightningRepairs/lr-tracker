@@ -259,8 +259,8 @@ export default function TechSheet({tech}){
           <table style={{width:'100%',borderCollapse:'collapse',fontSize:'12px',minWidth:'1200px',overflow:'visible'}}>
             <thead>
               <tr style={{background:NAVY}}>
-                {['Ticket #','Device Type','Model','Repair Type','Book','Actual (min)','+/− min','Efficiency','Timer','Add-ons','Notes',''].map(h=>(
-                  <th key={h} style={{padding:'8px 6px',textAlign:'left',fontWeight:700,fontSize:'10px',color:'#7aafc8',textTransform:'uppercase',letterSpacing:'0.05em',borderBottom:`2px solid ${BLUE}`,whiteSpace:'nowrap'}}>{h}</th>
+                {['Ticket #','Device Type','Model','Repair Type','Book','Actual (min)','Efficiency','Timer','Add-ons','Notes',''].map((h,hi)=>(
+                  <th key={h} style={{padding:'8px 6px',textAlign:hi===0?'left':'center',fontWeight:700,fontSize:'10px',color:'#7aafc8',textTransform:'uppercase',letterSpacing:'0.05em',borderBottom:`2px solid ${BLUE}`,whiteSpace:'nowrap'}}>{h}</th>
                 ))}
               </tr>
             </thead>
@@ -287,16 +287,16 @@ export default function TechSheet({tech}){
                   <React.Fragment key={row._id}>
                     <tr style={{background:bg,borderBottom:`1px solid ${BLUE_MID}`}}>
                       <td style={{padding:'4px'}}><input value={row.ticketNumber} onChange={e=>updateRow(row._id,{ticketNumber:e.target.value})} placeholder={String(idx+1)} style={inpStyle}/></td>
-                      <td style={{padding:'4px'}}><select value={row.deviceTypeId} onChange={e=>updateRow(row._id,{deviceTypeId:e.target.value,deviceModelId:'',repairTypeId:'',addOns:[]})} style={selStyle}><option value="">— select —</option>{deviceTypes.map(d=><option key={d.id} value={d.id}>{d.name}</option>)}</select></td>
-                      <td style={{padding:'4px',...(!hasDeviceType?dimStyle:{})}}><select value={row.deviceModelId} onChange={e=>updateRow(row._id,{deviceModelId:e.target.value,repairTypeId:''})} disabled={!row.deviceTypeId} style={!hasDeviceType?selDisabled:selStyle}><option value="">— select —</option>{modelsForType.map(m=><option key={m.id} value={m.id}>{m.name}</option>)}</select></td>
-                      <td style={{padding:'4px',...(!hasModel?dimStyle:{})}}><select value={row.repairTypeId} onChange={e=>updateRow(row._id,{repairTypeId:e.target.value})} disabled={!row.deviceModelId} style={!hasModel?selDisabled:selStyle}><option value="">— select —</option>{repairsForType.map(r=><option key={r.id} value={r.id}>{r.name}</option>)}</select></td>
+                      <td style={{padding:'4px',textAlign:'center'}}><select value={row.deviceTypeId} onChange={e=>updateRow(row._id,{deviceTypeId:e.target.value,deviceModelId:'',repairTypeId:'',addOns:[]})} style={selStyle}><option value="">— select —</option>{deviceTypes.map(d=><option key={d.id} value={d.id}>{d.name}</option>)}</select></td>
+                      <td style={{padding:'4px',textAlign:'center',...(!hasDeviceType?dimStyle:{})}}><select value={row.deviceModelId} onChange={e=>updateRow(row._id,{deviceModelId:e.target.value,repairTypeId:''})} disabled={!row.deviceTypeId} style={!hasDeviceType?selDisabled:selStyle}><option value="">— select —</option>{modelsForType.map(m=><option key={m.id} value={m.id}>{m.name}</option>)}</select></td>
+                      <td style={{padding:'4px',textAlign:'center',...(!hasModel?dimStyle:{})}}><select value={row.repairTypeId} onChange={e=>updateRow(row._id,{repairTypeId:e.target.value})} disabled={!row.deviceModelId} style={!hasModel?selDisabled:selStyle}><option value="">— select —</option>{repairsForType.map(r=><option key={r.id} value={r.id}>{r.name}</option>)}</select></td>
                       <td style={{padding:'4px',textAlign:'center',fontWeight:700,fontSize:'12px',color:hasDeviceType?BLUE:'#ccc',...(!hasDeviceType?{opacity:0.4}:{})}}>{book!==null?book:'—'}</td>
-                      <td style={{padding:'4px',...(!hasDeviceType?dimStyle:{})}}>
+                      <td style={{padding:'4px',textAlign:'center',...(!hasDeviceType?dimStyle:{})}}>
                         {isLabor&&<div style={{display:'flex',alignItems:'center',gap:'3px',marginBottom:'3px'}}><span style={{fontSize:'10px',color:'#888'}}>$</span><input type="number" value={row.laborCost} onChange={e=>updateRow(row._id,{laborCost:e.target.value})} placeholder="0" style={{...inpStyle,width:'50px'}}/><span style={{fontSize:'10px',color:'#888'}}>labor{baseBook?` = ${baseBook}m`:''}</span></div>}
                         <input type="number" value={row.actualMinutes} onChange={e=>updateRow(row._id,{actualMinutes:e.target.value})} placeholder={isLabor?'actual mins':'0'} style={!hasDeviceType?inpDisabled:inpStyle}/>
                         {isJoycon&&<div style={{display:'flex',alignItems:'center',gap:'4px',marginTop:'3px'}}><input type="checkbox" checked={row.isFullSet} onChange={e=>updateRow(row._id,{isFullSet:e.target.checked})}/><span style={{fontSize:'11px',color:'#666'}}>full set</span></div>}
                       </td>
-                      <td style={{padding:'4px',textAlign:'center',fontWeight:700,fontSize:'12px',color:diffColor}}>{diff===null?'—':diff>0?`+${diff}`:String(diff)}</td>
+
                       <td style={{padding:'4px',textAlign:'center'}}>{pct!==null?<span style={{display:'inline-block',fontSize:'11px',fontWeight:700,padding:'2px 7px',borderRadius:'20px',background:rowBg(pct,effGreen,effYellow),color:effColor(pct,effGreen,effYellow)}}>{pct}%</span>:<span style={{color:'#aac8d8',fontSize:'11px'}}>—</span>}</td>
                       <td style={{padding:'4px',minWidth:'110px',...(!hasDeviceType?{opacity:0.35}:{})}}>
                         <div style={{fontSize:'13px',fontWeight:700,fontVariantNumeric:'tabular-nums',textAlign:'center',padding:'2px 0',background:row.timerState==='running'?GREEN_BG:row.timerState==='paused'?AMBER_BG:row.timerState==='logged'?'#e8f6fc':'#f5f5f0',borderRadius:'5px',border:`1px solid ${row.timerState==='running'?'#a8dbb8':row.timerState==='paused'?'#fcd98a':row.timerState==='logged'?BORDER:BORDER}`,color:row.timerState==='running'?GREEN:row.timerState==='paused'?AMBER:row.timerState==='logged'?BLUE:NAVY,marginBottom:'3px'}}>{fmtTimer(row.timerMs)}</div>
@@ -338,7 +338,7 @@ export default function TechSheet({tech}){
                           </div>
                         )}
                       </td>
-                      <td style={{padding:'4px',...(!hasDeviceType?dimStyle:{})}}><input value={row.notes} onChange={e=>updateRow(row._id,{notes:e.target.value})} placeholder="Notes (optional)" style={!hasDeviceType?inpDisabled:inpStyle}/></td>
+                      <td style={{padding:'4px',textAlign:'center',...(!hasDeviceType?dimStyle:{})}}><input value={row.notes} onChange={e=>updateRow(row._id,{notes:e.target.value})} placeholder="Notes (optional)" style={!hasDeviceType?inpDisabled:inpStyle}/></td>
                       <td style={{padding:'4px',textAlign:'center',width:'28px'}}>
                         <button onClick={()=>clearRow(row)} title="Remove row" style={{background:'none',border:'none',cursor:'pointer',color:'#ccc',fontSize:'15px',lineHeight:1,padding:'2px'}} onMouseEnter={e=>e.currentTarget.style.color='#b52020'} onMouseLeave={e=>e.currentTarget.style.color='#ccc'}>✕</button>
                       </td>
