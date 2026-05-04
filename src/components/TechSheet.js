@@ -132,16 +132,20 @@ export default function TechSheet({tech}){
   },[saveRow]);
 
   const timerStart=(id)=>{
+    const now=Date.now();
     setRows(prev=>{
       // Auto-pause any currently running timer
       const updated=prev.map(r=>{
         if(r._id===id||r.timerState!=='running')return r;
         clearInterval(timerRefs.current['timer_'+r._id]);
+        if(r.dbId)supabase.from('tickets').update({timer_started_at:null,timer_paused_ms:r.timerMs}).eq('id',r.dbId);
         return{...r,timerState:'paused'};
       });
       return updated.map(r=>{
         if(r._id!==id||r.timerState==='running')return r;
-        const startMs=Date.now()-r.timerMs;
+        const startMs=now-r.timerMs;
+        const startedAt=new Date(startMs).toISOString();
+        if(r.dbId)supabase.from('tickets').update({timer_started_at:startedAt,timer_paused_ms:0}).eq('id',r.dbId);
         clearInterval(timerRefs.current['timer_'+id]);
         timerRefs.current['timer_'+id]=setInterval(()=>{
           setRows(p=>p.map(rr=>rr._id===id&&rr.timerState==='running'?{...rr,timerMs:Date.now()-startMs}:rr));
@@ -150,14 +154,21 @@ export default function TechSheet({tech}){
       });
     });
   };
-  const timerPause=(id)=>{clearInterval(timerRefs.current['timer_'+id]);setRows(prev=>prev.map(r=>r._id===id?{...r,timerState:'paused'}:r));};
+  const timerPause=(id)=>{
+    clearInterval(timerRefs.current['timer_'+id]);
+    setRows(prev=>prev.map(r=>{
+      if(r._id!==id)return r;
+      if(r.dbId)supabase.from('tickets').update({timer_started_at:null,timer_paused_ms:r.timerMs}).eq('id',r.dbId);
+      return{...r,timerState:'paused'};
+    }));
+  };
   const timerStop=(id)=>{
     clearInterval(timerRefs.current['timer_'+id]);
     setRows(prev=>prev.map(r=>{
       if(r._id!==id)return r;
       const mins=r.timerMs>0?Math.max(1,Math.round(r.timerMs/60000)):0;
-      // Log time to actual but keep elapsed visible, change state to 'logged'
       const updated={...r,timerState:'logged',actualMinutes:mins>0?String(mins):r.actualMinutes};
+      if(r.dbId)supabase.from('tickets').update({timer_started_at:null,timer_paused_ms:0}).eq('id',r.dbId);
       clearTimeout(timerRefs.current['save_'+id]);
       timerRefs.current['save_'+id]=setTimeout(()=>saveRow(updated),800);
       return updated;

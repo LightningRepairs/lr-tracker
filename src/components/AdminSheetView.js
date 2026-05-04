@@ -54,7 +54,9 @@ export default function AdminSheetView({tech, onBack, viewDate, currentUser}){
         laborCost:t.labor_cost!=null?String(t.labor_cost):'',isFullSet:t.is_full_set||false,
         notes:t.notes||'',
         addOns:(t.ticket_add_ons||[]).map(ta=>({id:ta.add_on_id,mins:ta.book_minutes})),
-        timerMs:0,timerState:'idle',
+        timerMs:t.timer_started_at?Date.now()-new Date(t.timer_started_at).getTime():(t.timer_paused_ms||0),
+        timerState:t.timer_started_at?'running':(t.timer_paused_ms>0?'paused':'idle'),
+        timerStart:t.timer_started_at?new Date(t.timer_started_at).getTime():null,
       }));
       const blanks=isToday?Math.max(0,parseInt(settings.default_rows||10)-loaded.length):0;
       setRows([...loaded,...Array.from({length:blanks},EMPTY_ROW)]);
@@ -84,12 +86,11 @@ export default function AdminSheetView({tech, onBack, viewDate, currentUser}){
 
   // Live timers for read-only mode (just display, don't interact)
   useEffect(()=>{
-    if(editMode)return;
     const interval=setInterval(()=>{
-      setRows(prev=>prev.map(r=>r.timerState==='running'?{...r,timerMs:Date.now()-(r.timerStart||Date.now())}:r));
+      setRows(prev=>prev.map(r=>r.timerState==='running'&&r.timerStart?{...r,timerMs:Date.now()-r.timerStart}:r));
     },100);
     return()=>clearInterval(interval);
-  },[editMode]);
+  },[]);
 
   const getBookMinutes=useCallback((repairTypeId,deviceModelId)=>{
     const rt=repairTypes.find(r=>r.id===repairTypeId);
@@ -187,8 +188,8 @@ export default function AdminSheetView({tech, onBack, viewDate, currentUser}){
       {/* Top bar */}
       <div style={{display:'flex',alignItems:'center',gap:'12px',marginBottom:'1rem',flexWrap:'wrap'}}>
         <button onClick={onBack} style={{background:'#fff',border:`1px solid ${BORDER}`,borderRadius:'8px',padding:'6px 14px',fontSize:'13px',cursor:'pointer',fontFamily:'inherit',color:NAVY}}>← Back to Team Overview</button>
-        <button onClick={refresh} style={{background:BLUE,color:'#fff',border:'none',borderRadius:'8px',padding:'6px 16px',fontSize:'13px',fontWeight:700,cursor:'pointer',fontFamily:'inherit',display:'flex',alignItems:'center',gap:'6px'}}>
-          ↻ Refresh Sheet
+        <button onClick={refresh} style={{background:'#fff',color:NAVY,border:`2px solid ${BLUE}`,borderRadius:'8px',padding:'8px 20px',fontSize:'14px',fontWeight:700,cursor:'pointer',fontFamily:'inherit',display:'flex',alignItems:'center',gap:'8px',boxShadow:`0 0 0 3px rgba(27,155,212,0.15)`}}>
+          <span style={{fontSize:'18px',lineHeight:1}}>↻</span> Refresh Sheet
         </button>
         {editMode?(
           <div style={{display:'flex',alignItems:'center',gap:'8px'}}>
