@@ -4,8 +4,9 @@ import { clearSettingsCache } from '../lib/settings';
 
 const BLUE='#1B9BD4',NAVY='#1a2a3a',BORDER='#b8dff0',GREEN='#2d8a4e',RED='#b52020';
 
-export default function AdminPanel(){
+export default function AdminPanel({resetKey}){
   const [tab,setTab]=useState('advanced');
+  useEffect(()=>{if(resetKey!==undefined)setTab('advanced');},[resetKey]);
   return(
     <div style={{maxWidth:'1100px',margin:'0 auto'}}>
       <div style={{background:'#fff',borderRadius:'12px',border:`1.5px solid ${BORDER}`,overflow:'hidden'}}>

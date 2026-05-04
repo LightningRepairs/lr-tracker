@@ -54,8 +54,8 @@ export default function App() {
       />
       <div style={{ padding: '1rem' }}>
         {view === 'tech' && <TechSheet key={`tech-${navKey}`} tech={currentTech} />}
-        {view === 'manager' && <ManagerDashboard key={`manager-${navKey}`} tech={currentTech} />}
-        {view === 'admin' && <AdminPanel key={`admin-${navKey}`} />}
+        {view === 'manager' && <ManagerDashboard key={`manager-${navKey}`} tech={currentTech} resetKey={navKey} />}
+        {view === 'admin' && <AdminPanel key={`admin-${navKey}`} resetKey={navKey} />}
       </div>
     </div>
   );
