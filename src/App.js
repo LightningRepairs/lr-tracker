@@ -52,9 +52,9 @@ export default function App() {
         onLogout={handleLogout}
       />
       <div style={{ padding: '1rem' }}>
-        {view === 'tech' && <TechSheet tech={currentTech} />}
-        {view === 'manager' && <ManagerDashboard tech={currentTech} />}
-        {view === 'admin' && <AdminPanel />}
+        {view === 'tech' && <TechSheet key={navKey} tech={currentTech} />}
+        {view === 'manager' && <ManagerDashboard key={navKey} tech={currentTech} />}
+        {view === 'admin' && <AdminPanel key={navKey} />}
       </div>
     </div>
   );
@@ -75,9 +75,9 @@ function NavBar({ tech, view, setView, onLogout }) {
       </div>
 
       <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-        <NavBtn active={view === 'tech'} onClick={() => setView('tech')}>My Sheet</NavBtn>
-        {(tech?.role === 'admin' || tech?.role === 'manager') && <NavBtn active={view === 'manager'} onClick={() => setView('manager')}>Team Overview</NavBtn>}
-        {tech?.role === 'admin' && <NavBtn active={view === 'admin'} onClick={() => setView('admin')}>Admin Panel</NavBtn>}
+        <NavBtn active={view === 'tech'} onClick={() => { setView('tech'); setNavKey(k => k+1); }}>My Sheet</NavBtn>
+        {(tech?.role === 'admin' || tech?.role === 'manager') && <NavBtn active={view === 'manager'} onClick={() => { setView('manager'); setNavKey(k => k+1); }}>Team Overview</NavBtn>}
+        {tech?.role === 'admin' && <NavBtn active={view === 'admin'} onClick={() => { setView('admin'); setNavKey(k => k+1); }}>Admin Panel</NavBtn>}
         <div style={{ color: 'rgba(255,255,255,0.5)', margin: '0 4px' }}>|</div>
         <div style={{ color: 'rgba(255,255,255,0.7)', fontSize: '13px' }}>{tech?.name}</div>
         <button onClick={onLogout} style={{
