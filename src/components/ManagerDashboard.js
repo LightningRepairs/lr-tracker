@@ -9,7 +9,7 @@ const GREEN='#2d8a4e',GREEN_BG='#e6f5ec',AMBER='#9a6000',AMBER_BG='#fff3d0',RED=
 function effColor(pct,green=90,yellow=79){if(pct===null||pct===undefined)return'#aac8d8';return pct>=green?GREEN:pct>=yellow?AMBER:RED;}
 function effBg(pct,green=90,yellow=79){if(pct===null||pct===undefined)return'rgba(255,255,255,0.1)';return pct>=green?GREEN_BG:pct>=yellow?AMBER_BG:RED_BG;}
 
-export default function ManagerDashboard({tech}){
+export default function ManagerDashboard({tech:currentUser}){
   const [tickets,setTickets]=useState([]);
   const [ticketAddOns,setTicketAddOns]=useState([]);
   const [technicians,setTechnicians]=useState([]);
@@ -26,14 +26,14 @@ export default function ManagerDashboard({tech}){
   useEffect(()=>{
     const load=async()=>{
       const s=await getSettings();setSettings(s);
-      const[tech,rt,dt,dm,ao]=await Promise.all([
+      const[techData,rt,dt,dm,ao]=await Promise.all([
         supabase.from('technicians').select('*').eq('active',true).order('name'),
         supabase.from('repair_types').select('*'),
         supabase.from('device_types').select('*'),
         supabase.from('device_models').select('*'),
         supabase.from('add_ons').select('*'),
       ]);
-      setTechnicians(tech.data||[]);setRepairTypes(rt.data||[]);setDeviceTypes(dt.data||[]);
+      setTechnicians(techData.data||[]);setRepairTypes(rt.data||[]);setDeviceTypes(dt.data||[]);
       setDeviceModels(dm.data||[]);setAddOnOptions(ao.data||[]);
     };
     load();
@@ -100,7 +100,7 @@ export default function ManagerDashboard({tech}){
   };
 
   if(drillTech){
-    return<AdminSheetView tech={drillTech} currentUser={tech} onBack={()=>setDrillTech(null)}/>;
+    return<AdminSheetView tech={drillTech} currentUser={currentUser} onBack={()=>setDrillTech(null)}/>;
   }
 
   return(
