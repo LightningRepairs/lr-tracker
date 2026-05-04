@@ -19,6 +19,7 @@ export { COLORS };
 export default function App() {
   const [currentTech, setCurrentTech] = useState(null);
   const [view, setView] = useState('login'); // login | tech | manager | admin
+  const [navKey, setNavKey] = useState(0);
 
   useEffect(() => {
     const saved = sessionStorage.getItem('lr_tech');
