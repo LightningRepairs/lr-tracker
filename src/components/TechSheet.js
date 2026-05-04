@@ -132,15 +132,23 @@ export default function TechSheet({tech}){
   },[saveRow]);
 
   const timerStart=(id)=>{
-    setRows(prev=>prev.map(r=>{
-      if(r._id!==id||r.timerState==='running')return r;
-      const startMs=Date.now()-r.timerMs;
-      clearInterval(timerRefs.current['timer_'+id]);
-      timerRefs.current['timer_'+id]=setInterval(()=>{
-        setRows(p=>p.map(rr=>rr._id===id&&rr.timerState==='running'?{...rr,timerMs:Date.now()-startMs}:rr));
-      },50);
-      return{...r,timerState:'running',timerStart:startMs};
-    }));
+    setRows(prev=>{
+      // Auto-pause any currently running timer
+      const updated=prev.map(r=>{
+        if(r._id===id||r.timerState!=='running')return r;
+        clearInterval(timerRefs.current['timer_'+r._id]);
+        return{...r,timerState:'paused'};
+      });
+      return updated.map(r=>{
+        if(r._id!==id||r.timerState==='running')return r;
+        const startMs=Date.now()-r.timerMs;
+        clearInterval(timerRefs.current['timer_'+id]);
+        timerRefs.current['timer_'+id]=setInterval(()=>{
+          setRows(p=>p.map(rr=>rr._id===id&&rr.timerState==='running'?{...rr,timerMs:Date.now()-startMs}:rr));
+        },50);
+        return{...r,timerState:'running',timerStart:startMs};
+      });
+    });
   };
   const timerPause=(id)=>{clearInterval(timerRefs.current['timer_'+id]);setRows(prev=>prev.map(r=>r._id===id?{...r,timerState:'paused'}:r));};
   const timerStop=(id)=>{

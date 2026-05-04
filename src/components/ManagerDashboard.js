@@ -37,6 +37,13 @@ export default function ManagerDashboard({tech}){
       setDeviceModels(dm.data||[]);setAddOnOptions(ao.data||[]);
     };
     load();
+    // Live subscription to technician changes (handles deletes/adds from admin panel)
+    const sub=supabase.channel('techs-live')
+      .on('postgres_changes',{event:'*',schema:'public',table:'technicians'},async()=>{
+        const{data}=await supabase.from('technicians').select('*').eq('active',true).order('name');
+        if(data)setTechnicians(data);
+      }).subscribe();
+    return()=>supabase.removeChannel(sub);
   },[]);
 
   const loadTickets=useCallback(async()=>{
