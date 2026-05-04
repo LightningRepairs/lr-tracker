@@ -90,7 +90,20 @@ export default function AdminSheetView({tech, onBack, viewDate, currentUser}){
   useEffect(()=>{
     if(!isToday)return;
     const sub=supabase.channel(`admin-sheet-${tech.id}`)
-      .on('postgres_changes',{event:'*',schema:'public',table:'tickets',filter:`technician_id=eq.${tech.id}`},()=>loadRows())
+      .on('postgres_changes',{event:'*',schema:'public',table:'tickets',filter:`technician_id=eq.${tech.id}`},(payload)=>{
+        // Immediately update timer state from the changed record before full reload
+        if(payload.new){
+          const t=payload.new;
+          setRows(prev=>prev.map(r=>{
+            if(r.dbId!==t.id)return r;
+            const newTimerMs=t.timer_started_at?Date.now()-new Date(t.timer_started_at).getTime():(t.timer_paused_ms||0);
+            const newTimerState=t.timer_started_at?'running':(t.timer_paused_ms>0?'paused':'idle');
+            const newTimerStart=t.timer_started_at?new Date(t.timer_started_at).getTime():null;
+            return{...r,timerMs:newTimerMs,timerState:newTimerState,timerStart:newTimerStart};
+          }));
+        }
+        loadRows();
+      })
       .subscribe();
     return()=>supabase.removeChannel(sub);
   },[tech.id,isToday,loadRows]);

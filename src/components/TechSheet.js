@@ -151,7 +151,9 @@ export default function TechSheet({tech}){
       const updated=prev.map(r=>{
         if(r._id===id||r.timerState!=='running')return r;
         clearInterval(timerRefs.current['timer_'+r._id]);
-        if(r.dbId)supabase.from('tickets').update({timer_started_at:null,timer_paused_ms:r.timerMs}).eq('id',r.dbId);
+        if(r.dbId){
+          supabase.from('tickets').update({timer_started_at:null,timer_paused_ms:r.timerMs}).eq('id',r.dbId).then(()=>{});
+        }
         return{...r,timerState:'paused'};
       });
       return updated.map(r=>{
@@ -185,13 +187,17 @@ export default function TechSheet({tech}){
       });
     });
   };
-  const timerPause=(id)=>{
+  const timerPause=async(id)=>{
     clearInterval(timerRefs.current['timer_'+id]);
-    setRows(prev=>prev.map(r=>{
-      if(r._id!==id)return r;
-      if(r.dbId)supabase.from('tickets').update({timer_started_at:null,timer_paused_ms:r.timerMs}).eq('id',r.dbId);
-      return{...r,timerState:'paused'};
-    }));
+    // Get current row state before updating
+    setRows(prev=>{
+      const row=prev.find(r=>r._id===id);
+      if(row?.dbId){
+        // Fire and await the DB update outside setRows
+        supabase.from('tickets').update({timer_started_at:null,timer_paused_ms:row.timerMs}).eq('id',row.dbId).then(()=>{});
+      }
+      return prev.map(r=>r._id===id?{...r,timerState:'paused'}:r);
+    });
   };
   const timerStop=(id)=>{
     clearInterval(timerRefs.current['timer_'+id]);
