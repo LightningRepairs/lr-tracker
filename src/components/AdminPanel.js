@@ -123,6 +123,9 @@ function DevicesEditor(){
   },[]);
 
   const flash=m=>{setMsg(m);setTimeout(()=>setMsg(''),2500);};
+  const[showDisabledTypes,setShowDisabledTypes]=useState(false);
+  const[showDisabledModels,setShowDisabledModels]=useState(false);
+  const[showDisabledRepairs,setShowDisabledRepairs]=useState(false);
 
   const deleteItem=async(table,id,setList,confirmMsg)=>{
     if(!window.confirm(confirmMsg))return;
@@ -177,9 +180,9 @@ function DevicesEditor(){
     if(data){setRepairTypes(p=>[...p,data]);setNewRepair('');flash('Repair type added!');}
   };
 
-  const sortedTypes=[...deviceTypes].sort((a,b)=>a.sort_order-b.sort_order);
-  const sortedModels=[...deviceModels].filter(m=>m.device_type_id===selectedType).sort((a,b)=>a.sort_order-b.sort_order);
-  const sortedRepairs=[...repairTypes].filter(r=>r.device_type_id===selectedType).sort((a,b)=>a.sort_order-b.sort_order);
+  const sortedTypes=[...deviceTypes].filter(dt=>showDisabledTypes||dt.active).sort((a,b)=>a.sort_order-b.sort_order);
+  const sortedModels=[...deviceModels].filter(m=>m.device_type_id===selectedType&&(showDisabledModels||m.active)).sort((a,b)=>a.sort_order-b.sort_order);
+  const sortedRepairs=[...repairTypes].filter(r=>r.device_type_id===selectedType&&(showDisabledRepairs||r.active)).sort((a,b)=>a.sort_order-b.sort_order);
 
   const DragRow=({item,list,setList,table,children})=>(
     <div draggable onDragStart={()=>{dragItem.current=item.id;}} onDragEnter={()=>{dragOver.current=item.id;}} onDragEnd={()=>handleDrop(list,setList,table,dragItem.current,dragOver.current)} onDragOver={e=>e.preventDefault()} style={{display:'flex',alignItems:'center',gap:'6px',padding:'5px 8px',background:item.active?'#f8fbfd':'#fafafa',borderRadius:'6px',marginBottom:'4px',border:'1px solid #eef3f7',cursor:'grab'}}>
@@ -193,7 +196,10 @@ function DevicesEditor(){
       {msg&&<div style={{background:'#e6f5ec',color:GREEN,borderRadius:'8px',padding:'8px 14px',fontSize:'13px',marginBottom:'1rem'}}>{msg}</div>}
 
       <div style={{marginBottom:'1.5rem'}}>
-        <div style={{fontWeight:700,color:NAVY,marginBottom:'8px',fontSize:'13px'}}>Device Types <span style={{fontWeight:400,color:'#888',fontSize:'11px'}}>(drag to reorder)</span></div>
+        <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:'8px'}}>
+        <div style={{fontWeight:700,color:NAVY,fontSize:'13px'}}>Device Types <span style={{fontWeight:400,color:'#888',fontSize:'11px'}}>(drag to reorder)</span></div>
+        <ToggleSwitch value={showDisabledTypes} onChange={setShowDisabledTypes} label="Show disabled"/>
+      </div>
         {sortedTypes.map(dt=>(
           <DragRow key={dt.id} item={dt} list={deviceTypes} setList={setDeviceTypes} table="device_types">
             <InlineEdit value={dt.name} onSave={v=>updateName('device_types',dt.id,v,setDeviceTypes)} active={dt.active}/>
@@ -212,7 +218,10 @@ function DevicesEditor(){
       {selectedType&&(
         <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'24px'}}>
           <div>
-            <div style={{fontWeight:700,color:NAVY,marginBottom:'8px',fontSize:'13px'}}>Models <span style={{fontWeight:400,color:'#888',fontSize:'11px'}}>(drag to reorder)</span></div>
+            <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:'8px'}}>
+              <div style={{fontWeight:700,color:NAVY,fontSize:'13px'}}>Models <span style={{fontWeight:400,color:'#888',fontSize:'11px'}}>(drag to reorder)</span></div>
+              <ToggleSwitch value={showDisabledModels} onChange={setShowDisabledModels} label="Show disabled"/>
+            </div>
             {sortedModels.map(m=>(
               <DragRow key={m.id} item={m} list={deviceModels} setList={setDeviceModels} table="device_models">
                 <InlineEdit value={m.name} onSave={v=>updateName('device_models',m.id,v,setDeviceModels)} active={m.active}/>
@@ -226,7 +235,10 @@ function DevicesEditor(){
             </div>
           </div>
           <div>
-            <div style={{fontWeight:700,color:NAVY,marginBottom:'8px',fontSize:'13px'}}>Repair Types <span style={{fontWeight:400,color:'#888',fontSize:'11px'}}>(drag to reorder)</span></div>
+            <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:'8px'}}>
+              <div style={{fontWeight:700,color:NAVY,fontSize:'13px'}}>Repair Types <span style={{fontWeight:400,color:'#888',fontSize:'11px'}}>(drag to reorder)</span></div>
+              <ToggleSwitch value={showDisabledRepairs} onChange={setShowDisabledRepairs} label="Show disabled"/>
+            </div>
             {sortedRepairs.map(r=>(
               <DragRow key={r.id} item={r} list={repairTypes} setList={setRepairTypes} table="repair_types">
                 <div style={{flex:1,minWidth:0}}>
@@ -274,6 +286,7 @@ function AddOnsEditor(){
   },[]);
 
   const flash=m=>{setMsg(m);setTimeout(()=>setMsg(''),2500);};
+  const[showDisabledAO,setShowDisabledAO]=useState(false);
 
   const deleteAddOn=async(id)=>{
     if(!window.confirm('Delete this add-on?'))return;
@@ -282,7 +295,7 @@ function AddOnsEditor(){
     flash('Deleted.');
   };
 
-  const addOnForType=addOns.filter(a=>a.device_type_id===selectedType).sort((a,b)=>a.sort_order-b.sort_order);
+  const addOnForType=addOns.filter(a=>a.device_type_id===selectedType&&(showDisabledAO||a.active)).sort((a,b)=>a.sort_order-b.sort_order);
 
   const addAddOn=async()=>{
     if(!newName.trim()||!selectedType||!newMins)return;
@@ -312,7 +325,10 @@ function AddOnsEditor(){
       <div style={{marginBottom:'1rem'}}><label style={lbl}>Device type</label><select value={selectedType} onChange={e=>setSelectedType(e.target.value)} style={inp}><option value="">— Select device type —</option>{deviceTypes.map(d=><option key={d.id} value={d.id}>{d.name}</option>)}</select></div>
       {selectedType&&(
         <div>
-          <div style={{fontWeight:700,color:NAVY,marginBottom:'8px',fontSize:'13px'}}>Add-ons <span style={{fontWeight:400,color:'#888',fontSize:'11px'}}>(drag to reorder)</span></div>
+          <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:'8px'}}>
+          <div style={{fontWeight:700,color:NAVY,fontSize:'13px'}}>Add-ons <span style={{fontWeight:400,color:'#888',fontSize:'11px'}}>(drag to reorder)</span></div>
+          <ToggleSwitch value={showDisabledAO} onChange={setShowDisabledAO} label="Show disabled"/>
+        </div>
           {addOnForType.map(a=>(
             <div key={a.id} draggable onDragStart={()=>{dragItem.current=a.id;}} onDragEnter={()=>{dragOver.current=a.id;}} onDragEnd={()=>handleDrop(dragItem.current,dragOver.current)} onDragOver={e=>e.preventDefault()} style={{display:'flex',alignItems:'center',gap:'8px',padding:'6px 10px',background:a.active?'#f8fbfd':'#fafafa',borderRadius:'6px',marginBottom:'4px',border:'1px solid #eef3f7',cursor:'grab'}}>
               <span style={{color:'#bbb',fontSize:'14px'}}>⠿</span>
@@ -347,10 +363,15 @@ function TechniciansEditor(){
   const flash=m=>{setMsg(m);setTimeout(()=>setMsg(''),2000);};
   const deleteTech=async(id,name)=>{
     if(!window.confirm(`Permanently delete ${name}? This will also delete all their ticket history. This cannot be undone.`))return;
-    await supabase.from('tickets').delete().eq('technician_id',id);
+    const{data:tickets}=await supabase.from('tickets').select('id').eq('technician_id',id);
+    if(tickets&&tickets.length>0){
+      const ids=tickets.map(t=>t.id);
+      await supabase.from('ticket_add_ons').delete().in('ticket_id',ids);
+      await supabase.from('tickets').delete().eq('technician_id',id);
+    }
     await supabase.from('technicians').delete().eq('id',id);
     setTechnicians(prev=>prev.filter(t=>t.id!==id));
-    flash('Deleted.');
+    flash('Deleted!');
   };
   const addTech=async()=>{if(!newName.trim()||!newPin.trim())return;const{data}=await supabase.from('technicians').insert({name:newName.trim(),pin:newPin.trim(),role:newRole}).select().single();if(data){setTechnicians(p=>[...p,data]);setNewName('');setNewPin('');flash('Added!');}};
   const updateTech=async(id,updates)=>{await supabase.from('technicians').update(updates).eq('id',id);setTechnicians(p=>p.map(t=>t.id===id?{...t,...updates}:t));flash('Saved!');};
@@ -358,17 +379,15 @@ function TechniciansEditor(){
   return(
     <div>
       {msg&&<div style={{background:'#e6f5ec',color:GREEN,borderRadius:'8px',padding:'8px 14px',fontSize:'13px',marginBottom:'1rem'}}>{msg}</div>}
-      <div style={{display:'flex',justifyContent:'flex-end',marginBottom:'8px'}}>
-        <button onClick={()=>setShowDisabled(p=>!p)} style={{fontSize:'12px',border:'1px solid #d0cdc5',background:'transparent',borderRadius:'6px',padding:'4px 12px',cursor:'pointer',color:'#666'}}>
-          {showDisabled?'Hide disabled users':'Show disabled users'}
-        </button>
+      <div style={{display:'flex',justifyContent:'flex-end',marginBottom:'12px'}}>
+        <ToggleSwitch value={showDisabled} onChange={setShowDisabled} label="Show disabled users"/>
       </div>
       <div style={{fontSize:'12px',color:'#888',marginBottom:'1rem',background:'#f8fbfd',borderRadius:'8px',padding:'10px 14px',border:'1px solid #eef3f7'}}>
         <strong>Roles:</strong> &nbsp;<span style={{color:'#1B9BD4',fontWeight:600}}>Tech</span> — daily sheet only &nbsp;|&nbsp;<span style={{color:'#9a6000',fontWeight:600}}>Keyholder</span> — sheet + team overview &nbsp;|&nbsp;<span style={{color:RED,fontWeight:600}}>Admin</span> — full access
       </div>
       <table style={{width:'100%',borderCollapse:'collapse',fontSize:'13px',marginBottom:'1.5rem'}}>
         <thead><tr style={{background:'#f5f5f0'}}>{['Name','PIN','Role','Status','Actions'].map(h=><th key={h} style={{padding:'8px 10px',textAlign:'left',fontSize:'11px',color:'#555',textTransform:'uppercase',letterSpacing:'0.05em',fontWeight:700,borderBottom:'1px solid #e0ddd5'}}>{h}</th>)}</tr></thead>
-        <tbody>{technicians.map(t=>(
+        <tbody>{technicians.filter(t=>showDisabled||t.active).map(t=>(
           <tr key={t.id} style={{borderBottom:'1px solid #f0ede5'}}>
             <td style={{padding:'8px 10px',fontWeight:600,color:NAVY}}>{t.name}</td>
             <td style={{padding:'8px 10px'}}>{editing[t.id]?<PinEditor onSave={pin=>{if(pin){updateTech(t.id,{pin});}setEditing(p=>({...p,[t.id]:false}));}}/>:<span style={{fontFamily:'monospace',background:'#f0f0f0',padding:'2px 8px',borderRadius:'4px'}}>{'•'.repeat(t.pin?.length||4)}</span>}</td>
@@ -478,6 +497,17 @@ function AdvancedOverview(){
         <div style={{fontSize:'16px',fontWeight:700,color:'#1a2a3a',marginBottom:'8px'}}>Advanced Team Overview</div>
         <div style={{fontSize:'13px',color:'#888'}}>This area is reserved for advanced analytics and reporting features coming soon.</div>
       </div>
+    </div>
+  );
+}
+
+function ToggleSwitch({value, onChange, label}){
+  return(
+    <div style={{display:'flex',alignItems:'center',gap:'10px',cursor:'pointer'}} onClick={()=>onChange(!value)}>
+      <div style={{position:'relative',width:'44px',height:'24px',background:value?'#2d8a4e':'#ccc',borderRadius:'12px',transition:'background 0.2s',flexShrink:0}}>
+        <div style={{position:'absolute',top:'3px',left:value?'23px':'3px',width:'18px',height:'18px',background:'#fff',borderRadius:'50%',transition:'left 0.2s',boxShadow:'0 1px 3px rgba(0,0,0,0.2)'}}/>
+      </div>
+      <span style={{fontSize:'13px',fontWeight:600,color:value?'#2d8a4e':'#888',userSelect:'none'}}>{label}</span>
     </div>
   );
 }
