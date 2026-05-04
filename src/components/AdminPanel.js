@@ -573,16 +573,7 @@ function AdvancedOverview(){
         </div>
       </div>
 
-      {/* Revenue boxes - placeholder */}
-      <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:'12px',marginBottom:'16px'}}>
-        {[['Total Revenue','—'],['Total Profit','—'],['Avg Revenue / Ticket','—']].map(([label,val])=>(
-          <div key={label} style={{background:NAVY,borderRadius:'12px',padding:'1rem 1.25rem',border:'1px solid rgba(255,255,255,0.1)'}}>
-            <div style={{fontSize:'10px',color:'rgba(255,255,255,0.6)',textTransform:'uppercase',letterSpacing:'0.08em',fontWeight:700,marginBottom:'6px'}}>{label}</div>
-            <div style={{fontSize:'24px',fontWeight:800,color:YELLOW}}>{val}</div>
-            <div style={{fontSize:'10px',color:'rgba(255,255,255,0.3)',marginTop:'4px'}}>API integration coming soon</div>
-          </div>
-        ))}
-      </div>
+
 
       {/* Tech cards */}
       <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(280px,1fr))',gap:'12px',marginBottom:'16px'}}>
@@ -602,11 +593,19 @@ function AdvancedOverview(){
                   </div>
                 ))}
               </div>
-              <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:'6px'}}>
+              <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:'6px',marginBottom:'6px'}}>
                 {[['Book Time',totB>0?`${totB}m`:'—'],['Actual Time',totA>0?`${totA}m`:'—'],['Add-ons',addOnCount]].map(([l,v])=>(
                   <div key={l} style={{background:'rgba(255,255,255,0.05)',borderRadius:'6px',padding:'6px 8px'}}>
                     <div style={{fontSize:'9px',color:'#7aafc8',textTransform:'uppercase',letterSpacing:'0.05em'}}>{l}</div>
                     <div style={{fontSize:'16px',fontWeight:700,color:YELLOW}}>{v}</div>
+                  </div>
+                ))}
+              </div>
+              <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:'6px'}}>
+                {[['Revenue','—'],['Profit','—'],['Avg / Ticket','—']].map(([l,v])=>(
+                  <div key={l} style={{background:'rgba(255,255,255,0.04)',borderRadius:'6px',padding:'6px 8px',border:'1px dashed rgba(255,255,255,0.08)'}}>
+                    <div style={{fontSize:'9px',color:'rgba(255,255,255,0.4)',textTransform:'uppercase',letterSpacing:'0.05em'}}>{l}</div>
+                    <div style={{fontSize:'15px',fontWeight:700,color:'rgba(255,255,255,0.3)'}}>{v}</div>
                   </div>
                 ))}
               </div>
