@@ -59,7 +59,15 @@ export default function AdminSheetView({tech, onBack, viewDate, currentUser}){
         timerStart:t.timer_started_at?new Date(t.timer_started_at).getTime():null,
       }));
       const blanks=isToday?Math.max(0,parseInt(settings.default_rows||10)-loaded.length):0;
-      setRows([...loaded,...Array.from({length:blanks},EMPTY_ROW)]);
+      setRows(prev=>{
+        const prevMap={};
+        prev.forEach(r=>{if(r.dbId)prevMap[r.dbId]=r;});
+        return [...loaded.map(r=>{
+          const existing=prevMap[r.dbId];
+          if(existing&&existing.timerState==='running')return{...r,timerMs:existing.timerMs,timerState:'running',timerStart:existing.timerStart};
+          return r;
+        }),...Array.from({length:blanks},EMPTY_ROW)];
+      });
     } else {
       setRows(isToday?Array.from({length:parseInt(settings.default_rows||10)},EMPTY_ROW):[]);
     }

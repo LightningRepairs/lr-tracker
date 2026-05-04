@@ -58,10 +58,23 @@ export default function TechSheet({tech}){
             laborCost:t.labor_cost!=null?String(t.labor_cost):'',isFullSet:t.is_full_set||false,
             notes:t.notes||'',
             addOns:(t.ticket_add_ons||[]).map(ta=>({id:ta.add_on_id,mins:ta.book_minutes,taId:ta.id})),
-            timerMs:0,timerState:'idle',timerStart:null,
+            timerMs:t.timer_started_at?Date.now()-new Date(t.timer_started_at).getTime():(t.timer_paused_ms||0),
+            timerState:t.timer_started_at?'running':(t.timer_paused_ms>0?'paused':'idle'),
+            timerStart:t.timer_started_at?new Date(t.timer_started_at).getTime():null,
           }));
           const blanks=Math.max(0,10-loaded.length);
-          setRows([...loaded,...Array.from({length:blanks},EMPTY_ROW)]);
+          const allRows=[...loaded,...Array.from({length:blanks},EMPTY_ROW)];
+          setRows(allRows);
+          // Restart intervals for any running timers
+          loaded.forEach(r=>{
+            if(r.timerState==='running'&&r.timerStart){
+              const startMs=r.timerStart;
+              clearInterval(timerRefs.current['timer_'+r._id]);
+              timerRefs.current['timer_'+r._id]=setInterval(()=>{
+                setRows(p=>p.map(rr=>rr._id===r._id&&rr.timerState==='running'?{...rr,timerMs:Date.now()-startMs}:rr));
+              },50);
+            }
+          });
         }
       });
   },[tech,today]);
