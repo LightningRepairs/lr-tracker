@@ -112,7 +112,7 @@ export default function TechSheet({tech}){
   },[calcBook]);
 
   const saveRow=useCallback(async(row)=>{
-    if(!row.ticketNumber&&!row.repairTypeId&&row.addOns.length===0)return;
+    if(!row.ticketNumber&&!row.deviceTypeId&&!row.repairTypeId&&row.addOns.length===0)return;
     const rt=repairTypes.find(r=>r.id===row.repairTypeId);
     const base=rt?.is_labor?getLaborBookMinutes(row.repairTypeId,row.laborCost):getBookMinutes(row.repairTypeId,row.deviceModelId,row.isFullSet);
     const actual=parseFloat(row.actualMinutes)||null;
@@ -158,11 +158,29 @@ export default function TechSheet({tech}){
         if(r._id!==id||r.timerState==='running')return r;
         const startMs=now-r.timerMs;
         const startedAt=new Date(startMs).toISOString();
-        if(r.dbId)supabase.from('tickets').update({timer_started_at:startedAt,timer_paused_ms:0}).eq('id',r.dbId);
         clearInterval(timerRefs.current['timer_'+id]);
         timerRefs.current['timer_'+id]=setInterval(()=>{
           setRows(p=>p.map(rr=>rr._id===id&&rr.timerState==='running'?{...rr,timerMs:Date.now()-startMs}:rr));
         },50);
+        // Save timer_started_at - create ticket in DB first if needed
+        const ensureTimerSaved=async()=>{
+          let dbId=r.dbId;
+          if(!dbId){
+            // Insert a minimal ticket record so we have an ID to attach timer to
+            const{data}=await supabase.from('tickets').insert({
+              technician_id:tech.id,work_date:today,
+              device_type_id:r.deviceTypeId||null,
+              timer_started_at:startedAt,timer_paused_ms:0
+            }).select().single();
+            if(data){
+              dbId=data.id;
+              setRows(p=>p.map(rr=>rr._id===id?{...rr,dbId:data.id}:rr));
+            }
+          } else {
+            await supabase.from('tickets').update({timer_started_at:startedAt,timer_paused_ms:0}).eq('id',dbId);
+          }
+        };
+        ensureTimerSaved();
         return{...r,timerState:'running',timerStart:startMs};
       });
     });
