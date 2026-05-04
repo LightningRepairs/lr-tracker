@@ -9,7 +9,7 @@ const GREEN='#2d8a4e',GREEN_BG='#e6f5ec',AMBER='#9a6000',AMBER_BG='#fff3d0',RED=
 function effColor(pct,green=90,yellow=79){if(pct===null||pct===undefined)return'#aac8d8';return pct>=green?GREEN:pct>=yellow?AMBER:RED;}
 function effBg(pct,green=90,yellow=79){if(pct===null||pct===undefined)return'rgba(255,255,255,0.1)';return pct>=green?GREEN_BG:pct>=yellow?AMBER_BG:RED_BG;}
 
-export default function ManagerDashboard({tech:currentUser, resetKey}){
+export default function ManagerDashboard({tech:currentUser, drillTech, setDrillTech}){
   const [tickets,setTickets]=useState([]);
   const [ticketAddOns,setTicketAddOns]=useState([]);
   const [technicians,setTechnicians]=useState([]);
@@ -21,8 +21,7 @@ export default function ManagerDashboard({tech:currentUser, resetKey}){
   const [selectedTechs,setSelectedTechs]=useState(new Set(['all']));
   const [settings,setSettings]=useState(getDefaults());
   const [loading,setLoading]=useState(true);
-  const [drillTech,setDrillTech]=useState(null);
-  useEffect(()=>{setDrillTech(null);},[resetKey]);
+
 
   useEffect(()=>{
     const load=async()=>{
