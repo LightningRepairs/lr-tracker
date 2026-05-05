@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { supabase } from '../lib/supabase';
 import { clearSettingsCache } from '../lib/settings';
+import Reports from './Reports';
 
 const BLUE='#1B9BD4',NAVY='#1a2a3a',BORDER='#b8dff0',GREEN='#2d8a4e',RED='#b52020';
 
@@ -12,7 +13,7 @@ export default function AdminPanel({resetKey}){
       <div style={{background:'#fff',borderRadius:'12px',border:`1.5px solid ${BORDER}`,overflow:'hidden'}}>
         <div style={{background:NAVY,padding:'1rem 1.5rem',display:'flex',gap:'8px',alignItems:'center',flexWrap:'wrap'}}>
           <span style={{color:'#fff',fontWeight:700,fontSize:'15px',marginRight:'16px'}}>Admin Panel</span>
-          {[['advanced','Advanced Team Overview'],['booktimes','Book Times'],['devices','Devices & Repairs'],['addons','Add-ons'],['technicians','Technicians'],['settings','Settings']].map(([key,label])=>(
+          {[['advanced','Advanced Team Overview'],['reports','Reports'],['booktimes','Book Times'],['devices','Devices & Repairs'],['addons','Add-ons'],['technicians','Technicians'],['settings','Settings']].map(([key,label])=>(
             <button key={key} onClick={()=>setTab(key)} style={{background:tab===key?BLUE:'transparent',border:`1px solid ${tab===key?BLUE:'rgba(255,255,255,0.2)'}`,color:tab===key?'#fff':'rgba(255,255,255,0.6)',borderRadius:'6px',padding:'5px 14px',fontSize:'12px',fontWeight:tab===key?700:400,cursor:'pointer'}}>{label}</button>
           ))}
         </div>
@@ -22,6 +23,7 @@ export default function AdminPanel({resetKey}){
           {tab==='addons'&&<AddOnsEditor/>}
           {tab==='technicians'&&<TechniciansEditor/>}
           {tab==='settings'&&<SettingsEditor/>}
+          {tab==='reports'&&<Reports/>}
           {tab==='advanced'&&<AdvancedOverview/>}
         </div>
       </div>
@@ -374,7 +376,7 @@ function TechniciansEditor(){
     setTechnicians(prev=>prev.filter(t=>t.id!==id));
     flash('Deleted!');
   };
-  const addTech=async()=>{if(!newName.trim()||!newPin.trim())return;const{data}=await supabase.from('technicians').insert({name:newName.trim(),pin:newPin.trim(),role:newRole}).select().single();if(data){setTechnicians(p=>[...p,data]);setNewName('');setNewPin('');flash('Added!');}};
+  const addTech=async()=>{if(!newName.trim()||!newPin.trim())return;const dupPin=technicians.find(t=>t.pin===newPin.trim()&&t.active);if(dupPin){flash(`PIN already used by ${dupPin.name}. Choose a different PIN.`);return;}const{data}=await supabase.from('technicians').insert({name:newName.trim(),pin:newPin.trim(),role:newRole}).select().single();if(data){setTechnicians(p=>[...p,data]);setNewName('');setNewPin('');flash('Added!');}};
   const updateTech=async(id,updates)=>{await supabase.from('technicians').update(updates).eq('id',id);setTechnicians(p=>p.map(t=>t.id===id?{...t,...updates}:t));flash('Saved!');};
 
   return(
@@ -545,8 +547,8 @@ function AdvancedOverview(){
 
   const getTechStats=(techId)=>{
     const tt=tickets.filter(t=>t.technician_id===techId);
-    const repaired=tt.filter(t=>{const rt=repairTypes.find(r=>r.id===t.repair_type_id);return rt&&!rt.is_diagnosis&&rt.name!=='Did Not Complete Repair';});
-    const diagnosed=tt.filter(t=>{const rt=repairTypes.find(r=>r.id===t.repair_type_id);return rt?.is_diagnosis&&rt.name!=='Did Not Complete Diagnosis';});
+    const repaired=tt.filter(t=>{const rt=repairTypes.find(r=>r.id===t.repair_type_id);return rt&&!rt.is_diagnosis&&rt.name!=='Did Not Complete Repair'&&(t.actual_minutes||0)>0;});
+    const diagnosed=tt.filter(t=>{const rt=repairTypes.find(r=>r.id===t.repair_type_id);return rt?.is_diagnosis&&rt.name!=='Did Not Complete Diagnosis'&&(t.actual_minutes||0)>0;});
     const timed=tt.filter(t=>t.actual_minutes>0&&t.book_minutes>0);
     const totA=timed.reduce((s,t)=>s+t.actual_minutes,0);
     const totB=timed.reduce((s,t)=>s+t.book_minutes,0);

@@ -104,10 +104,11 @@ export default function TechSheet({tech}){
   },[repairTypes,getBookMinutes,getLaborBookMinutes]);
 
   const calcEfficiency=useCallback((row)=>{
-    const actual=parseFloat(row.actualMinutes)||0;
-    if(actual<=0)return null;
     const book=calcBook(row);
     if(book===null)return null;
+    // Treat blank actual as 0 - unfinished tickets drag efficiency down
+    const actual=row.actualMinutes===''||row.actualMinutes===null||row.actualMinutes===undefined?0:parseFloat(row.actualMinutes)||0;
+    if(actual<=0)return book>0?0:null;
     return Math.round((book/actual)*100);
   },[calcBook]);
 
@@ -164,11 +165,16 @@ export default function TechSheet({tech}){
         timerRefs.current['timer_'+id]=setInterval(()=>{
           setRows(p=>p.map(rr=>rr._id===id&&rr.timerState==='running'?{...rr,timerMs:Date.now()-startMs}:rr));
         },50);
-        // Save timer_started_at - create ticket in DB first if needed
+        // Save timer_started_at - clear all others for this tech first, then set this one
         const ensureTimerSaved=async()=>{
+          // First: clear ALL running timers for this tech today (prevents multiple running timers)
+          await supabase.from('tickets')
+            .update({timer_started_at:null})
+            .eq('technician_id',tech.id)
+            .eq('work_date',today)
+            .not('timer_started_at','is',null);
           let dbId=r.dbId;
           if(!dbId){
-            // Insert a minimal ticket record so we have an ID to attach timer to
             const{data}=await supabase.from('tickets').insert({
               technician_id:tech.id,work_date:today,
               device_type_id:r.deviceTypeId||null,
@@ -261,8 +267,8 @@ export default function TechSheet({tech}){
   const effYellow=parseInt(settings.efficiency_yellow||79);
 
   const filledRows=rows.filter(r=>r.ticketNumber);
-  const repaired=filledRows.filter(r=>{const rt=repairTypes.find(x=>x.id===r.repairTypeId);return rt&&!rt.is_diagnosis&&rt.name!=='Did Not Complete Repair';});
-  const diagnosed=filledRows.filter(r=>{const rt=repairTypes.find(x=>x.id===r.repairTypeId);return rt?.is_diagnosis&&rt.name!=='Did Not Complete Diagnosis';});
+  const repaired=filledRows.filter(r=>{const rt=repairTypes.find(x=>x.id===r.repairTypeId);return rt&&!rt.is_diagnosis&&rt.name!=='Did Not Complete Repair'&&(parseFloat(r.actualMinutes)||0)>0;});
+  const diagnosed=filledRows.filter(r=>{const rt=repairTypes.find(x=>x.id===r.repairTypeId);return rt?.is_diagnosis&&rt.name!=='Did Not Complete Diagnosis'&&(parseFloat(r.actualMinutes)||0)>0;});
   const timedRows=rows.filter(r=>{const a=parseFloat(r.actualMinutes)||0;return a>0&&calcBook(r)!==null;});
   const totalActual=timedRows.reduce((s,r)=>s+(parseFloat(r.actualMinutes)||0),0);
   const totalBook=timedRows.reduce((s,r)=>s+(calcBook(r)||0),0);
