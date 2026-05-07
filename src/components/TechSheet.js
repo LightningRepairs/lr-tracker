@@ -36,6 +36,11 @@ export default function TechSheet({tech}){
   const [settings,setSettings]=useState({...getDefaults(),book_time_goal:'360',actual_time_goal:'360',work_day_start:'09:00',work_day_end:'18:00',pace_yellow_threshold:'45'});
   const [openPopup,setOpenPopup]=useState(null);
   useEffect(()=>{const iv=setInterval(()=>setTick(t=>t+1),60000);return()=>clearInterval(iv);},[]);
+  useEffect(()=>{
+    const handler=(e)=>{if(openPopup&&!e.target.closest('.addon-popup-wrap'))setOpenPopup(null);};
+    document.addEventListener('mousedown',handler);
+    return()=>document.removeEventListener('mousedown',handler);
+  },[openPopup]);
   const timerRefs=useRef({});
   const today=new Date().toISOString().slice(0,10);
 
@@ -452,7 +457,7 @@ export default function TechSheet({tech}){
                       </td>
                       <td style={{padding:'4px',minWidth:'90px',overflow:'visible',position:'relative',...(!hasDeviceType?dimStyle:{})}}>
                         {row.deviceTypeId&&addOnsForType.length>0&&(
-                          <div style={{position:'relative'}}>
+                          <div className='addon-popup-wrap' style={{position:'relative'}}>
                             <button onClick={()=>setOpenPopup(openPopup===row._id?null:row._id)} style={{width:'100%',background:row.addOns.length>0?BLUE_LIGHT:'#fff',border:`1px solid ${row.addOns.length>0?BORDER:'#d0cdc5'}`,borderRadius:'6px',padding:'3px 6px',fontSize:'10px',fontWeight:600,color:row.addOns.length>0?BLUE:'#666',cursor:'pointer'}}>
                               {row.addOns.length>0?`${row.addOns.length} add-on${row.addOns.length>1?'s':''}`:'+ Add-on'}
                             </button>
