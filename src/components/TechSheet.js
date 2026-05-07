@@ -32,8 +32,10 @@ export default function TechSheet({tech}){
   const [bookTimes,setBookTimes]=useState([]);
   const [addOnOptions,setAddOnOptions]=useState([]);
   const [loading,setLoading]=useState(true);
-  const [settings,setSettings]=useState({...getDefaults(),book_time_goal:'360',actual_time_goal:'360'});
+  const [,setTick]=useState(0);
+  const [settings,setSettings]=useState({...getDefaults(),book_time_goal:'360',actual_time_goal:'360',work_day_start:'09:00',work_day_end:'18:00',pace_yellow_threshold:'45'});
   const [openPopup,setOpenPopup]=useState(null);
+  useEffect(()=>{const iv=setInterval(()=>setTick(t=>t+1),60000);return()=>clearInterval(iv);},[]);
   const timerRefs=useRef({});
   const today=new Date().toISOString().slice(0,10);
 
@@ -312,7 +314,7 @@ export default function TechSheet({tech}){
           </div>
         </div>
         <div style={{display:'grid',gridTemplateColumns:'repeat(5,1fr)',gap:'10px'}}>
-          {[['Total Repaired',repaired.length],['Total Diagnosed',diagnosed.length],['Total Tickets',filledRows.length],['Book Time',totalBook>0?`${totalBook}m`:'—'],['Actual Time',totalActual>0?`${totalActual}m`:'—']].map(([label,val])=>(
+          {[['Total Repaired',repaired.length],['Total Diagnosed',diagnosed.length],['Total Tickets',filledRows.length],['Book Time',`${totalBook}/${parseInt(settings.book_time_goal||360)}m`],['Actual Time',`${totalActual}/${parseInt(settings.actual_time_goal||360)}m`]].map(([label,val])=>(
             <div key={label} style={{background:NAVY,borderRadius:'8px',padding:'0.65rem 0.85rem',border:'1px solid rgba(255,255,255,0.1)'}}>
               <div style={{fontSize:'10px',color:'rgba(255,255,255,0.85)',textTransform:'uppercase',letterSpacing:'0.05em',fontWeight:700,marginBottom:'3px'}}>{label}</div>
               <div style={{fontSize:'19px',fontWeight:700,color:'#fff'}}>{val}</div>
@@ -323,28 +325,70 @@ export default function TechSheet({tech}){
         {(()=>{
           const bookGoal=parseInt(settings.book_time_goal||360);
           const actualGoal=parseInt(settings.actual_time_goal||360);
-          const bookPct=Math.min((totalBook/bookGoal)*100,100);
+          const yellowThresh=parseInt(settings.pace_yellow_threshold||45);
           const bookOverflow=totalBook>bookGoal;
+
+          // Calculate expected book time based on time of day
+          const now=new Date();
+          const [startH,startM]=(settings.work_day_start||'09:00').split(':').map(Number);
+          const [endH,endM]=(settings.work_day_end||'18:00').split(':').map(Number);
+          const dayStartMins=startH*60+startM;
+          const dayEndMins=endH*60+endM;
+          const nowMins=now.getHours()*60+now.getMinutes();
+          const dayTotalMins=dayEndMins-dayStartMins;
+          const elapsed=Math.max(0,Math.min(nowMins-dayStartMins,dayTotalMins));
+          const expectedBook=Math.round((elapsed/dayTotalMins)*bookGoal);
+          const markerPct=Math.min((elapsed/dayTotalMins)*100,100);
+          const behindBy=expectedBook-totalBook;
+          const bookBarColor=behindBy<=0?'#00e676':behindBy<=yellowThresh?'#ffcc00':'#ff1744';
+          const bookBarGlow=behindBy<=0?'0 0 12px #00e676':behindBy<=yellowThresh?'0 0 12px #ffcc00':'0 0 16px #ff1744, 0 0 32px rgba(255,23,68,0.5)';
+          const bookFillPct=Math.min((totalBook/bookGoal)*100,100);
+
           return(
-            <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'12px',marginTop:'10px'}}>
-              {/* Book time bar */}
-              <div style={{background:NAVY,borderRadius:'8px',padding:'10px 14px',border:'1px solid rgba(255,255,255,0.1)'}}>
-                <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'6px'}}>
-                  <span style={{fontSize:'10px',fontWeight:700,color:'rgba(255,255,255,0.7)',textTransform:'uppercase',letterSpacing:'0.08em'}}>Book Time Goal</span>
-                  <span style={{fontSize:'13px',fontWeight:800,color:bookOverflow?YELLOW:'#fff'}}>{totalBook}<span style={{color:'rgba(255,255,255,0.4)',fontWeight:400}}> / {bookGoal}m</span>{bookOverflow&&<span style={{fontSize:'11px',color:YELLOW,marginLeft:'6px'}}>+{totalBook-bookGoal}m</span>}</span>
+            <div style={{display:'grid',gridTemplateColumns:'2fr 1fr',gap:'12px',marginTop:'10px'}}>
+              {/* Book time pace bar */}
+              <div style={{background:NAVY,borderRadius:'8px',padding:'12px 16px',border:`1px solid ${bookBarColor}`,boxShadow:bookBarGlow,transition:'all 0.5s ease'}}>
+                <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'4px'}}>
+                  <span style={{fontSize:'10px',fontWeight:700,color:'rgba(255,255,255,0.7)',textTransform:'uppercase',letterSpacing:'0.08em'}}>Book Time Pace</span>
+                  <div style={{textAlign:'right'}}>
+                    <span style={{fontSize:'15px',fontWeight:800,color:bookBarColor}}>{totalBook}</span>
+                    <span style={{fontSize:'12px',color:'rgba(255,255,255,0.4)',fontWeight:400}}> / {expectedBook}m expected</span>
+                    {bookOverflow&&<span style={{fontSize:'11px',color:YELLOW,marginLeft:'8px'}}>+{totalBook-bookGoal}m over goal!</span>}
+                    {behindBy>0&&<span style={{fontSize:'11px',color:bookBarColor,marginLeft:'8px'}}>({behindBy}m behind)</span>}
+                  </div>
                 </div>
-                <div style={{height:'10px',background:'rgba(255,255,255,0.1)',borderRadius:'5px',overflow:'hidden'}}>
-                  <div style={{height:'100%',width:`${bookPct}%`,background:bookOverflow?YELLOW:BLUE,borderRadius:'5px',transition:'width 0.4s ease'}}/>
+                {/* Bar with marker */}
+                <div style={{position:'relative',marginTop:'6px'}}>
+                  {/* Edge labels */}
+                  <div style={{display:'flex',justifyContent:'space-between',marginBottom:'4px'}}>
+                    <span style={{fontSize:'10px',color:'rgba(255,255,255,0.4)'}}>0</span>
+                    <span style={{fontSize:'10px',color:'rgba(255,255,255,0.4)'}}>{bookGoal}m</span>
+                  </div>
+                  {/* Bar track */}
+                  <div style={{height:'20px',background:'rgba(255,255,255,0.08)',borderRadius:'10px',overflow:'visible',position:'relative'}}>
+                    {/* Fill */}
+                    <div style={{height:'100%',width:`${bookFillPct}%`,background:bookBarColor,borderRadius:'10px',transition:'width 0.4s ease, background 0.5s ease',boxShadow:`0 0 8px ${bookBarColor}`}}/>
+                    {/* Marker line */}
+                    <div style={{position:'absolute',top:'-4px',left:`${markerPct}%`,transform:'translateX(-50%)',width:'3px',height:'28px',background:'#fff',borderRadius:'2px',boxShadow:'0 0 6px rgba(255,255,255,0.8)',zIndex:10}}/>
+                    {/* Marker triangle */}
+                    <div style={{position:'absolute',top:'-14px',left:`${markerPct}%`,transform:'translateX(-50%)',fontSize:'10px',color:'#fff',whiteSpace:'nowrap',fontWeight:700}}>▼</div>
+                  </div>
                 </div>
               </div>
               {/* Actual time tracker */}
-              <div style={{background:NAVY,borderRadius:'8px',padding:'10px 14px',border:'1px solid rgba(255,255,255,0.1)'}}>
-                <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'6px'}}>
+              <div style={{background:NAVY,borderRadius:'8px',padding:'12px 16px',border:'1px solid rgba(255,255,255,0.1)'}}>
+                <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'4px'}}>
                   <span style={{fontSize:'10px',fontWeight:700,color:'rgba(255,255,255,0.7)',textTransform:'uppercase',letterSpacing:'0.08em'}}>Active Time</span>
-                  <span style={{fontSize:'13px',fontWeight:800,color:'#fff'}}>{totalActual}<span style={{color:'rgba(255,255,255,0.4)',fontWeight:400}}> / {actualGoal}m</span></span>
+                  <span style={{fontSize:'15px',fontWeight:800,color:'#4db8e8'}}>{totalActual}<span style={{fontSize:'12px',color:'rgba(255,255,255,0.4)',fontWeight:400}}> / {actualGoal}m</span></span>
                 </div>
-                <div style={{height:'10px',background:'rgba(255,255,255,0.1)',borderRadius:'5px',overflow:'hidden'}}>
-                  <div style={{height:'100%',width:`${Math.min((totalActual/actualGoal)*100,100)}%`,background:'#4db8e8',borderRadius:'5px',transition:'width 0.4s ease'}}/>
+                <div style={{marginTop:'6px'}}>
+                  <div style={{display:'flex',justifyContent:'space-between',marginBottom:'4px'}}>
+                    <span style={{fontSize:'10px',color:'rgba(255,255,255,0.4)'}}>0</span>
+                    <span style={{fontSize:'10px',color:'rgba(255,255,255,0.4)'}}>{actualGoal}m</span>
+                  </div>
+                  <div style={{height:'20px',background:'rgba(255,255,255,0.08)',borderRadius:'10px',overflow:'hidden'}}>
+                    <div style={{height:'100%',width:`${Math.min((totalActual/actualGoal)*100,100)}%`,background:'#4db8e8',borderRadius:'10px',transition:'width 0.4s ease',boxShadow:'0 0 8px #4db8e8'}}/>
+                  </div>
                 </div>
               </div>
             </div>
