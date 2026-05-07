@@ -340,7 +340,6 @@ export default function AdminSheetView({tech, onBack, viewDate, currentUser}){
         })()}
       </div>
 
-      {/* Table */}
       <div style={{background:'#fff',borderRadius:'0 0 12px 12px',border:`1.5px solid ${BORDER}`,borderTop:'none',overflow:'hidden'}}>
         <div style={{overflowX:'auto'}}>
           <table style={{width:'100%',borderCollapse:'collapse',fontSize:'12px',minWidth:'1200px'}}>
