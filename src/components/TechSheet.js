@@ -4,10 +4,10 @@ import { getSettings, getDefaults } from '../lib/settings';
 
 const BLUE='#1B9BD4',NAVY='#1a2a3a',YELLOW='#F5C518',BLUE_LIGHT='#e8f6fc',BLUE_MID='#cceaf7',BORDER='#b8dff0';
 const GREEN='#2d8a4e',GREEN_BG='#e6f5ec',AMBER='#9a6000',AMBER_BG='#fff3d0',RED='#b52020',RED_BG='#fce8e8';
-// Rich colors for repairs
-const R_GREEN='#1a6b35',R_GREEN_BG='#c8f0d8',R_AMBER='#7a4800',R_AMBER_BG='#fde8a0',R_RED='#8b1010',R_RED_BG='#fac8c8';
-// Pastel colors for diagnostics
-const D_GREEN='#4a9e6a',D_GREEN_BG='#e8f8ef',D_AMBER='#b87820',D_AMBER_BG='#fef4dc',D_RED='#c04040',D_RED_BG='#fdeaea';
+// Rich bold colors for repairs
+const R_GREEN='#0d5c2a',R_GREEN_BG='#b8f0cc',R_AMBER='#6b3a00',R_AMBER_BG='#fcd97a',R_RED='#7a0a0a',R_RED_BG='#f5aaaa';
+// Soft pastel colors for diagnostics  
+const D_GREEN='#5aaa7a',D_GREEN_BG='#edf8f2',D_AMBER='#c08830',D_AMBER_BG='#fef8e8',D_RED='#cc5555',D_RED_BG='#fdf0f0';
 
 function pad(n){return String(n).padStart(2,'0');}
 function fmtTimer(ms){const t=Math.floor(ms/1000),m=Math.floor(t/60),s=t%60,cs=Math.floor((ms%1000)/10);return`${pad(m)}:${pad(s)}:${pad(cs)}`;}
@@ -383,7 +383,7 @@ export default function TechSheet({tech}){
 
                 return(
                   <React.Fragment key={row._id}>
-                    <tr style={{background:bg,borderBottom:`1px solid ${BLUE_MID}`}}>
+                    <tr style={{background:bg,borderBottom:`1px solid ${BLUE_MID}`,borderLeft:isDiag?'4px solid #7aafc8':'4px solid transparent'}}>
                       <td style={{padding:'4px'}}><input value={row.ticketNumber} onChange={e=>updateRow(row._id,{ticketNumber:e.target.value})} placeholder={String(idx+1)} style={inpStyle}/></td>
                       <td style={{padding:'4px',textAlign:'center'}}><select value={row.deviceTypeId} onChange={e=>updateRow(row._id,{deviceTypeId:e.target.value,deviceModelId:'',repairTypeId:'',addOns:[]})} style={selStyle}><option value="">— select —</option>{deviceTypes.map(d=><option key={d.id} value={d.id}>{d.name}</option>)}</select></td>
                       <td style={{padding:'4px',textAlign:'center',...(!hasDeviceType?dimStyle:{})}}><select value={row.deviceModelId} onChange={e=>updateRow(row._id,{deviceModelId:e.target.value,repairTypeId:''})} disabled={!row.deviceTypeId} style={!hasDeviceType?selDisabled:selStyle}><option value="">— select —</option>{modelsForType.map(m=><option key={m.id} value={m.id}>{m.name}</option>)}</select></td>
