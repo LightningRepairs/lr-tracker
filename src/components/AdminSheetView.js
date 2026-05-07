@@ -277,8 +277,9 @@ export default function AdminSheetView({tech, onBack, viewDate, currentUser}){
             </div>
           ))}
         </div>
-        {/* Pace bars */}
-        {(()=>{
+      </div>
+      {/* Pace bars */}
+      {(()=>{
           const bookGoal=parseInt(settings.book_time_goal||360);
           const actualGoal=parseInt(settings.actual_time_goal||360);
           const yellowThresh=parseInt(settings.pace_yellow_threshold||45);
@@ -297,48 +298,49 @@ export default function AdminSheetView({tech, onBack, viewDate, currentUser}){
           const bookBarGlow=behindBy<=0?'0 0 12px #00e676':behindBy<=yellowThresh?'0 0 12px #ffcc00':'0 0 16px #ff1744, 0 0 32px rgba(255,23,68,0.5)';
           const bookFillPct=Math.min((totB/bookGoal)*100,100);
           return(
-            <div style={{display:'grid',gridTemplateColumns:'2fr 1fr',gap:'12px',padding:'0 1.5rem 0.85rem'}}>
-              <div style={{background:NAVY,borderRadius:'8px',padding:'12px 16px',border:`1px solid ${bookBarColor}`,boxShadow:bookBarGlow,transition:'all 0.5s ease'}}>
-                <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'4px'}}>
-                  <span style={{fontSize:'10px',fontWeight:700,color:'rgba(255,255,255,0.7)',textTransform:'uppercase',letterSpacing:'0.08em'}}>Book Time Pace</span>
-                  <div style={{textAlign:'right'}}>
-                    <span style={{fontSize:'15px',fontWeight:800,color:bookBarColor}}>{totB}</span>
-                    <span style={{fontSize:'12px',color:'rgba(255,255,255,0.4)',fontWeight:400}}> / {expectedBook}m expected</span>
-                    {behindBy>0&&<span style={{fontSize:'11px',color:bookBarColor,marginLeft:'8px'}}>({behindBy}m behind)</span>}
+            <div style={{background:BLUE,padding:'0 1.5rem 0.85rem'}}>
+              <div style={{display:'grid',gridTemplateColumns:'2fr 1fr',gap:'12px'}}>
+                <div style={{background:NAVY,borderRadius:'8px',padding:'12px 16px',border:`1px solid ${bookBarColor}`,boxShadow:bookBarGlow,transition:'all 0.5s ease'}}>
+                  <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'4px'}}>
+                    <span style={{fontSize:'10px',fontWeight:700,color:'rgba(255,255,255,0.7)',textTransform:'uppercase',letterSpacing:'0.08em'}}>Book Time Pace</span>
+                    <div style={{textAlign:'right'}}>
+                      <span style={{fontSize:'15px',fontWeight:800,color:bookBarColor}}>{totB}</span>
+                      <span style={{fontSize:'12px',color:'rgba(255,255,255,0.4)',fontWeight:400}}> / {expectedBook}m expected</span>
+                      {behindBy>0&&<span style={{fontSize:'11px',color:bookBarColor,marginLeft:'8px'}}>({behindBy}m behind)</span>}
+                    </div>
+                  </div>
+                  <div style={{position:'relative',marginTop:'6px'}}>
+                    <div style={{display:'flex',justifyContent:'space-between',marginBottom:'4px'}}>
+                      <span style={{fontSize:'10px',color:'rgba(255,255,255,0.4)'}}>0</span>
+                      <span style={{fontSize:'10px',color:'rgba(255,255,255,0.4)'}}>{bookGoal}m</span>
+                    </div>
+                    <div style={{height:'20px',background:'rgba(255,255,255,0.08)',borderRadius:'10px',overflow:'visible',position:'relative'}}>
+                      <div style={{height:'100%',width:`${bookFillPct}%`,background:bookBarColor,borderRadius:'10px',transition:'width 0.4s ease',boxShadow:`0 0 8px ${bookBarColor}`}}/>
+                      <div style={{position:'absolute',top:'-4px',left:`${markerPct}%`,transform:'translateX(-50%)',width:'3px',height:'28px',background:'#fff',borderRadius:'2px',boxShadow:'0 0 6px rgba(255,255,255,0.8)',zIndex:10}}/>
+                      <div style={{position:'absolute',top:'-14px',left:`${markerPct}%`,transform:'translateX(-50%)',fontSize:'10px',color:'#fff',whiteSpace:'nowrap',fontWeight:700}}>▼</div>
+                    </div>
                   </div>
                 </div>
-                <div style={{position:'relative',marginTop:'6px'}}>
-                  <div style={{display:'flex',justifyContent:'space-between',marginBottom:'4px'}}>
-                    <span style={{fontSize:'10px',color:'rgba(255,255,255,0.4)'}}>0</span>
-                    <span style={{fontSize:'10px',color:'rgba(255,255,255,0.4)'}}>{bookGoal}m</span>
+                <div style={{background:NAVY,borderRadius:'8px',padding:'12px 16px',border:'1px solid rgba(255,255,255,0.1)'}}>
+                  <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'4px'}}>
+                    <span style={{fontSize:'10px',fontWeight:700,color:'rgba(255,255,255,0.7)',textTransform:'uppercase',letterSpacing:'0.08em'}}>Active Time</span>
+                    <span style={{fontSize:'15px',fontWeight:800,color:'#4db8e8'}}>{totA}<span style={{fontSize:'12px',color:'rgba(255,255,255,0.4)',fontWeight:400}}> / {actualGoal}m</span></span>
                   </div>
-                  <div style={{height:'20px',background:'rgba(255,255,255,0.08)',borderRadius:'10px',overflow:'visible',position:'relative'}}>
-                    <div style={{height:'100%',width:`${bookFillPct}%`,background:bookBarColor,borderRadius:'10px',transition:'width 0.4s ease',boxShadow:`0 0 8px ${bookBarColor}`}}/>
-                    <div style={{position:'absolute',top:'-4px',left:`${markerPct}%`,transform:'translateX(-50%)',width:'3px',height:'28px',background:'#fff',borderRadius:'2px',boxShadow:'0 0 6px rgba(255,255,255,0.8)',zIndex:10}}/>
-                    <div style={{position:'absolute',top:'-14px',left:`${markerPct}%`,transform:'translateX(-50%)',fontSize:'10px',color:'#fff',whiteSpace:'nowrap',fontWeight:700}}>▼</div>
-                  </div>
-                </div>
-              </div>
-              <div style={{background:NAVY,borderRadius:'8px',padding:'12px 16px',border:'1px solid rgba(255,255,255,0.1)'}}>
-                <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'4px'}}>
-                  <span style={{fontSize:'10px',fontWeight:700,color:'rgba(255,255,255,0.7)',textTransform:'uppercase',letterSpacing:'0.08em'}}>Active Time</span>
-                  <span style={{fontSize:'15px',fontWeight:800,color:'#4db8e8'}}>{totA}<span style={{fontSize:'12px',color:'rgba(255,255,255,0.4)',fontWeight:400}}> / {actualGoal}m</span></span>
-                </div>
-                <div style={{marginTop:'6px'}}>
-                  <div style={{display:'flex',justifyContent:'space-between',marginBottom:'4px'}}>
-                    <span style={{fontSize:'10px',color:'rgba(255,255,255,0.4)'}}>0</span>
-                    <span style={{fontSize:'10px',color:'rgba(255,255,255,0.4)'}}>{actualGoal}m</span>
-                  </div>
-                  <div style={{height:'20px',background:'rgba(255,255,255,0.08)',borderRadius:'10px',overflow:'hidden'}}>
-                    <div style={{height:'100%',width:`${Math.min((totA/actualGoal)*100,100)}%`,background:'#4db8e8',borderRadius:'10px',transition:'width 0.4s ease',boxShadow:'0 0 8px #4db8e8'}}/>
+                  <div style={{marginTop:'6px'}}>
+                    <div style={{display:'flex',justifyContent:'space-between',marginBottom:'4px'}}>
+                      <span style={{fontSize:'10px',color:'rgba(255,255,255,0.4)'}}>0</span>
+                      <span style={{fontSize:'10px',color:'rgba(255,255,255,0.4)'}}>{actualGoal}m</span>
+                    </div>
+                    <div style={{height:'20px',background:'rgba(255,255,255,0.08)',borderRadius:'10px',overflow:'hidden'}}>
+                      <div style={{height:'100%',width:`${Math.min((totA/actualGoal)*100,100)}%`,background:'#4db8e8',borderRadius:'10px',transition:'width 0.4s ease',boxShadow:'0 0 8px #4db8e8'}}/>
+                    </div>
                   </div>
                 </div>
               </div>
             </div>
           );
         })()}
-      </div>
-      <div style={{background:'#fff',borderRadius:'0 0 12px 12px',border:`1.5px solid ${BORDER}`,borderTop:'none',overflow:'hidden'}}>
+            <div style={{background:'#fff',borderRadius:'0 0 12px 12px',border:`1.5px solid ${BORDER}`,borderTop:'none',overflow:'hidden'}}>
         <div style={{overflowX:'auto'}}>
           <table style={{width:'100%',borderCollapse:'collapse',fontSize:'12px',minWidth:'1200px'}}>
             <thead>
