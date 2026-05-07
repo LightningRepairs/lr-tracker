@@ -5,9 +5,19 @@ import { getSettings, getDefaults } from '../lib/settings';
 
 const BLUE='#1B9BD4',NAVY='#1a2a3a',YELLOW='#F5C518',BORDER='#b8dff0';
 const GREEN='#2d8a4e',GREEN_BG='#e6f5ec',AMBER='#9a6000',AMBER_BG='#fff3d0',RED='#b52020',RED_BG='#fce8e8';
+const R_GREEN='#0d5c2a',R_GREEN_BG='#b8f0cc',R_AMBER='#6b3a00',R_AMBER_BG='#fcd97a',R_RED='#7a0a0a',R_RED_BG='#f5aaaa';
+const D_GREEN='#5aaa7a',D_GREEN_BG='#edf8f2',D_AMBER='#c08830',D_AMBER_BG='#fef8e8',D_RED='#cc5555',D_RED_BG='#fdf0f0';
 
-function effColor(pct,green=90,yellow=79){if(pct===null||pct===undefined)return'#aac8d8';return pct>=green?GREEN:pct>=yellow?AMBER:RED;}
-function effBg(pct,green=90,yellow=79){if(pct===null||pct===undefined)return'rgba(255,255,255,0.1)';return pct>=green?GREEN_BG:pct>=yellow?AMBER_BG:RED_BG;}
+function effColor(pct,green=90,yellow=79,isDiag=false){
+  if(pct===null||pct===undefined)return'#aac8d8';
+  if(isDiag)return pct>=green?D_GREEN:pct>=yellow?D_AMBER:D_RED;
+  return pct>=green?R_GREEN:pct>=yellow?R_AMBER:R_RED;
+}
+function effBg(pct,green=90,yellow=79,isDiag=false){
+  if(pct===null||pct===undefined)return'rgba(255,255,255,0.1)';
+  if(isDiag)return pct>=green?D_GREEN_BG:pct>=yellow?D_AMBER_BG:D_RED_BG;
+  return pct>=green?R_GREEN_BG:pct>=yellow?R_AMBER_BG:R_RED_BG;
+}
 
 export default function ManagerDashboard({tech:currentUser, drillTech, setDrillTech}){
   const [tickets,setTickets]=useState([]);
@@ -166,9 +176,11 @@ export default function ManagerDashboard({tech:currentUser, drillTech, setDrillT
                   const dm=deviceModels.find(x=>x.id===t.device_model_id);
                   const pct=t.efficiency_pct;const diff=(t.actual_minutes&&t.book_minutes)?t.actual_minutes-t.book_minutes:null;
                   const aoCount=ticketAddOns.filter(ta=>ta.ticket_id===t.id).length;
-                  const bg=pct===null?'transparent':pct>=effGreen?GREEN_BG:pct>=effYellow?AMBER_BG:RED_BG;
+                  const rtRow=repairTypes.find(x=>x.id===t.repair_type_id);
+                  const isDiagRow=rtRow?.is_diagnosis||false;
+                  const bg=pct===null?'transparent':isDiagRow?(pct>=effGreen?D_GREEN_BG:pct>=effYellow?D_AMBER_BG:D_RED_BG):(pct>=effGreen?R_GREEN_BG:pct>=effYellow?R_AMBER_BG:R_RED_BG);
                   return(
-                    <tr key={t.id} style={{background:bg,borderBottom:'1px solid #e8f0f5'}}>
+                    <tr key={t.id} style={{background:bg,borderBottom:'1px solid #e8f0f5',borderLeft:isDiagRow?'4px solid #7aafc8':'4px solid transparent'}}>
                       <td style={{padding:'6px 8px',fontWeight:600,cursor:'pointer',color:BLUE}} onClick={()=>setDrillTech(technicians.find(x=>x.id===t.technician_id))}>{tech?.name||'—'}</td>
                       <td style={{padding:'6px 8px'}}>{t.ticket_number||'—'}</td>
                       <td style={{padding:'6px 8px'}}>{dt?.name}{dm?` / ${dm.name}`:''}</td>
@@ -176,7 +188,7 @@ export default function ManagerDashboard({tech:currentUser, drillTech, setDrillT
                       <td style={{padding:'6px 8px',fontWeight:700,color:BLUE}}>{t.book_minutes??'—'}</td>
                       <td style={{padding:'6px 8px'}}>{t.actual_minutes??'—'}</td>
                       <td style={{padding:'6px 8px',fontWeight:700,color:diff===null?'#aac8d8':diff<=0?GREEN:RED}}>{diff===null?'—':diff>0?`+${diff}`:diff}</td>
-                      <td style={{padding:'6px 8px'}}>{pct!==null?<span style={{display:'inline-block',fontSize:'11px',fontWeight:700,padding:'2px 7px',borderRadius:'20px',background:effBg(pct,effGreen,effYellow),color:effColor(pct,effGreen,effYellow)}}>{pct}%</span>:'—'}</td>
+                      <td style={{padding:'6px 8px'}}>{pct!==null?<span style={{display:'inline-block',fontSize:'11px',fontWeight:700,padding:'2px 7px',borderRadius:'20px',background:effBg(pct,effGreen,effYellow,isDiagRow),color:effColor(pct,effGreen,effYellow,isDiagRow)}}>{pct}%</span>:'—'}</td>
                       <td style={{padding:'6px 8px',color:'#666'}}>{aoCount>0?aoCount:''}</td>
                       <td style={{padding:'6px 8px',color:'#666',maxWidth:'150px',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{t.notes||''}</td>
                     </tr>

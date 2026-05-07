@@ -4,11 +4,21 @@ import { getSettings, getDefaults } from '../lib/settings';
 
 const BLUE='#1B9BD4',NAVY='#1a2a3a',YELLOW='#F5C518',BLUE_LIGHT='#e8f6fc',BORDER='#b8dff0';
 const GREEN='#2d8a4e',GREEN_BG='#e6f5ec',AMBER='#9a6000',AMBER_BG='#fff3d0',RED='#b52020',RED_BG='#fce8e8';
+const R_GREEN='#0d5c2a',R_GREEN_BG='#b8f0cc',R_AMBER='#6b3a00',R_AMBER_BG='#fcd97a',R_RED='#7a0a0a',R_RED_BG='#f5aaaa';
+const D_GREEN='#5aaa7a',D_GREEN_BG='#edf8f2',D_AMBER='#c08830',D_AMBER_BG='#fef8e8',D_RED='#cc5555',D_RED_BG='#fdf0f0';
 
 function pad(n){return String(n).padStart(2,'0');}
 function fmtTimer(ms){const t=Math.floor(ms/1000),m=Math.floor(t/60),s=t%60,cs=Math.floor((ms%1000)/10);return`${pad(m)}:${pad(s)}:${pad(cs)}`;}
-function effColor(pct,g=90,y=79){if(pct===null)return'#aac8d8';return pct>=g?GREEN:pct>=y?AMBER:RED;}
-function rowBg(pct,g=90,y=79){if(pct===null)return'transparent';return pct>=g?GREEN_BG:pct>=y?AMBER_BG:RED_BG;}
+function effColor(pct,g=90,y=79,isDiag=false){
+  if(pct===null)return'#aac8d8';
+  if(isDiag)return pct>=g?D_GREEN:pct>=y?D_AMBER:D_RED;
+  return pct>=g?R_GREEN:pct>=y?R_AMBER:R_RED;
+}
+function rowBg(pct,g=90,y=79,isDiag=false){
+  if(pct===null)return'transparent';
+  if(isDiag)return pct>=g?D_GREEN_BG:pct>=y?D_AMBER_BG:D_RED_BG;
+  return pct>=g?R_GREEN_BG:pct>=y?R_AMBER_BG:R_RED_BG;
+}
 const EMPTY_ROW=()=>({_id:Math.random().toString(36).slice(2),dbId:null,ticketNumber:'',deviceTypeId:'',deviceModelId:'',repairTypeId:'',actualMinutes:'',laborCost:'',isFullSet:false,notes:'',addOns:[],timerMs:0,timerState:'idle'});
 
 export default function AdminSheetView({tech, onBack, viewDate, currentUser}){
@@ -285,12 +295,13 @@ export default function AdminSheetView({tech, onBack, viewDate, currentUser}){
                 const addOnsForType=addOnOptions.filter(a=>a.device_type_id===row.deviceTypeId);
                 const rt=repairTypes.find(r=>r.id===row.repairTypeId);
                 const isLabor=rt?.is_labor||false;
+                const isDiag=rt?.is_diagnosis||false;
                 const bookRaw=calcBook(row);
                 const book=row._bookOverride!=null?row._bookOverride:bookRaw;
                 const actual=parseFloat(row.actualMinutes)||0;
                 const pct=(actual>0&&book!==null)?Math.round((book/actual)*100):null;
                 const diff=(actual>0&&book!==null)?Math.round(actual-book):null;
-                const bg=rowBg(pct,effG,effY);
+                const bg=rowBg(pct,effG,effY,isDiag);
                 const diffColor=diff===null?'#aac8d8':diff<=0?GREEN:RED;
                 const baseBook=isLabor?getLaborBook(row.repairTypeId,row.laborCost):getBookMinutes(row.repairTypeId,row.deviceModelId);
 
@@ -394,7 +405,7 @@ export default function AdminSheetView({tech, onBack, viewDate, currentUser}){
                       </td>
                     </tr>
                     {(row.addOns||[]).map(a=>(
-                      <tr key={a.id} style={{background:rowBg(pct,effG,effY),opacity:0.8}}>
+                      <tr key={a.id} style={{background:rowBg(pct,effG,effY,isDiag),opacity:0.8,borderLeft:isDiag?'4px solid #7aafc8':'4px solid transparent'}}>
                         <td/><td/><td/><td style={{padding:'3px 6px'}}><span style={{fontSize:'11px',color:'#666',paddingLeft:'12px'}}>↳ {a.name}</span></td>
                         <td style={{textAlign:'center',fontSize:'11px',color:'#888'}}>+{a.mins}m</td>
                         <td/><td/><td/><td/><td/><td/><td/>
