@@ -429,7 +429,7 @@ function SettingsEditor(){
   };
   const GROUPS=[
     {title:'Efficiency Thresholds',desc:'Controls green/yellow/red color coding.',keys:['efficiency_green','efficiency_yellow']},
-    {title:'Sheet Defaults',desc:'Default values for a fresh daily sheet.',keys:['default_rows','default_labor_multiplier']},
+    {title:'Sheet Defaults',desc:'Default values for a fresh daily sheet.',keys:['default_rows','default_labor_multiplier','book_time_goal','actual_time_goal']},
     {title:'General',desc:'General app settings.',keys:['shop_name']},
   ];
   if(loading)return<div style={{color:'#888',padding:'2rem',textAlign:'center'}}>Loading...</div>;

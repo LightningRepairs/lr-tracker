@@ -197,8 +197,8 @@ export default function AdminSheetView({tech, onBack, viewDate, currentUser}){
   const effG=parseInt(settings.efficiency_green||90);
   const effY=parseInt(settings.efficiency_yellow||79);
   const filledRows=rows.filter(r=>r.ticketNumber);
-  const repaired=filledRows.filter(r=>{const rt=repairTypes.find(x=>x.id===r.repairTypeId);return rt&&!rt.is_diagnosis;});
-  const diagnosed=filledRows.filter(r=>{const rt=repairTypes.find(x=>x.id===r.repairTypeId);return rt?.is_diagnosis;});
+  const repaired=filledRows.filter(r=>{const rt=repairTypes.find(x=>x.id===r.repairTypeId);return rt&&!rt.is_diagnosis&&rt.name!=='Did Not Complete Repair'&&(parseFloat(r.actualMinutes)||0)>0;});
+  const diagnosed=filledRows.filter(r=>{const rt=repairTypes.find(x=>x.id===r.repairTypeId);return rt?.is_diagnosis&&rt.name!=='Did Not Complete Diagnosis'&&(parseFloat(r.actualMinutes)||0)>0;});
   const timed=rows.filter(r=>{const a=parseFloat(r.actualMinutes)||0;return a>0&&calcBook(r)!==null;});
   const totA=timed.reduce((s,r)=>s+(parseFloat(r.actualMinutes)||0),0);
   const totB=timed.reduce((s,r)=>s+(calcBook(r)||0),0);

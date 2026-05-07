@@ -19,8 +19,16 @@ export default function Login({onLogin}){
   useEffect(()=>{
     if(pin.length>=3){
       const match=technicians.find(t=>t.pin===pin);
-      setMatchedTech(match||null);
-      setError('');
+      if(match){
+        setMatchedTech(match);
+        setError('');
+        // Auto-login on match
+        setShowWelcome(true);
+        setTimeout(()=>onLogin(match),1800);
+      } else {
+        setMatchedTech(null);
+        if(pin.length>=4)setError('PIN not recognized.');
+      }
     } else {
       setMatchedTech(null);
       setError('');

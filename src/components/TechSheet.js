@@ -4,11 +4,23 @@ import { getSettings, getDefaults } from '../lib/settings';
 
 const BLUE='#1B9BD4',NAVY='#1a2a3a',YELLOW='#F5C518',BLUE_LIGHT='#e8f6fc',BLUE_MID='#cceaf7',BORDER='#b8dff0';
 const GREEN='#2d8a4e',GREEN_BG='#e6f5ec',AMBER='#9a6000',AMBER_BG='#fff3d0',RED='#b52020',RED_BG='#fce8e8';
+// Rich colors for repairs
+const R_GREEN='#1a6b35',R_GREEN_BG='#c8f0d8',R_AMBER='#7a4800',R_AMBER_BG='#fde8a0',R_RED='#8b1010',R_RED_BG='#fac8c8';
+// Pastel colors for diagnostics
+const D_GREEN='#4a9e6a',D_GREEN_BG='#e8f8ef',D_AMBER='#b87820',D_AMBER_BG='#fef4dc',D_RED='#c04040',D_RED_BG='#fdeaea';
 
 function pad(n){return String(n).padStart(2,'0');}
 function fmtTimer(ms){const t=Math.floor(ms/1000),m=Math.floor(t/60),s=t%60,cs=Math.floor((ms%1000)/10);return`${pad(m)}:${pad(s)}:${pad(cs)}`;}
-function effColor(pct,green=90,yellow=79){if(pct===null)return'#aac8d8';return pct>=green?GREEN:pct>=yellow?AMBER:RED;}
-function rowBg(pct,green=90,yellow=79){if(pct===null)return'transparent';return pct>=green?GREEN_BG:pct>=yellow?AMBER_BG:RED_BG;}
+function effColor(pct,green=90,yellow=79,isDiag=false){
+  if(pct===null)return'#aac8d8';
+  if(isDiag)return pct>=green?D_GREEN:pct>=yellow?D_AMBER:D_RED;
+  return pct>=green?R_GREEN:pct>=yellow?R_AMBER:R_RED;
+}
+function rowBg(pct,green=90,yellow=79,isDiag=false){
+  if(pct===null)return'transparent';
+  if(isDiag)return pct>=green?D_GREEN_BG:pct>=yellow?D_AMBER_BG:D_RED_BG;
+  return pct>=green?R_GREEN_BG:pct>=yellow?R_AMBER_BG:R_RED_BG;
+}
 
 const EMPTY_ROW=()=>({_id:Math.random().toString(36).slice(2),dbId:null,ticketNumber:'',deviceTypeId:'',deviceModelId:'',repairTypeId:'',actualMinutes:'',laborCost:'',isFullSet:false,notes:'',addOns:[],timerMs:0,timerState:'idle',timerStart:null});
 
@@ -20,7 +32,7 @@ export default function TechSheet({tech}){
   const [bookTimes,setBookTimes]=useState([]);
   const [addOnOptions,setAddOnOptions]=useState([]);
   const [loading,setLoading]=useState(true);
-  const [settings,setSettings]=useState(getDefaults());
+  const [settings,setSettings]=useState({...getDefaults(),book_time_goal:'360',actual_time_goal:'360'});
   const [openPopup,setOpenPopup]=useState(null);
   const timerRefs=useRef({});
   const today=new Date().toISOString().slice(0,10);
@@ -296,7 +308,7 @@ export default function TechSheet({tech}){
         <div style={{textAlign:'center',marginBottom:'8px'}}>
           <div style={{display:'inline-flex',alignItems:'center',gap:'10px',background:NAVY,border:'1px solid rgba(255,255,255,0.15)',borderRadius:'10px',padding:'6px 20px'}}>
             <span style={{fontSize:'11px',fontWeight:700,color:'rgba(255,255,255,0.6)',textTransform:'uppercase',letterSpacing:'0.1em'}}>Avg Efficiency</span>
-            <span style={{fontSize:'20px',fontWeight:800,color:avgEff===null?YELLOW:effColor(avgEff,effGreen,effYellow)}}>{avgEff===null?'—':`${avgEff}%`}</span>
+            <span style={{fontSize:'20px',fontWeight:800,color:avgEff===null?YELLOW:effColor(avgEff,effGreen,effYellow,false)}}>{avgEff===null?'—':`${avgEff}%`}</span>
           </div>
         </div>
         <div style={{display:'grid',gridTemplateColumns:'repeat(5,1fr)',gap:'10px'}}>
@@ -307,6 +319,37 @@ export default function TechSheet({tech}){
             </div>
           ))}
         </div>
+        {/* Progress bars */}
+        {(()=>{
+          const bookGoal=parseInt(settings.book_time_goal||360);
+          const actualGoal=parseInt(settings.actual_time_goal||360);
+          const bookPct=Math.min((totalBook/bookGoal)*100,100);
+          const bookOverflow=totalBook>bookGoal;
+          return(
+            <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'12px',marginTop:'10px'}}>
+              {/* Book time bar */}
+              <div style={{background:NAVY,borderRadius:'8px',padding:'10px 14px',border:'1px solid rgba(255,255,255,0.1)'}}>
+                <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'6px'}}>
+                  <span style={{fontSize:'10px',fontWeight:700,color:'rgba(255,255,255,0.7)',textTransform:'uppercase',letterSpacing:'0.08em'}}>Book Time Goal</span>
+                  <span style={{fontSize:'13px',fontWeight:800,color:bookOverflow?YELLOW:'#fff'}}>{totalBook}<span style={{color:'rgba(255,255,255,0.4)',fontWeight:400}}> / {bookGoal}m</span>{bookOverflow&&<span style={{fontSize:'11px',color:YELLOW,marginLeft:'6px'}}>+{totalBook-bookGoal}m</span>}</span>
+                </div>
+                <div style={{height:'10px',background:'rgba(255,255,255,0.1)',borderRadius:'5px',overflow:'hidden'}}>
+                  <div style={{height:'100%',width:`${bookPct}%`,background:bookOverflow?YELLOW:BLUE,borderRadius:'5px',transition:'width 0.4s ease'}}/>
+                </div>
+              </div>
+              {/* Actual time tracker */}
+              <div style={{background:NAVY,borderRadius:'8px',padding:'10px 14px',border:'1px solid rgba(255,255,255,0.1)'}}>
+                <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'6px'}}>
+                  <span style={{fontSize:'10px',fontWeight:700,color:'rgba(255,255,255,0.7)',textTransform:'uppercase',letterSpacing:'0.08em'}}>Active Time</span>
+                  <span style={{fontSize:'13px',fontWeight:800,color:'#fff'}}>{totalActual}<span style={{color:'rgba(255,255,255,0.4)',fontWeight:400}}> / {actualGoal}m</span></span>
+                </div>
+                <div style={{height:'10px',background:'rgba(255,255,255,0.1)',borderRadius:'5px',overflow:'hidden'}}>
+                  <div style={{height:'100%',width:`${Math.min((totalActual/actualGoal)*100,100)}%`,background:'#4db8e8',borderRadius:'5px',transition:'width 0.4s ease'}}/>
+                </div>
+              </div>
+            </div>
+          );
+        })()}
       </div>
       <div style={{background:'#fff',borderRadius:'0 0 12px 12px',border:`1.5px solid ${BORDER}`,borderTop:'none',overflow:'hidden'}}>
         <div style={{overflowX:'auto',overflowY:'visible'}}>
@@ -325,6 +368,7 @@ export default function TechSheet({tech}){
                 const addOnsForType=addOnOptions.filter(a=>a.device_type_id===row.deviceTypeId);
                 const rt=repairTypes.find(r=>r.id===row.repairTypeId);
                 const isLabor=rt?.is_labor||false;
+                const isDiag=rt?.is_diagnosis||false;
                 const isJoycon=deviceModels.find(m=>m.id===row.deviceModelId)?.name?.includes('Joycon');
                 const hasDeviceType=!!row.deviceTypeId;
                 const hasModel=!!row.deviceModelId;
@@ -333,7 +377,7 @@ export default function TechSheet({tech}){
                 const actual=parseFloat(row.actualMinutes)||0;
                 const pct=calcEfficiency(row);
                 const diff=(actual>0&&book!==null)?Math.round(actual-book):null;
-                const bg=rowBg(pct,effGreen,effYellow);
+                const bg=rowBg(pct,effGreen,effYellow,isDiag);
                 const diffColor=diff===null?'#aac8d8':diff<=0?GREEN:RED;
                 const baseBook=isLabor?getLaborBookMinutes(row.repairTypeId,row.laborCost):getBookMinutes(row.repairTypeId,row.deviceModelId,row.isFullSet);
 
@@ -351,7 +395,7 @@ export default function TechSheet({tech}){
                         {isJoycon&&<div style={{display:'flex',alignItems:'center',gap:'4px',marginTop:'3px'}}><input type="checkbox" checked={row.isFullSet} onChange={e=>updateRow(row._id,{isFullSet:e.target.checked})}/><span style={{fontSize:'11px',color:'#666'}}>full set</span></div>}
                       </td>
 
-                      <td style={{padding:'4px',textAlign:'center'}}>{pct!==null?<span style={{display:'inline-block',fontSize:'11px',fontWeight:700,padding:'2px 7px',borderRadius:'20px',background:rowBg(pct,effGreen,effYellow),color:effColor(pct,effGreen,effYellow)}}>{pct}%</span>:<span style={{color:'#aac8d8',fontSize:'11px'}}>—</span>}</td>
+                      <td style={{padding:'4px',textAlign:'center'}}>{pct!==null?<span style={{display:'inline-block',fontSize:'11px',fontWeight:700,padding:'2px 7px',borderRadius:'20px',background:rowBg(pct,effGreen,effYellow,isDiag),color:effColor(pct,effGreen,effYellow,isDiag)}}>{pct}%</span>:<span style={{color:'#aac8d8',fontSize:'11px'}}>—</span>}</td>
                       <td style={{padding:'4px',minWidth:'110px',...(!hasDeviceType?{opacity:0.35}:{})}}>
                         <div style={{fontSize:'13px',fontWeight:700,fontVariantNumeric:'tabular-nums',textAlign:'center',padding:'2px 0',background:row.timerState==='running'?GREEN_BG:row.timerState==='paused'?AMBER_BG:row.timerState==='logged'?'#e8f6fc':'#f5f5f0',borderRadius:'5px',border:`1px solid ${row.timerState==='running'?'#a8dbb8':row.timerState==='paused'?'#fcd98a':row.timerState==='logged'?BORDER:BORDER}`,color:row.timerState==='running'?GREEN:row.timerState==='paused'?AMBER:row.timerState==='logged'?BLUE:NAVY,marginBottom:'3px'}}>{fmtTimer(row.timerMs)}</div>
                         {row.timerState==='logged'&&<div style={{fontSize:'9px',color:BLUE,textAlign:'center',marginBottom:'2px',fontWeight:600}}>✓ Logged to actual</div>}
