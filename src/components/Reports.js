@@ -82,10 +82,11 @@ export default function Reports(){
         const tech=technicians.find(x=>x.id===techId);
         const repaired=tt.filter(t=>{const rt=repairTypes.find(r=>r.id===t.repair_type_id);return rt&&!rt.is_diagnosis&&rt.name!=='Did Not Complete Repair'&&(t.actual_minutes||0)>0;});
         const diagnosed=tt.filter(t=>{const rt=repairTypes.find(r=>r.id===t.repair_type_id);return rt?.is_diagnosis&&rt.name!=='Did Not Complete Diagnosis'&&(t.actual_minutes||0)>0;});
-        const timed=tt.filter(t=>t.actual_minutes>0&&t.book_minutes>0);
-        const totA=timed.reduce((s,t)=>s+t.actual_minutes,0);
-        const totB=timed.reduce((s,t)=>s+t.book_minutes,0);
-        const overallEff=totA>0?Math.round((totB/totA)*100):null;
+        // Null actual = 0 for efficiency (drags down)
+        const withBook=tt.filter(t=>t.book_minutes>0);
+        const totA=withBook.reduce((s,t)=>s+(t.actual_minutes||0),0);
+        const totB=withBook.reduce((s,t)=>s+t.book_minutes,0);
+        const overallEff=withBook.length>0&&totA>0?Math.round((totB/totA)*100):null;
         // Daily efficiency average
         const byDay={};
         timed.forEach(t=>{

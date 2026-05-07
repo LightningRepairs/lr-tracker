@@ -58,11 +58,15 @@ export default function ManagerDashboard({tech:currentUser, drillTech, setDrillT
 
   const loadTickets=useCallback(async()=>{
     setLoading(true);
-    const[t,ta]=await Promise.all([
+    const[t,ta,dg]=await Promise.all([
       supabase.from('tickets').select('*').eq('work_date',selectedDate).order('created_at'),
       supabase.from('ticket_add_ons').select('*'),
+      supabase.from('technician_daily_goals').select('*').eq('work_date',selectedDate),
     ]);
-    setTickets(t.data||[]);setTicketAddOns(ta.data||[]);setLoading(false);
+    setTickets(t.data||[]);setTicketAddOns(ta.data||[]);
+    const goalsMap={};(dg.data||[]).forEach(g=>{goalsMap[g.technician_id]=g.book_time_goal;});
+    setDailyGoals(goalsMap);
+    setLoading(false);
   },[selectedDate]);
 
   useEffect(()=>{
@@ -101,10 +105,11 @@ export default function ManagerDashboard({tech:currentUser, drillTech, setDrillT
     const tt=tickets.filter(t=>t.technician_id===techId);
     const repaired=tt.filter(t=>{const rt=repairTypes.find(r=>r.id===t.repair_type_id);return rt&&!rt.is_diagnosis&&rt.name!=='Did Not Complete Repair'&&(t.actual_minutes||0)>0;});
     const diagnosed=tt.filter(t=>{const rt=repairTypes.find(r=>r.id===t.repair_type_id);return rt?.is_diagnosis&&rt.name!=='Did Not Complete Diagnosis'&&(t.actual_minutes||0)>0;});
-    const timed=tt.filter(t=>t.actual_minutes>0&&t.book_minutes>0);
-    const totA=timed.reduce((s,t)=>s+t.actual_minutes,0);
-    const totB=timed.reduce((s,t)=>s+t.book_minutes,0);
-    const avgEff=timed.length>0?Math.round((totB/totA)*100):null;
+    // For efficiency: use all tickets with book time, treat null actual as 0
+    const withBook=tt.filter(t=>t.book_minutes>0);
+    const totA=withBook.reduce((s,t)=>s+(t.actual_minutes||0),0);
+    const totB=withBook.reduce((s,t)=>s+t.book_minutes,0);
+    const avgEff=withBook.length>0&&totA>0?Math.round((totB/totA)*100):null;
     const addOnCount=ticketAddOns.filter(ta=>tt.find(t=>t.id===ta.ticket_id)).length;
     return{tickets:tt,repaired,diagnosed,totA,totB,avgEff,addOnCount};
   };
@@ -124,9 +129,14 @@ export default function ManagerDashboard({tech:currentUser, drillTech, setDrillT
             {technicians.map(t=><TechChip key={t.id} label={t.name} active={selectedTechs.has(t.id)} onClick={()=>toggleTech(t.id)}/>)}
           </div>
         </div>
-        <div style={{marginLeft:'auto',display:'flex',alignItems:'center',gap:'8px',alignSelf:'center'}}>
-          <div style={{width:8,height:8,borderRadius:'50%',background:GREEN,boxShadow:`0 0 0 3px ${GREEN_BG}`}}/>
-          <span style={{fontSize:'12px',color:'#666'}}>Live — updates automatically</span>
+        <div style={{marginLeft:'auto',display:'flex',alignItems:'center',gap:'12px',alignSelf:'center'}}>
+          <button onClick={loadTickets} style={{background:BLUE,color:'#fff',border:'none',borderRadius:'8px',padding:'7px 16px',fontSize:'13px',fontWeight:700,cursor:'pointer',fontFamily:'inherit',display:'flex',alignItems:'center',gap:'6px'}}>
+            <span style={{fontSize:'16px'}}>↻</span> Refresh
+          </button>
+          <div style={{display:'flex',alignItems:'center',gap:'6px'}}>
+            <div style={{width:8,height:8,borderRadius:'50%',background:GREEN,boxShadow:`0 0 0 3px ${GREEN_BG}`}}/>
+            <span style={{fontSize:'12px',color:'#666'}}>Live — updates automatically</span>
+          </div>
         </div>
       </div>
 
@@ -158,6 +168,22 @@ export default function ManagerDashboard({tech:currentUser, drillTech, setDrillT
                 ))}
               </div>
               <div style={{marginTop:'8px',fontSize:'11px',color:'rgba(255,255,255,0.35)',textAlign:'center'}}>Click to view live sheet →</div>
+              {currentUser?.role==='admin'&&(
+                <div onClick={e=>e.stopPropagation()} style={{marginTop:'8px',display:'flex',alignItems:'center',gap:'8px',background:'rgba(255,255,255,0.05)',borderRadius:'6px',padding:'6px 10px'}}>
+                  <span style={{fontSize:'10px',color:'rgba(255,255,255,0.5)',textTransform:'uppercase',letterSpacing:'0.05em',whiteSpace:'nowrap'}}>Today's goal</span>
+                  <input type="number" defaultValue={dailyGoals[tech.id]||parseInt(settings.book_time_goal||360)}
+                    onBlur={async e=>{
+                      const val=parseInt(e.target.value);
+                      if(!val||val<1)return;
+                      await supabase.from('technician_daily_goals').upsert({technician_id:tech.id,work_date:selectedDate,book_time_goal:val},{onConflict:'technician_id,work_date'});
+                      setDailyGoals(prev=>({...prev,[tech.id]:val}));
+                    }}
+                    onKeyDown={e=>e.key==='Enter'&&e.target.blur()}
+                    style={{flex:1,background:'rgba(255,255,255,0.1)',border:'1px solid rgba(255,255,255,0.2)',borderRadius:'4px',color:'#fff',fontSize:'12px',fontWeight:700,padding:'3px 6px',textAlign:'center',outline:'none',fontFamily:'inherit'}}
+                  />
+                  <span style={{fontSize:'10px',color:'rgba(255,255,255,0.5)'}}>min</span>
+                </div>
+              )}
             </div>
           );
         })}

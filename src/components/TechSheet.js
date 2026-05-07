@@ -33,7 +33,7 @@ export default function TechSheet({tech}){
   const [addOnOptions,setAddOnOptions]=useState([]);
   const [loading,setLoading]=useState(true);
   const [,setTick]=useState(0);
-  const [settings,setSettings]=useState({...getDefaults(),book_time_goal:'360',actual_time_goal:'360',work_day_start:'09:00',work_day_end:'18:00',pace_yellow_threshold:'45'});
+  const [settings,setSettings]=useState({...getDefaults(),book_time_goal:'360',actual_time_goal:'360',work_day_start:'09:00',work_day_end:'18:00',pace_green_threshold:'30',pace_yellow_threshold:'59'});
   const [openPopup,setOpenPopup]=useState(null);
   useEffect(()=>{const iv=setInterval(()=>setTick(t=>t+1),60000);return()=>clearInterval(iv);},[]);
   useEffect(()=>{
@@ -60,6 +60,11 @@ export default function TechSheet({tech}){
       setRepairTypes(rt.data||[]);
       setBookTimes(bt.data||[]);
       setAddOnOptions(ao.data||[]);
+      // Load today's personal goal if set
+      const{data:dgData}=await supabase.from('technician_daily_goals').select('*').eq('technician_id',tech.id).eq('work_date',today).single().catch(()=>({data:null}));
+      if(dgData?.book_time_goal){
+        setSettings(prev=>({...prev,book_time_goal:String(dgData.book_time_goal)}));
+      }
       setLoading(false);
     };
     load();
@@ -125,9 +130,8 @@ export default function TechSheet({tech}){
   const calcEfficiency=useCallback((row)=>{
     const book=calcBook(row);
     if(book===null)return null;
-    // Treat blank actual as 0 - unfinished tickets drag efficiency down
-    const actual=row.actualMinutes===''||row.actualMinutes===null||row.actualMinutes===undefined?0:parseFloat(row.actualMinutes)||0;
-    if(actual<=0)return book>0?0:null;
+    const actual=parseFloat(row.actualMinutes)||0;
+    if(actual<=0)return null; // Don't show eff badge yet, but still counts toward totals
     return Math.round((book/actual)*100);
   },[calcBook]);
 
@@ -288,10 +292,11 @@ export default function TechSheet({tech}){
   const filledRows=rows.filter(r=>r.ticketNumber);
   const repaired=filledRows.filter(r=>{const rt=repairTypes.find(x=>x.id===r.repairTypeId);return rt&&!rt.is_diagnosis&&rt.name!=='Did Not Complete Repair'&&(parseFloat(r.actualMinutes)||0)>0;});
   const diagnosed=filledRows.filter(r=>{const rt=repairTypes.find(x=>x.id===r.repairTypeId);return rt?.is_diagnosis&&rt.name!=='Did Not Complete Diagnosis'&&(parseFloat(r.actualMinutes)||0)>0;});
-  const timedRows=rows.filter(r=>{const a=parseFloat(r.actualMinutes)||0;return a>0&&calcBook(r)!==null;});
-  const totalActual=timedRows.reduce((s,r)=>s+(parseFloat(r.actualMinutes)||0),0);
-  const totalBook=timedRows.reduce((s,r)=>s+(calcBook(r)||0),0);
-  const avgEff=timedRows.length>0?Math.round((totalBook/totalActual)*100):null;
+  // For book/actual totals: include all rows with book time, treat null actual as 0
+  const bookRows=rows.filter(r=>calcBook(r)!==null&&calcBook(r)>0);
+  const totalBook=bookRows.reduce((s,r)=>s+(calcBook(r)||0),0);
+  const totalActual=bookRows.reduce((s,r)=>s+(parseFloat(r.actualMinutes)||0),0);
+  const avgEff=bookRows.length>0&&totalActual>0?Math.round((totalBook/totalActual)*100):null;
   const dateStr=new Date().toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric',year:'numeric'});
 
   if(loading)return<div style={{color:'#fff',textAlign:'center',padding:'3rem'}}>Loading...</div>;
@@ -344,9 +349,10 @@ export default function TechSheet({tech}){
           const elapsed=Math.max(0,Math.min(nowMins-dayStartMins,dayTotalMins));
           const expectedBook=Math.round((elapsed/dayTotalMins)*bookGoal);
           const markerPct=Math.min((elapsed/dayTotalMins)*100,100);
+          const greenThresh=parseInt(settings.pace_green_threshold||30);
           const behindBy=expectedBook-totalBook;
-          const bookBarColor=behindBy<=0?'#00e676':behindBy<=yellowThresh?'#ffcc00':'#ff1744';
-          const bookBarGlow=behindBy<=0?'0 0 12px #00e676':behindBy<=yellowThresh?'0 0 12px #ffcc00':'0 0 16px #ff1744, 0 0 32px rgba(255,23,68,0.5)';
+          const bookBarColor=behindBy<=greenThresh?'#00e676':behindBy<=yellowThresh?'#ffcc00':'#ff1744';
+          const bookBarGlow=behindBy<=greenThresh?'0 0 12px #00e676':behindBy<=yellowThresh?'0 0 12px #ffcc00':'0 0 16px #ff1744, 0 0 32px rgba(255,23,68,0.5)';
           const bookFillPct=Math.min((totalBook/bookGoal)*100,100);
 
           return(
