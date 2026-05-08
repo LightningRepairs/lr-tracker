@@ -31,6 +31,7 @@ export default function ManagerDashboard({tech:currentUser, drillTech, setDrillT
   const [selectedTechs,setSelectedTechs]=useState(new Set(['all']));
   const [settings,setSettings]=useState(getDefaults());
   const [loading,setLoading]=useState(true);
+  const [dailyGoals,setDailyGoals]=useState({});
 
 
   useEffect(()=>{
