@@ -119,7 +119,7 @@ export default function ManagerDashboard({tech:currentUser, drillTech, setDrillT
   };
 
   if(drillTech){
-    return<AdminSheetView tech={drillTech} currentUser={currentUser} viewDate={selectedDate} onBack={()=>setDrillTech(null)}/>;
+    return<AdminSheetView tech={drillTech} currentUser={currentUser} viewDate={selectedDate} dailyGoal={dailyGoals[drillTech?.id]||null} onBack={()=>setDrillTech(null)}/>;
   }
 
   return(
@@ -179,7 +179,14 @@ export default function ManagerDashboard({tech:currentUser, drillTech, setDrillT
                     onBlur={async e=>{
                       const val=parseInt(e.target.value);
                       if(!val||val<1)return;
-                      await supabase.from('technician_daily_goals').upsert({technician_id:tech.id,work_date:selectedDate,book_time_goal:val},{onConflict:'technician_id,work_date'});
+                      const{error:upsertErr}=await supabase.from('technician_daily_goals').upsert({technician_id:tech.id,work_date:selectedDate,book_time_goal:val},{onConflict:'technician_id,work_date'});
+                      if(upsertErr){
+                        // Try insert then update as fallback
+                        const{error:insErr}=await supabase.from('technician_daily_goals').insert({technician_id:tech.id,work_date:selectedDate,book_time_goal:val});
+                        if(insErr){
+                          await supabase.from('technician_daily_goals').update({book_time_goal:val}).eq('technician_id',tech.id).eq('work_date',selectedDate);
+                        }
+                      }
                       setDailyGoals(prev=>({...prev,[tech.id]:val}));
                     }}
                     onKeyDown={e=>e.key==='Enter'&&e.target.blur()}

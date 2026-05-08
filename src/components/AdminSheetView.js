@@ -21,7 +21,7 @@ function rowBg(pct,g=90,y=79,isDiag=false){
 }
 const EMPTY_ROW=()=>({_id:Math.random().toString(36).slice(2),dbId:null,ticketNumber:'',deviceTypeId:'',deviceModelId:'',repairTypeId:'',actualMinutes:'',laborCost:'',isFullSet:false,notes:'',addOns:[],timerMs:0,timerState:'idle'});
 
-export default function AdminSheetView({tech, onBack, viewDate, currentUser}){
+export default function AdminSheetView({tech, onBack, viewDate, currentUser, dailyGoal}){
   const [rows,setRows]=useState([]);
   const [deviceTypes,setDeviceTypes]=useState([]);
   const [deviceModels,setDeviceModels]=useState([]);
@@ -47,7 +47,9 @@ export default function AdminSheetView({tech, onBack, viewDate, currentUser}){
 
   useEffect(()=>{
     const load=async()=>{
-      const s=await getSettings();setSettings(s);
+      const s=await getSettings();
+      if(dailyGoal){s.book_time_goal=String(dailyGoal);s.actual_time_goal=String(dailyGoal);}
+      setSettings(s);
       const[dt,dm,rt,bt,ao]=await Promise.all([
         supabase.from('device_types').select('*').eq('active',true).order('sort_order'),
         supabase.from('device_models').select('*').eq('active',true).order('sort_order'),
@@ -60,6 +62,14 @@ export default function AdminSheetView({tech, onBack, viewDate, currentUser}){
     };
     load();
   },[]);
+
+  // Also load daily goal directly from DB so refresh gets latest
+  useEffect(()=>{
+    if(!dailyGoal){
+      supabase.from('technician_daily_goals').select('*').eq('technician_id',tech.id).eq('work_date',targetDate).maybeSingle()
+        .then(({data})=>{if(data?.book_time_goal)setSettings(prev=>({...prev,book_time_goal:String(data.book_time_goal),actual_time_goal:String(data.book_time_goal)}));});
+    }
+  },[tech.id,targetDate,dailyGoal]);
 
   const loadRows=useCallback(async()=>{
     const{data}=await supabase.from('tickets').select('*,ticket_add_ons(*)').eq('technician_id',tech.id).eq('work_date',targetDate).order('created_at');
