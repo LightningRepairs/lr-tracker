@@ -58,14 +58,17 @@ export default function ManagerDashboard({tech:currentUser, drillTech, setDrillT
 
   const loadTickets=useCallback(async()=>{
     setLoading(true);
-    const[t,ta,dg]=await Promise.all([
+    const[t,ta]=await Promise.all([
       supabase.from('tickets').select('*').eq('work_date',selectedDate).order('created_at'),
       supabase.from('ticket_add_ons').select('*'),
-      supabase.from('technician_daily_goals').select('*').eq('work_date',selectedDate),
     ]);
     setTickets(t.data||[]);setTicketAddOns(ta.data||[]);
-    const goalsMap={};(dg.data||[]).forEach(g=>{goalsMap[g.technician_id]=g.book_time_goal;});
-    setDailyGoals(goalsMap);
+    // Load daily goals separately so it can't break the main load
+    try{
+      const{data:dgData}=await supabase.from('technician_daily_goals').select('*').eq('work_date',selectedDate);
+      const goalsMap={};(dgData||[]).forEach(g=>{goalsMap[g.technician_id]=g.book_time_goal;});
+      setDailyGoals(goalsMap);
+    }catch(e){console.warn('Daily goals load failed',e);}
     setLoading(false);
   },[selectedDate]);
 
