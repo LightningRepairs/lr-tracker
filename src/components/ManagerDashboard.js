@@ -173,27 +173,7 @@ export default function ManagerDashboard({tech:currentUser, drillTech, setDrillT
               </div>
               <div style={{marginTop:'8px',fontSize:'11px',color:'rgba(255,255,255,0.35)',textAlign:'center'}}>Click to view live sheet →</div>
               {currentUser?.role==='admin'&&(
-                <div onClick={e=>e.stopPropagation()} style={{marginTop:'8px',display:'flex',alignItems:'center',gap:'8px',background:'rgba(255,255,255,0.05)',borderRadius:'6px',padding:'6px 10px'}}>
-                  <span style={{fontSize:'10px',color:'rgba(255,255,255,0.5)',textTransform:'uppercase',letterSpacing:'0.05em',whiteSpace:'nowrap'}}>Today's goal</span>
-                  <input type="number" defaultValue={dailyGoals[tech.id]||parseInt(settings.book_time_goal||360)}
-                    onBlur={async e=>{
-                      const val=parseInt(e.target.value);
-                      if(!val||val<1)return;
-                      const{error:upsertErr}=await supabase.from('technician_daily_goals').upsert({technician_id:tech.id,work_date:selectedDate,book_time_goal:val},{onConflict:'technician_id,work_date'});
-                      if(upsertErr){
-                        // Try insert then update as fallback
-                        const{error:insErr}=await supabase.from('technician_daily_goals').insert({technician_id:tech.id,work_date:selectedDate,book_time_goal:val});
-                        if(insErr){
-                          await supabase.from('technician_daily_goals').update({book_time_goal:val}).eq('technician_id',tech.id).eq('work_date',selectedDate);
-                        }
-                      }
-                      setDailyGoals(prev=>({...prev,[tech.id]:val}));
-                    }}
-                    onKeyDown={e=>e.key==='Enter'&&e.target.blur()}
-                    style={{flex:1,background:'rgba(255,255,255,0.1)',border:'1px solid rgba(255,255,255,0.2)',borderRadius:'4px',color:'#fff',fontSize:'12px',fontWeight:700,padding:'3px 6px',textAlign:'center',outline:'none',fontFamily:'inherit'}}
-                  />
-                  <span style={{fontSize:'10px',color:'rgba(255,255,255,0.5)'}}>min</span>
-                </div>
+                <GoalEditor techId={tech.id} date={selectedDate} currentGoal={dailyGoals[tech.id]||parseInt(settings.book_time_goal||360)} onSave={val=>setDailyGoals(prev=>({...prev,[tech.id]:val}))}/>
               )}
             </div>
           );
@@ -377,6 +357,38 @@ function BookOverride({value,onSave}){
       onMouseEnter={e=>e.currentTarget.style.background='#e8f6fc'}
       onMouseLeave={e=>e.currentTarget.style.background='transparent'}
     >{value||'—'}<span style={{fontSize:'9px',color:'#aac8d8',marginLeft:'3px'}}>✎</span></span>
+  );
+}
+
+function GoalEditor({techId, date, currentGoal, onSave}){
+  const[val,setVal]=React.useState(String(currentGoal));
+  const[saved,setSaved]=React.useState(false);
+  const[saving,setSaving]=React.useState(false);
+
+  // Update input when currentGoal changes (e.g. on reload)
+  React.useEffect(()=>{setVal(String(currentGoal));},[currentGoal]);
+
+  const save=async()=>{
+    const num=parseInt(val);
+    if(!num||num<1)return;
+    setSaving(true);
+    // Delete existing then insert fresh - most reliable approach
+    await supabase.from('technician_daily_goals').delete().eq('technician_id',techId).eq('work_date',date);
+    await supabase.from('technician_daily_goals').insert({technician_id:techId,work_date:date,book_time_goal:num});
+    onSave(num);
+    setSaving(false);
+    setSaved(true);
+    setTimeout(()=>setSaved(false),2000);
+  };
+
+  return(
+    <div onClick={e=>e.stopPropagation()} style={{marginTop:'8px',display:'flex',alignItems:'center',gap:'8px',background:saved?'rgba(0,230,118,0.15)':'rgba(255,255,255,0.05)',borderRadius:'6px',padding:'6px 10px',transition:'background 0.3s',border:saved?'1px solid rgba(0,230,118,0.4)':'1px solid transparent'}}>
+      <span style={{fontSize:'10px',color:saved?'#00e676':'rgba(255,255,255,0.5)',textTransform:'uppercase',letterSpacing:'0.05em',whiteSpace:'nowrap',transition:'color 0.3s'}}>{saved?'✓ Saved!':'Today's goal'}</span>
+      <input type="number" value={val} onChange={e=>setVal(e.target.value)}
+        onBlur={save} onKeyDown={e=>e.key==='Enter'&&save()}
+        style={{flex:1,background:'rgba(255,255,255,0.1)',border:`1px solid ${saved?'rgba(0,230,118,0.5)':'rgba(255,255,255,0.2)'}`,borderRadius:'4px',color:'#fff',fontSize:'12px',fontWeight:700,padding:'3px 6px',textAlign:'center',outline:'none',fontFamily:'inherit',minWidth:0}}
+      />
+    </div>
   );
 }
 
