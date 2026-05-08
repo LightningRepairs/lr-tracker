@@ -61,7 +61,7 @@ export default function TechSheet({tech}){
       setBookTimes(bt.data||[]);
       setAddOnOptions(ao.data||[]);
       // Load today's personal goal if set
-      const{data:dgData}=await supabase.from('technician_daily_goals').select('*').eq('technician_id',tech.id).eq('work_date',today).single().catch(()=>({data:null}));
+      const{data:dgData}=await supabase.from('technician_daily_goals').select('*').eq('technician_id',tech.id).eq('work_date',today).maybeSingle();
       if(dgData?.book_time_goal){
         setSettings(prev=>({...prev,book_time_goal:String(dgData.book_time_goal)}));
       }
