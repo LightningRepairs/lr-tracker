@@ -383,7 +383,7 @@ function GoalEditor({techId, date, currentGoal, onSave}){
 
   return(
     <div onClick={e=>e.stopPropagation()} style={{marginTop:'8px',display:'flex',alignItems:'center',gap:'8px',background:saved?'rgba(0,230,118,0.15)':'rgba(255,255,255,0.05)',borderRadius:'6px',padding:'6px 10px',transition:'background 0.3s',border:saved?'1px solid rgba(0,230,118,0.4)':'1px solid transparent'}}>
-      <span style={{fontSize:'10px',color:saved?'#00e676':'rgba(255,255,255,0.5)',textTransform:'uppercase',letterSpacing:'0.05em',whiteSpace:'nowrap',transition:'color 0.3s'}}>{saved?'✓ Saved!':'Today's goal'}</span>
+      <span style={{fontSize:'10px',color:saved?'#00e676':'rgba(255,255,255,0.5)',textTransform:'uppercase',letterSpacing:'0.05em',whiteSpace:'nowrap',transition:'color 0.3s'}}>{saved?'✓ Saved!':'Today\'s goal'}</span>
       <input type="number" value={val} onChange={e=>setVal(e.target.value)}
         onBlur={save} onKeyDown={e=>e.key==='Enter'&&save()}
         style={{flex:1,background:'rgba(255,255,255,0.1)',border:`1px solid ${saved?'rgba(0,230,118,0.5)':'rgba(255,255,255,0.2)'}`,borderRadius:'4px',color:'#fff',fontSize:'12px',fontWeight:700,padding:'3px 6px',textAlign:'center',outline:'none',fontFamily:'inherit',minWidth:0}}
