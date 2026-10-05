@@ -783,10 +783,11 @@ function repairMinutesFor(t, repairType) {
   if (!grid || !t.deviceRow || !repairType || !grid.data[t.deviceRow]) return null;
   return grid.data[t.deviceRow][repairType] ?? null;
 }
+// A ticket's book time = the picked repair type's minutes. Until a repair type is picked, it's the
+// Diagnostics minutes. (Never the two added together — they're credited separately.)
 function recomputeBookedSec(t) {
-  const diagMin = diagnosticsMinutesFor(t) || 0;
-  const repairMin = t.repairType ? (repairMinutesFor(t, t.repairType) || 0) : 0;
-  t.bookedSec = (diagMin + repairMin) * 60;
+  const min = t.repairType ? (repairMinutesFor(t, t.repairType) || 0) : (diagnosticsMinutesFor(t) || 0);
+  t.bookedSec = min * 60;
 }
 
 /* ============ formatting ============ */
@@ -1224,16 +1225,13 @@ function setTicketRepairType(ticketId, val) {
   persistDevice(t);
 }
 function bookBreakdown(t) {
-  const parts = [];
-  const diagMin = diagnosticsMinutesFor(t);
-  const repairMin = t.repairType ? repairMinutesFor(t, t.repairType) : null;
-  if (diagMin) parts.push(`Diagnostics ${diagMin}m`);
-  if (t.repairType && repairMin) parts.push(`${t.repairType} ${repairMin}m`);
-  return parts.join(" + ");
+  if (t.repairType) { const m = repairMinutesFor(t, t.repairType); return m ? `${t.repairType} ${m}m` : ""; }
+  const d = diagnosticsMinutesFor(t);
+  return d ? `Diagnostics ${d}m (until a repair type is picked)` : "";
 }
 function renderBookCell(t) {
   const br = bookBreakdown(t);
-  return `<div class="tcell-book" title="${esc(br ? `${br} = ${fmtHM(t.bookedSec)} book time` : "Pick the model & repair type to set book time")}">${t.bookedSec ? fmtHM(t.bookedSec) : "—"}</div>`;
+  return `<div class="tcell-book" title="${esc(br || "Pick the model & repair type to set book time")}">${t.bookedSec ? fmtHM(t.bookedSec) : "—"}</div>`;
 }
 // Three always-visible dropdowns: Type (= RepairShopr Issue Type, editable), Model, Repair type.
 function renderDevicePicker(t) {
