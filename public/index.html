@@ -479,13 +479,21 @@ async function api(path, body) {
   const opts = { method: body === undefined ? "GET" : "POST", headers: {} };
   if (state.token) opts.headers.Authorization = "Bearer " + state.token;
   if (body !== undefined) { opts.headers["Content-Type"] = "application/json"; opts.body = JSON.stringify(body); }
+  // Never hang forever: give up after 20s with a clear message.
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), 20000);
+  opts.signal = ctrl.signal;
   let res;
   try { res = await fetch("/api" + path, opts); }
-  catch (e) { throw new Error("Can't reach the server — check your internet connection"); }
+  catch (e) {
+    throw new Error(e.name === "AbortError" ? "The server took too long to answer — try again in a minute" : "Can't reach the server — check your internet connection");
+  } finally { clearTimeout(timer); }
   let data = null;
   try { data = await res.json(); } catch (e) {}
   if (res.status === 401 && path !== "/login") { logout(true); throw new Error("Session expired — log in again"); }
-  if (!res.ok) throw new Error((data && data.error) || `Server error (${res.status})`);
+  if (!res.ok) throw new Error((data && data.error) || (res.status === 502 || res.status === 504
+    ? "The server timed out — try again in a minute"
+    : `Server error (${res.status})`));
   return data;
 }
 

@@ -6,8 +6,13 @@ import { signToken, verifyToken } from "../../lib/auth.mjs";
 import { today, shopDate } from "../../lib/time.mjs";
 import { effectiveDevice, creditedMinutes } from "../../lib/booktime.mjs";
 import {
-  getTickets, getUsers, getTicketComments, assignTicket, postComment, invalidate, RsError, RS_SUBDOMAIN,
+  getTickets, getUsers, getTicketComments, assignTicket, postComment, invalidate, patchCachedTicket, probeRs, RsError, RS_SUBDOMAIN,
 } from "../../lib/rs.mjs";
+import { syncFromRs } from "../../lib/sync.mjs";
+
+// Time budgets so a page load always answers well inside Netlify's ~10s function limit.
+const TICKETS_WAIT_MS = 4500, USERS_WAIT_MS = 3000, COMMENTS_WAIT_MS = 2000;
+const sleep = ms => new Promise(r => setTimeout(r, ms));
 
 export const config = { path: "/api/*" };
 
@@ -28,7 +33,7 @@ export default async (req, context) => {
   const url = new URL(req.url);
   const route = url.pathname.replace(/^\/api/, "").replace(/\/+$/, "") || "/";
   try {
-    if (req.method === "GET" && route === "/health") return json(await health());
+    if (req.method === "GET" && route === "/health") return json(await health(url.searchParams.get("rs") === "1"));
     if (req.method === "POST" && route === "/login") return json(await login(req, context));
 
     const me = await requireMe(req);
@@ -94,7 +99,7 @@ async function login(req, context) {
   return { token: signToken(row.id), personId: row.id };
 }
 
-async function health() {
+async function health(withRs) {
   const env = {
     DATABASE_URL: !!process.env.DATABASE_URL,
     SESSION_SECRET: (process.env.SESSION_SECRET || "").length >= 16,
@@ -105,7 +110,9 @@ async function health() {
     const [{ n }] = await db()`select count(*)::int as n from people`;
     database = `ok (${n} people)`;
   } catch (e) { database = `error: ${e.message}`; }
-  return { env, database, rsSubdomain: RS_SUBDOMAIN, today: today() };
+  const out = { env, database, rsSubdomain: RS_SUBDOMAIN, today: today() };
+  if (withRs) out.repairshopr = await probeRs();
+  return out;
 }
 
 /* ---------------- state ---------------- */
@@ -119,54 +126,16 @@ async function loadSettings(sql) {
   };
 }
 
-async function snapshotTickets(sql, list, personByRsUser, t0) {
-  if (!list.length) return;
-  const rows = list.map(t => ({
-    ticket_id: t.id, rs_number: t.num ?? null, rs_subject: t.subject, rs_status: t.status,
-    rs_problem_type: t.issueType, rs_user_id: t.rsUserId ?? null,
-  }));
-  await sql`
-    insert into ticket_state ${sql(rows, "ticket_id", "rs_number", "rs_subject", "rs_status", "rs_problem_type", "rs_user_id")}
-    on conflict (ticket_id) do update set
-      rs_number = excluded.rs_number, rs_subject = excluded.rs_subject, rs_status = excluded.rs_status,
-      rs_problem_type = excluded.rs_problem_type, rs_user_id = excluded.rs_user_id, rs_synced_at = now()`;
-  const assigned = list
-    .map(t => ({ ticket_id: t.id, person_id: personByRsUser.get(String(t.rsUserId)), work_date: t0 }))
-    .filter(r => r.person_id);
-  if (assigned.length) {
-    await sql`insert into assignment_log ${sql(assigned, "ticket_id", "person_id", "work_date")} on conflict do nothing`;
-  }
-}
-
 async function buildState(me) {
   const sql = db();
   const t0 = today();
-  const [peopleRows, settings, attendanceRows] = await Promise.all([
-    sql`select * from people order by sort, name`,
+  const [sync, settings, attendanceRows] = await Promise.all([
+    syncFromRs({ ticketsWaitMs: TICKETS_WAIT_MS, usersWaitMs: USERS_WAIT_MS }),
     loadSettings(sql),
     sql`select person_id, position from attendance where work_date = ${t0}`,
   ]);
-
-  // --- RepairShopr ---
-  let rsError = null, rsList = [], fresh = false, rsUsers = [];
-  try {
-    const r = await getTickets();
-    rsList = r.value.list; fresh = r.fresh;
-  } catch (e) { rsError = e.message; }
-  try { rsUsers = await getUsers(); } catch (e) { rsError = rsError || e.message; }
-
-  // Auto-link people to RS users by exact (case-insensitive) full name, if not linked yet.
-  const linked = new Set(peopleRows.filter(p => p.rs_user_id != null).map(p => String(p.rs_user_id)));
-  for (const p of peopleRows) {
-    if (p.rs_user_id != null) continue;
-    const match = rsUsers.find(u => u.name.trim().toLowerCase() === p.name.trim().toLowerCase() && !linked.has(String(u.id)));
-    if (match) {
-      await sql`update people set rs_user_id = ${match.id} where id = ${p.id} and rs_user_id is null`;
-      p.rs_user_id = match.id; linked.add(String(match.id));
-    }
-  }
-  const personByRsUser = new Map(peopleRows.filter(p => p.rs_user_id != null).map(p => [String(p.rs_user_id), p.id]));
-  if (fresh) await snapshotTickets(sql, rsList, personByRsUser, t0);
+  const { peopleRows, rsUsers, rsError, personByRsUser } = sync;
+  const rsList = sync.list;
 
   // Tickets not on RS's open list but touched today (e.g. resolved) still need to show up.
   const openIds = new Set(rsList.map(t => t.id));
@@ -232,20 +201,22 @@ async function buildState(me) {
 
   // "Left a note today" can also come from a comment typed directly in RepairShopr. Only check the
   // tickets where that's the missing piece for MY diagnosis-credit eligibility (keeps API calls low).
-  if (me.rs_user_id != null && !rsError) {
+  const myRsUserId = peopleRows.find(p => p.id === me.id)?.rs_user_id ?? null;
+  if (myRsUserId != null && !rsError) {
     const eligible = new Set(settings.diagnosisEligibleStatuses);
     const need = tickets.filter(t =>
       t.assignedTo === me.id && eligible.has(t.status) &&
       !t.notes.some(n => n.author === me.id) && !t.workLog.some(w => w.personId === me.id)
     ).slice(0, 15);
-    await Promise.all(need.map(async t => {
+    const checks = Promise.all(need.map(async t => {
       try {
         const comments = await getTicketComments(t.id);
         const mine = comments.some(c => c.createdAt && shopDate(c.createdAt) === t0 &&
-          (String(c.userId) === String(me.rs_user_id) || c.tech.trim().toLowerCase() === me.name.trim().toLowerCase()));
+          (String(c.userId) === String(myRsUserId) || c.tech.trim().toLowerCase() === me.name.trim().toLowerCase()));
         if (mine) t.notes.push({ author: me.id, date: t0, source: "rs" });
       } catch { /* non-fatal */ }
     }));
+    await Promise.race([checks, sleep(COMMENTS_WAIT_MS)]); // whatever didn't finish gets picked up next refresh
   }
 
   const personToday = {};
@@ -434,7 +405,7 @@ async function assign(me, { ticketId, personId }) {
     rsUserId = Number(p.rs_user_id);
   }
   await assignTicket(id, rsUserId);
-  await invalidate("tickets");
+  await patchCachedTicket(id, { rsUserId });
   await sql`update ticket_state set rs_user_id = ${rsUserId} where ticket_id = ${id}`;
   if (personId) await sql`insert into assignment_log (ticket_id, person_id, work_date) values (${id}, ${personId}, ${today()}) on conflict do nothing`;
   return { ok: true };
@@ -489,7 +460,6 @@ async function upsertPerson(me, b) {
     const v = b.rsUserId === null || b.rsUserId === "" ? null : Number(b.rsUserId);
     if (v != null) await sql`update people set rs_user_id = null where rs_user_id = ${v} and id <> ${p.id}`;
     await sql`update people set rs_user_id = ${v} where id = ${p.id}`;
-    await invalidate("tickets"); // re-snapshot assignments with the new link
   }
   if (b.name !== undefined && String(b.name).trim()) await sql`update people set name = ${String(b.name).trim()} where id = ${p.id}`;
   if (b.active !== undefined) {
@@ -511,8 +481,10 @@ async function setPin({ personId, pin }) {
 async function rsCheck() {
   const out = { ok: false, errors: [] };
   try {
-    const r = await getTickets({ force: true });
+    const r = await getTickets({ force: true, maxWaitMs: 8000 });
+    if (r.error) out.errors.push(r.error);
     const list = r.value.list;
+    out.fetchMs = r.value.fetchMs ?? null;
     out.ticketCount = list.length;
     out.openMeta = r.value.openMeta;
     out.statuses = countBy(list, t => t.status || "(blank)");
@@ -521,8 +493,7 @@ async function rsCheck() {
     out.ok = true;
   } catch (e) { out.errors.push(e.message); }
   try {
-    await invalidate("users");
-    out.users = await getUsers();
+    out.users = await getUsers({ force: true, maxWaitMs: 4000 });
   } catch (e) { out.errors.push(e.message); }
   return out;
 }
