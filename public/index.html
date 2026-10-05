@@ -79,6 +79,65 @@
     --s1: #3987e5; --s2: #d95926; --s3: #199e70; --s4: #c98500; --s5: #d55181;
     --good-text: #3fd13f;
   }
+  /* Blackout: a traditional dark mode — near-black greys, white text */
+  :root[data-theme="blackout"] {
+    color-scheme: dark;
+    --page: #121212;
+    --surface: #1c1c1c;
+    --surface-2: #262626;
+    --text-primary: #ececec;
+    --text-secondary: #b3b3b3;
+    --text-muted: #7c7c7c;
+    --grid: #2c2c2c;
+    --baseline: #3a3a3a;
+    --border: rgba(255,255,255,0.10);
+    --accent: #4fb3e8;
+
+    --topbar-bg: #181818;
+    --topbar-text: #ececec;
+    --topbar-tab: #8f8f8f;
+    --topbar-line: #2c2c2c;
+    --tab-active: #4fb3e8;
+    --badge-bg: rgba(255,255,255,0.08);
+    --login-bg: #121212;
+    --primary-bg: #1596d1;
+    --primary-text: #ffffff;
+    --primary-border: #1596d1;
+
+    --s1: #3987e5; --s2: #d95926; --s3: #199e70; --s4: #c98500; --s5: #d55181;
+    --good-text: #3fd13f;
+  }
+  /* Terminal: jet black + neon green, nothing else */
+  :root[data-theme="terminal"] {
+    color-scheme: dark;
+    --brand-navy: #000000; --brand-blue: #00ff41; --brand-gold: #00ff41;
+    --page: #000000;
+    --surface: #000000;
+    --surface-2: #02150a;
+    --text-primary: #00ff41;
+    --text-secondary: #00cc34;
+    --text-muted: #008f24;
+    --grid: #063d16;
+    --baseline: #0b5c22;
+    --border: rgba(0,255,65,0.35);
+    --accent: #00ff41;
+
+    --topbar-bg: #000000;
+    --topbar-text: #00ff41;
+    --topbar-tab: #00a82b;
+    --topbar-line: #00ff41;
+    --tab-active: #00ff41;
+    --badge-bg: #02150a;
+    --login-bg: #000000;
+    --primary-bg: #00ff41;
+    --primary-text: #000000;
+    --primary-border: #00ff41;
+    --panel-border: 1px solid #00ff41;
+    --panel-shadow: 0 0 10px rgba(0,255,65,0.25);
+
+    --s1: #00ff41; --s2: #00ff41; --s3: #00ff41; --s4: #00ff41; --s5: #00ff41;
+    --good: #00ff41; --good-text: #00ff41; --warning: #00ff41; --serious: #00ff41; --critical: #00ff41;
+  }
   /* Retro: logo sky blues + yellows, navy outlines (like the wordmark) */
   :root[data-theme="retro"] {
     color-scheme: light;
@@ -203,11 +262,33 @@
   :root[data-theme="retro"] .who .pos-badge { color: #ffffff; }
   :root[data-theme="retro"] .login-card { box-shadow: 6px 6px 0 #0b1e3d; }
   /* Dark: status text in its own bright color (the light-theme versions are darkened for white backgrounds) */
-  :root[data-theme="dark"] .ticket-status.progress,
-  :root[data-theme="dark"] .ticket-status.needs_called { color: var(--warning); }
-  :root[data-theme="dark"] .ticket-status.backburner,
-  :root[data-theme="dark"] .status-chip.serious { color: var(--serious); }
-  :root[data-theme="dark"] .timer-display.logged-warning { color: var(--warning); }
+  :root:is([data-theme="dark"],[data-theme="blackout"]) .ticket-status.progress,
+  :root:is([data-theme="dark"],[data-theme="blackout"]) .ticket-status.needs_called { color: var(--warning); }
+  :root:is([data-theme="dark"],[data-theme="blackout"]) .ticket-status.backburner,
+  :root:is([data-theme="dark"],[data-theme="blackout"]) .status-chip.serious { color: var(--serious); }
+  :root:is([data-theme="dark"],[data-theme="blackout"]) .timer-display.logged-warning { color: var(--warning); }
+
+  /* Terminal: force every colored element to black/green. Book-time verdicts stay distinguishable:
+     under = plain green, slightly over = dim green box, way over = inverted (black on green). */
+  :root[data-theme="terminal"] body { font-family: "Cascadia Mono", Consolas, "Courier New", ui-monospace, monospace; text-shadow: 0 0 3px rgba(0,255,65,0.45); }
+  :root[data-theme="terminal"] :is(.ticket-status, .status-chip, .work-outcome-badge, .diag-badge, .device-chip, .pos-badge) {
+    background: #000 !important; color: #00ff41 !important; border: 1px solid #00ff41 !important;
+  }
+  :root[data-theme="terminal"] .avatar { background: #00ff41 !important; color: #000 !important; text-shadow: none; }
+  :root[data-theme="terminal"] :is(select, input, textarea) { background: #000; color: #00ff41; border-color: #00ff41 !important; font-family: inherit; }
+  :root[data-theme="terminal"] .btn.primary, :root[data-theme="terminal"] .toast { text-shadow: none; }
+  :root[data-theme="terminal"] .toast { background: #00ff41; color: #000; }
+  :root[data-theme="terminal"] .toast.error { background: #000; color: #00ff41; border: 1px solid #00ff41; }
+  :root[data-theme="terminal"] .rs-warning { background: #000; border-color: #00ff41; }
+  :root[data-theme="terminal"] .icon-btn { background: #000; border-color: #00ff41; color: #00ff41; }
+  :root[data-theme="terminal"] :is(.icon-btn, .admin-menu-icon, .queue-caret) { filter: grayscale(1) sepia(1) hue-rotate(70deg) saturate(8) brightness(1.1); }
+  :root[data-theme="terminal"] .timer-display.logged-good { background: transparent; color: #00ff41; }
+  :root[data-theme="terminal"] .timer-display.logged-warning { background: #063d16; color: #00ff41; }
+  :root[data-theme="terminal"] .timer-display.logged-critical { background: #00ff41; color: #000; text-shadow: none; }
+  :root[data-theme="terminal"] .meter-pace { background: #00ff41; }
+  :root[data-theme="terminal"] .pin-key { background: #000; border-color: #00ff41; color: #00ff41; }
+  :root[data-theme="terminal"] .login-card { box-shadow: 0 0 24px rgba(0,255,65,0.35); }
+  :root[data-theme="terminal"] .bolt { color: #00ff41 !important; }
   :root[data-theme="retro"] .topbar .tab { text-shadow: 0 1px 0 rgba(11,30,61,0.35); }
   .pos-switcher { position: relative; }
   .pos-menu {
@@ -385,7 +466,7 @@
   /* ---------- SETTINGS ---------- */
   .setting-row { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 6px 4px; }
   .setting-label { font-size: 13.5px; font-weight: 700; margin-bottom: 2px; }
-  .theme-toggle { display: flex; gap: 6px; flex: none; }
+  .theme-toggle { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
   .theme-toggle-btn { border: 1.5px solid var(--border); background: var(--surface-2); color: var(--text-secondary); padding: 8px 14px; border-radius: 8px; font-size: 12.5px; font-weight: 600; }
   .theme-toggle-btn.active { border-color: var(--brand-blue); background: color-mix(in srgb, var(--brand-blue) 14%, var(--surface)); color: var(--text-primary); }
 
@@ -520,6 +601,14 @@ const STACK_ORDER_BY_CATEGORY = {
   misc:     ["misc"],
 };
 
+const THEMES = [
+  { key: "retro",    label: "⚡ Retro" },
+  { key: "light",    label: "☀ Light" },
+  { key: "dark",     label: "🌙 Dark" },
+  { key: "blackout", label: "◼ Blackout" },
+  { key: "terminal", label: ">_ Terminal" },
+];
+
 /* ============ small helpers ============ */
 // Escape anything that came from RepairShopr / users before putting it in HTML.
 function esc(s) {
@@ -547,7 +636,7 @@ let state = {
   position: null,
   attendance: {},         // personId -> position they're working today (= who's "logged in today")
   tab: "day",             // day | team | admin | settings
-  theme: ["light", "dark", "retro"].includes(store.get("lr_theme")) ? store.get("lr_theme") : "light",
+  theme: THEMES.some(t => t.key === store.get("lr_theme")) ? store.get("lr_theme") : "retro", // Retro is the default
   today: null,
   clockOffset: 0,
   tickets: [],
@@ -1831,12 +1920,10 @@ function renderSettings() {
       <div class="setting-row">
         <div>
           <div class="setting-label">Appearance</div>
-          <div class="meter-note">Light, Dark or Retro — applies to this device only.</div>
+          <div class="meter-note">Retro is the default — your pick is remembered on this device.</div>
         </div>
         <div class="theme-toggle">
-          <button class="theme-toggle-btn ${state.theme==='light'?'active':''}" onclick="setTheme('light')">☀ Light</button>
-          <button class="theme-toggle-btn ${state.theme==='dark'?'active':''}" onclick="setTheme('dark')">🌙 Dark</button>
-          <button class="theme-toggle-btn ${state.theme==='retro'?'active':''}" onclick="setTheme('retro')">⚡ Retro</button>
+          ${THEMES.map(t => `<button class="theme-toggle-btn ${state.theme === t.key ? 'active' : ''}" onclick="setTheme('${t.key}')">${t.label}</button>`).join("")}
         </div>
       </div>
     </div>
