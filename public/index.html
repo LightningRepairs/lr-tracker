@@ -164,7 +164,7 @@
   .pos-menu-item:hover { background: var(--surface-2); }
   .pos-menu-item.current { font-weight: 700; color: var(--brand-blue); }
 
-  main.content { flex: 1; max-width: 1100px; width: 100%; margin: 0 auto; padding: 22px 24px 40px; }
+  main.content { flex: 1; max-width: 1480px; width: 100%; margin: 0 auto; padding: 22px 24px 40px; }
 
   .proto-banner {
     background: color-mix(in srgb, var(--warning) 18%, var(--surface));
@@ -335,6 +335,41 @@
   }
 
   /* ---------- real-app additions ---------- */
+  /* One compact line per ticket: ticket | status | type/model/repair | book | timer | note/time | outcome */
+  .trow {
+    display: grid; align-items: center; column-gap: 10px;
+    grid-template-columns: minmax(190px, 1.3fr) 118px minmax(380px, 2.4fr) 56px 150px 70px minmax(190px, 1.1fr);
+    padding: 5px 4px; border-bottom: 1px solid var(--grid); min-height: 44px;
+  }
+  .trow:last-child { border-bottom: none; }
+  .tcell-ticket { display: block; min-width: 0; text-decoration: none; color: inherit; border-radius: 6px; padding: 2px 4px; margin: -2px -4px; }
+  .tcell-ticket:hover { background: var(--surface-2); }
+  .tcell-ticket:hover .ticket-subject { text-decoration: underline; }
+  .tcell-ticket .ticket-num { font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .tcell-ticket .ticket-subject { font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .tcell-ticket .diag-badge { font-size: 10px; padding: 0 6px; }
+  .trow .ticket-status { justify-self: start; white-space: nowrap; }
+  .tcell-device { display: grid; grid-template-columns: 1fr 1.15fr 1.15fr; gap: 6px; min-width: 0; }
+  .tcell-device .device-select { width: 100%; min-width: 0; padding: 4px 6px; }
+  .tcell-book { font-size: 12px; font-weight: 700; font-variant-numeric: tabular-nums; color: var(--text-secondary); text-align: right; cursor: help; }
+  .trow .timer-controls { gap: 6px; }
+  .trow .timer-display { min-width: 64px; font-size: 12.5px; }
+  .trow .icon-btn { width: 28px; height: 28px; }
+  .icon-btn.on { border-color: var(--brand-blue); background: color-mix(in srgb, var(--brand-blue) 14%, var(--surface)); }
+  .tcell-outcome { min-width: 0; display: flex; justify-content: flex-end; }
+  .tcell-outcome .outcome-select { width: 100%; min-width: 0; padding: 5px 7px; }
+  .tcell-outcome .work-outcome-badge { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+  .diag-actions .tcell-device { width: 420px; }
+  .bt-struct { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; margin-top: 8px; }
+  .bt-del { border: none; background: transparent; color: var(--text-muted); cursor: pointer; font-size: 12px; padding: 0 3px; }
+  .bt-del:hover { color: var(--critical); }
+  @media (max-width: 1100px) {
+    .trow { display: flex; flex-wrap: wrap; gap: 6px 10px; padding: 8px 4px; }
+    .tcell-ticket { flex: 1 1 100%; }
+    .tcell-device { flex: 1 1 100%; }
+    .tcell-outcome { flex: 1 1 200px; }
+    .diag-actions .tcell-device { width: 100%; }
+  }
   .ticket-status.resolved { background: color-mix(in srgb, var(--good) 16%, transparent); color: var(--good-text); }
   .ticket-customer { font-size: 11.5px; color: var(--text-muted); }
   .loading-screen { flex: 1; display: flex; align-items: center; justify-content: center; color: var(--text-muted); font-size: 14px; }
@@ -402,6 +437,8 @@ const OUTCOME_LABELS = {
 };
 
 // RepairShopr "Issue Type" → Book Time Database category/subtype. Mirrors lib/booktime.mjs on the server.
+// "alt" = other sub-types whose models are also offered (RS has no Handheld type, so Switch/Gameboy
+// models are listed under Game Console).
 const ISSUE_TYPE_TO_DEVICE = {
   "Phone": { category: "mobile", subtype: "phone" },
   "Tablet": { category: "mobile", subtype: "tablet" },
@@ -409,13 +446,19 @@ const ISSUE_TYPE_TO_DEVICE = {
   "Laptop": { category: "computer", subtype: "moduleLaptops" },
   "Desktop": { category: "computer", subtype: "desktop" },
   "All-in-One": { category: "computer", subtype: "allInOne" },
-  "Game Console": { category: "gaming", subtype: "console" },
+  "Game Console": { category: "gaming", subtype: "console", alt: ["handheld"] },
   "Game Controller": { category: "gaming", subtype: "controller" },
+  "Service/Consult": { category: "misc", subtype: "misc" },
+  "Other/Misc": { category: "misc", subtype: "misc" },
 };
+// The only Issue Types RepairShopr offers — the Type dropdown never shows anything else.
+const RS_ISSUE_TYPES = Object.keys(ISSUE_TYPE_TO_DEVICE);
+const CATEGORY_ORDER = ["mobile", "computer", "gaming", "misc"];
 const STACK_ORDER_BY_CATEGORY = {
   mobile:   ["phone", "tablet", "watch"],
   computer: ["moduleLaptops", "desktop", "allInOne"],
   gaming:   ["handheld", "console", "controller"],
+  misc:     ["misc"],
 };
 
 /* ============ small helpers ============ */
@@ -457,7 +500,7 @@ let state = {
   manualOpen: null,
   manualDrafts: {},
   manualConfirm: {},
-  deviceOverrideOpen: null, // ticket id currently showing the manual category/subtype override control
+  structDrafts: {},        // Book Time Database "add model / add repair type" inputs
   outcomeEditOpen: null,    // ticket id currently showing its outcome dropdown in "Tickets I worked on today"
   bookTimeCategories: {},
   overBookThresholdPct: 15,
@@ -555,16 +598,12 @@ function buildTicket(t) {
   recomputeBookedSec(x);
   return x;
 }
-// Category/Subtype: a manual override wins, otherwise RepairShopr's Issue Type decides (never asks).
+// Category comes from RepairShopr's Issue Type; the picked model can switch to an "alt" sub-type.
 function resolveDevice(t) {
   const mapped = t.issueType ? ISSUE_TYPE_TO_DEVICE[t.issueType] : null;
-  if (t.deviceOverrideCategory) {
-    t.deviceCategory = t.deviceOverrideCategory;
-    t.deviceSubtype = t.deviceOverrideSubtype || null;
-  } else {
-    t.deviceCategory = mapped ? mapped.category : null;
-    t.deviceSubtype = t.deviceOverrideSubtype || (mapped ? mapped.subtype : null);
-  }
+  if (!mapped) { t.deviceCategory = null; t.deviceSubtype = null; return; }
+  t.deviceCategory = mapped.category;
+  t.deviceSubtype = t.deviceOverrideSubtype && (mapped.alt || []).includes(t.deviceOverrideSubtype) ? t.deviceOverrideSubtype : mapped.subtype;
 }
 
 /* ============ book-time math (mirrors lib/booktime.mjs) ============ */
@@ -964,62 +1003,52 @@ function renderCreditBadges(t) {
   }
   return badges.join("");
 }
-// Worked on it today = assigned to them at some point today AND left at least one note today
-// (a note from this app, or a comment they typed in RepairShopr).
-function workedOnToday(t, userId) {
-  const assignedToday = t.assignedTo === userId || (t.assignmentLog || []).some(e => e.personId === userId && e.date === state.today);
-  const notedToday = (t.notes || []).some(n => n.author === userId && n.date === state.today);
-  return assignedToday && notedToday;
-}
 function hasActedToday(t, userId) { return (t.workLog || []).some(w => w.personId === userId && w.date === state.today); }
 function todaysEntry(t, userId) { return (t.workLog || []).find(w => w.personId === userId && w.date === state.today) || null; }
 function isDiagnosisStatus(t) { return state.diagnosisEligibleStatuses.includes(t.status); }
+// Diagnosis credit is offered only when the ticket WAS in your queue earlier today (assigned to you
+// while in an in-the-queue status) and has since moved to a diagnosis status (Awaiting Client/Parts).
 function ticketsEligibleForDiagnosisCredit(userId) {
   return state.tickets.filter(t =>
     !t.notOpen &&
     (!t.diagnosisLocked || !t.repairLocked) &&
     isDiagnosisStatus(t) &&
-    workedOnToday(t, userId) &&
+    (t.queuedToday || []).includes(userId) &&
     !hasActedToday(t, userId)
   );
 }
 
-/* ----- device / repair-type picker ----- */
+/* ----- Type / Model / Repair-type picker ----- */
 function persistDevice(t) {
   recomputeBookedSec(t);
   render();
   mutate("/device", {
     ticketId: t.id,
-    category: t.deviceOverrideCategory || null,
+    category: null,
     subtype: t.deviceOverrideSubtype || null,
     row: t.deviceRow || null,
     repairType: t.repairType || null,
   });
 }
-// Category/Subtype come from RS's Issue Type. These two setters are only for correcting it
-// (e.g. RS has no "Handheld" Issue Type, so a Switch ticket maps to Console until corrected).
-function setTicketDeviceCategory(ticketId, val) {
+// Changing the Type changes the Issue Type on the RepairShopr ticket itself.
+function setIssueType(ticketId, val) {
+  if (!RS_ISSUE_TYPES.includes(val)) return;
   const t = findTicket(ticketId);
-  t.deviceOverrideCategory = val || null;
-  t.deviceOverrideSubtype = null;
-  t.deviceRow = null; t.repairType = null;
-  resolveDevice(t);
-  persistDevice(t);
+  mutate("/issue-type", { ticketId, issueType: val }, () => {
+    t.issueType = val;
+    t.deviceOverrideSubtype = null; t.deviceRow = null; t.repairType = null;
+    resolveDevice(t); recomputeBookedSec(t);
+  });
 }
-function setTicketDeviceSubtype(ticketId, val) {
+// Model value is "subtypeKey|row" — for Game Console it can be a Handheld model (Switch, Gameboy…).
+function setTicketModel(ticketId, val) {
   const t = findTicket(ticketId);
-  const mapped = t.issueType ? ISSUE_TYPE_TO_DEVICE[t.issueType] : null;
-  // Picking the same subtype Issue Type already implies just clears the override.
-  t.deviceOverrideSubtype = (!t.deviceOverrideCategory && mapped && mapped.subtype === val) ? null : (val || null);
-  t.deviceRow = null; t.repairType = null;
-  resolveDevice(t);
-  state.deviceOverrideOpen = null;
-  persistDevice(t);
-}
-function setTicketDeviceRow(ticketId, val) {
-  const t = findTicket(ticketId);
-  t.deviceRow = val || null;
+  const [sub, ...rest] = String(val).split("|");
+  const mapped = ISSUE_TYPE_TO_DEVICE[t.issueType];
+  t.deviceOverrideSubtype = mapped && sub !== mapped.subtype ? sub : null;
+  t.deviceRow = rest.join("|") || null;
   t.repairType = null;
+  resolveDevice(t);
   persistDevice(t);
 }
 function setTicketRepairType(ticketId, val) {
@@ -1027,85 +1056,48 @@ function setTicketRepairType(ticketId, val) {
   t.repairType = val || null;
   persistDevice(t);
 }
-function toggleDeviceOverride(ticketId) {
-  state.deviceOverrideOpen = (state.deviceOverrideOpen === ticketId) ? null : ticketId;
-  render();
+function bookBreakdown(t) {
+  const parts = [];
+  const diagMin = diagnosticsMinutesFor(t);
+  const repairMin = t.repairType ? repairMinutesFor(t, t.repairType) : null;
+  if (diagMin) parts.push(`Diagnostics ${diagMin}m`);
+  if (t.repairType && repairMin) parts.push(`${t.repairType} ${repairMin}m`);
+  return parts.join(" + ");
 }
-// Show the category dropdown for this ticket (nothing is saved until a category is actually picked).
-function pickOtherCategory(ticketId) {
-  const t = findTicket(ticketId);
-  t.deviceCategory = null; t.deviceSubtype = null;
-  state.deviceOverrideOpen = ticketId;
-  render();
+function renderBookCell(t) {
+  const br = bookBreakdown(t);
+  return `<div class="tcell-book" title="${esc(br ? `${br} = ${fmtHM(t.bookedSec)} book time` : "Pick the model & repair type to set book time")}">${t.bookedSec ? fmtHM(t.bookedSec) : "—"}</div>`;
 }
-function deviceCategoryIcon(cat) {
-  return cat === "mobile" ? "📱" : cat === "computer" ? "💻" : cat === "gaming" ? "🎮" : "🔧";
-}
+// Three always-visible dropdowns: Type (= RepairShopr Issue Type, editable), Model, Repair type.
 function renderDevicePicker(t) {
-  const cats = state.bookTimeCategories;
-  const overrideOpen = state.deviceOverrideOpen === t.id;
-
-  if (!t.deviceCategory || !cats[t.deviceCategory] || !t.deviceSubtype || !cats[t.deviceCategory].subtypes[t.deviceSubtype]) {
-    // Issue Type didn't map to a device (Service/Consult, Other/Misc, blank) — let them set it by hand.
-    const catOpts = Object.keys(cats).map(k =>
-      `<option value="${esc(k)}" ${t.deviceCategory === k ? "selected" : ""}>${esc(cats[k].label.replace(" Book Times", ""))}</option>`
-    ).join("");
-    const pickedCat = t.deviceCategory && cats[t.deviceCategory];
-    const subSelect = pickedCat ? `
-      <select class="device-select" onchange="setTicketDeviceSubtype(${t.id}, this.value)">
-        <option value="" selected disabled>Sub-type…</option>
-        ${Object.keys(pickedCat.subtypes).map(k => `<option value="${esc(k)}">${esc(pickedCat.subtypes[k].label)}</option>`).join("")}
-      </select>` : "";
-    return (overrideOpen || pickedCat)
-      ? `<div class="device-picker-row">
-           <select class="device-select" onchange="setTicketDeviceCategory(${t.id}, this.value)">
-             <option value="" ${!pickedCat ? "selected" : ""} disabled>Category…</option>${catOpts}
-           </select>
-           ${subSelect}
-         </div>`
-      : `<button type="button" class="device-chip clickable" onclick="toggleDeviceOverride(${t.id})" title="Click to set a device manually">⚠ ${t.issueType ? `No book-time category for Issue Type "${esc(t.issueType)}"` : "No Issue Type on this ticket"} — set manually</button>`;
-  }
-
-  const cat = cats[t.deviceCategory];
-  const sub = cat.subtypes[t.deviceSubtype];
-  const subOpts = Object.keys(cat.subtypes).map(k =>
-    `<option value="${esc(k)}" ${t.deviceSubtype === k ? "selected" : ""}>${esc(cat.subtypes[k].label)}</option>`
-  ).join("");
-  const rowOpts = sub.rows.map(r =>
-    `<option value="${esc(r)}" ${t.deviceRow === r ? "selected" : ""}>${esc(r)}</option>`
-  ).join("");
+  const typeOpts = RS_ISSUE_TYPES.map(it => `<option value="${esc(it)}" ${t.issueType === it ? "selected" : ""}>${esc(it)}</option>`).join("");
+  const typeSelect = `
+    <select class="device-select type-select" onchange="setIssueType(${t.id}, this.value)" title="RepairShopr Issue Type — changing it updates the ticket in RepairShopr">
+      ${RS_ISSUE_TYPES.includes(t.issueType) ? "" : `<option value="" selected disabled>${t.issueType ? esc(t.issueType) + " (not an RS type)" : "Type…"}</option>`}
+      ${typeOpts}
+    </select>`;
+  const mapped = ISSUE_TYPE_TO_DEVICE[t.issueType];
+  const cat = mapped && state.bookTimeCategories[mapped.category];
+  const subKeys = mapped && cat ? [mapped.subtype, ...(mapped.alt || [])].filter(k => cat.subtypes[k]) : [];
+  const opt = (subKey, r) => `<option value="${esc(subKey + "|" + r)}" ${t.deviceSubtype === subKey && t.deviceRow === r ? "selected" : ""}>${esc(r)}</option>`;
+  const modelOpts = subKeys.length === 1
+    ? cat.subtypes[subKeys[0]].rows.map(r => opt(subKeys[0], r)).join("")
+    : subKeys.map(k => `<optgroup label="${esc(cat.subtypes[k].label)}">${cat.subtypes[k].rows.map(r => opt(k, r)).join("")}</optgroup>`).join("");
   const repairOpts = repairColumnsFor(t).map(col => {
     const mins = repairMinutesFor(t, col);
     return `<option value="${esc(col)}" ${t.repairType === col ? "selected" : ""}>${esc(col)}${mins ? ` (${mins}m)` : ""}</option>`;
   }).join("");
-  const diagMin = diagnosticsMinutesFor(t);
-  const repairMin = t.repairType ? repairMinutesFor(t, t.repairType) : null;
-  const summaryParts = [];
-  if (diagMin) summaryParts.push(`Diagnostics ${diagMin}m`);
-  if (t.repairType && repairMin) summaryParts.push(`${esc(t.repairType)} ${repairMin}m`);
-  const summary = summaryParts.length
-    ? `${summaryParts.join(" + ")} = ${fmtHM(t.bookedSec)} book time`
-    : "Pick the model & repair type to set this ticket's book time.";
-
-  const chipOrOverride = overrideOpen
-    ? `<select class="device-select" onchange="setTicketDeviceSubtype(${t.id}, this.value)">${subOpts}</select>
-       <button type="button" class="btn ghost small" onclick="pickOtherCategory(${t.id})" title="Pick a different category">Other category…</button>`
-    : `<button type="button" class="device-chip clickable" onclick="toggleDeviceOverride(${t.id})" title="${t.deviceOverrideCategory || t.deviceOverrideSubtype ? "Set by hand" : `Pulled from RepairShopr Issue Type: ${esc(t.issueType || "")}`} — click to correct">${deviceCategoryIcon(t.deviceCategory)} ${esc(sub.label)}</button>`;
-
   return `
-    <div class="device-picker">
-      <div class="device-picker-row">
-        ${chipOrOverride}
-        <select class="device-select" onchange="setTicketDeviceRow(${t.id}, this.value)">
-          <option value="" ${!t.deviceRow ? "selected" : ""} disabled>Model…</option>
-          ${rowOpts}
-        </select>
-        <select class="device-select" onchange="setTicketRepairType(${t.id}, this.value)" ${!t.deviceRow ? "disabled" : ""}>
-          <option value="" ${!t.repairType ? "selected" : ""} disabled>Repair type…</option>
-          ${repairOpts}
-        </select>
-      </div>
-      <div class="device-picker-note">${summary}</div>
+    <div class="tcell-device">
+      ${typeSelect}
+      <select class="device-select" onchange="setTicketModel(${t.id}, this.value)" ${subKeys.length ? "" : "disabled"}>
+        <option value="" ${!t.deviceRow ? "selected" : ""} disabled>Model…</option>
+        ${modelOpts}
+      </select>
+      <select class="device-select" onchange="setTicketRepairType(${t.id}, this.value)" ${!t.deviceRow ? "disabled" : ""}>
+        <option value="" ${!t.repairType ? "selected" : ""} disabled>Repair type…</option>
+        ${repairOpts}
+      </select>
     </div>
   `;
 }
@@ -1178,15 +1170,23 @@ function renderOutcomeSelect(t, selectedOutcome, idSuffix) {
 }
 function renderDiagnosisRow(t) {
   return `
-    <div class="ticket-row diag-row">
-      ${ticketLink(t)}
+    <div class="trow">
+      ${ticketCell(t)}
       ${statusPill(t)}
-      <div class="diag-actions">
-        ${renderDevicePicker(t)}
-        ${renderOutcomeSelect(t, null, "-diag")}
-      </div>
+      ${renderDevicePicker(t)}
+      ${renderBookCell(t)}
+      <div></div><div></div>
+      <div class="tcell-outcome">${renderOutcomeSelect(t, null, "-diag")}</div>
     </div>
   `;
+}
+// Ticket number, customer, credit badges and subject — compact, two short lines.
+function ticketCell(t) {
+  return `
+    <a class="tcell-ticket" href="${rsTicketUrl(t.id)}" target="_blank" rel="noopener noreferrer" title="Open ticket #${esc(t.num)} in RepairShopr">
+      <div class="ticket-num">#${esc(t.num ?? "")} <span class="rs-link-icon">↗</span>${t.customer ? ` &middot; ${esc(t.customer)}` : ""} ${renderCreditBadges(t)}</div>
+      <div class="ticket-subject" title="${esc(t.subject)}">${esc(t.subject)}</div>
+    </a>`;
 }
 function outcomeBadgeLabel(w, t) {
   if (w.outcome === "repair_completed") return t.repairType ? `Completed Repair — ${t.repairType}` : "Completed Repair";
@@ -1216,7 +1216,7 @@ function renderWorkedOnTodayList(userId) {
           ${ticketLink(t)}
           <div class="diag-actions">
             ${state.outcomeEditOpen === t.id
-              ? `${renderDevicePicker(t)}${renderOutcomeSelect(t, w.outcome)}`
+              ? `${renderDevicePicker(t)}${renderBookCell(t)}${renderOutcomeSelect(t, w.outcome)}`
               : `<button type="button" class="work-outcome-badge clickable ${w.outcome}" onclick="toggleOutcomeEdit(${t.id})" title="Click to change">${esc(outcomeBadgeLabel(w, t))}${w.creditedMinutes ? ` &middot; ${w.creditedMinutes}m` : ""}</button>`}
           </div>
         </div>
@@ -1243,7 +1243,7 @@ function renderDay() {
   const diagSection = diagCandidates.length ? `
     <div class="panel">
       <h2>Diagnosis credit available</h2>
-      <div class="meter-note" style="margin-bottom:8px;">Tickets you worked on today (assigned to you + a note from you today) sitting in ${esc(statusList)}. Diagnosis and repair credit are each one-time, permanent, and separate — claiming repair also closes out diagnosis for good.</div>
+      <div class="meter-note" style="margin-bottom:6px;">Tickets that were in your queue earlier today and are now in ${esc(statusList)}. Diagnosis and repair credit are each one-time and permanent — claiming repair also closes out diagnosis.</div>
       ${diagCandidates.map(t => renderDiagnosisRow(t)).join("")}
     </div>
   ` : "";
@@ -1281,36 +1281,34 @@ function renderTicketRow(t, inDiagPanel) {
     : `<button class="icon-btn play" onclick="toggleTimer(${t.id},'start')" title="${logged ? 'Start a new timer segment' : paused ? 'Resume' : 'Start'}">▶</button>
        ${paused ? `<button class="icon-btn stop" onclick="toggleTimer(${t.id},'stop')" title="Stop &amp; log time">■</button>` : ""}`;
 
-  // Claim credit right from the ticket (any status). Diagnosis-status tickets you worked on today get
-  // their dropdown in the "Diagnosis credit available" panel instead, so it's never shown twice.
+  // Claim credit right from the row. Tickets shown under "Diagnosis credit available" get their
+  // dropdown there instead, so it's never shown twice.
   const myEntry = todaysEntry(t, state.me);
   const outcomeArea = myEntry
     ? `<span class="work-outcome-badge ${myEntry.outcome}" title="Change it in “Tickets I worked on today” below">${esc(outcomeBadgeLabel(myEntry, t))}</span>`
     : (inDiagPanel ? "" : renderOutcomeSelect(t, null, "-row"));
 
   return `
-    <div class="ticket-row" data-id="${t.id}">
-      ${ticketLink(t)}
+    <div class="trow" data-id="${t.id}">
+      ${ticketCell(t)}
       ${statusPill(t)}
-      ${renderCreditBadges(t)}
+      ${renderDevicePicker(t)}
+      ${renderBookCell(t)}
       <div class="timer-controls">
         <div class="timer-display ${timerClass}"${tooltipAttr}>${icon}${fmtClock(liveSpentSec(t))}</div>
         ${controls}
       </div>
       <div class="ticket-actions">
-        <button class="btn ghost small" onclick="toggleNote(${t.id})">📝 Note</button>
-        <button class="btn ghost small" onclick="toggleManual(${t.id})">⏱ Manual time</button>
+        <button class="icon-btn ${state.noteOpen === t.id ? "on" : ""}" onclick="toggleNote(${t.id})" title="Quick note (also posts to RepairShopr)">📝</button>
+        <button class="icon-btn ${state.manualOpen === t.id ? "on" : ""}" onclick="toggleManual(${t.id})" title="Set time manually">⏱</button>
       </div>
+      <div class="tcell-outcome">${outcomeArea}</div>
     </div>
-    <div class="device-inline-row">
-      ${renderDevicePicker(t)}
-    </div>
-    ${outcomeArea ? `<div class="inline-outcome">${outcomeArea}</div>` : ""}
-    <div class="note-box" style="display:${state.noteOpen === t.id ? 'flex':'none'}; padding: 0 4px 10px;">
+    <div class="note-box" style="display:${state.noteOpen === t.id ? 'flex':'none'}; padding: 4px 4px 8px;">
       <textarea id="note-input-${t.id}" data-draft="1" rows="2" placeholder="Quick note — also posts to the RepairShopr ticket as a private comment" oninput="draftNote(${t.id}, this.value)">${esc(note)}</textarea>
       <button class="btn small primary" onclick="saveNote(${t.id})">Save</button>
     </div>
-    <div class="note-box" style="display:${state.manualOpen === t.id ? 'flex':'none'}; padding: 0 4px 4px; flex-direction: column;">
+    <div class="note-box" style="display:${state.manualOpen === t.id ? 'flex':'none'}; padding: 4px 4px 8px; flex-direction: column;">
       <div style="display:flex; gap:8px;">
         <input id="manual-input-${t.id}" data-draft="1" type="number" min="0" step="1" placeholder="total minutes spent" value="${esc(manualVal)}" oninput="draftManual(${t.id}, this.value)">
         <button class="btn small primary" onclick="pushManualTime(${t.id})">Set time</button>
@@ -1661,7 +1659,8 @@ function renderAdminRs() {
 
 /* ----- Book Time Database ----- */
 function renderBookTimeHome() {
-  const categoryCards = Object.entries(state.bookTimeCategories).map(([key, cat]) => `
+  const keys = [...CATEGORY_ORDER.filter(k => state.bookTimeCategories[k]), ...Object.keys(state.bookTimeCategories).filter(k => !CATEGORY_ORDER.includes(k))];
+  const categoryCards = keys.map(key => [key, state.bookTimeCategories[key]]).map(([key, cat]) => `
     <button class="booktime-category-btn" onclick="openBookTimeCategory(${jsArg(key)})">
       <span class="booktime-category-label">${esc(cat.label)}</span>
       <span class="booktime-category-count">${Object.keys(cat.subtypes).length} sub-types &rarr;</span>
@@ -1682,10 +1681,12 @@ function renderBookTimeHome() {
   `;
 }
 function renderBookTimeGridTable(catKey, subKey, sub) {
-  const headerCells = sub.columns.map(c => `<th>${esc(c)}</th>`).join("");
+  const a = `${jsArg(catKey)}, ${jsArg(subKey)}`;
+  const headerCells = sub.columns.map((c, ci) => `<th>${esc(c)} <button class="bt-del" title="Remove repair type “${esc(c)}”" onclick="editBookTimeStructure(${a}, 'delCol', ${ci})">✕</button></th>`).join("");
+  const rowKey = `${catKey}|${subKey}|row`, colKey = `${catKey}|${subKey}|col`;
   const bodyRows = sub.rows.map((rowLabel, ri) => `
     <tr>
-      <td class="booktime-row-label">${esc(rowLabel)}</td>
+      <td class="booktime-row-label">${esc(rowLabel)} <button class="bt-del" title="Remove model “${esc(rowLabel)}”" onclick="editBookTimeStructure(${a}, 'delRow', ${ri})">✕</button></td>
       ${sub.columns.map((c, ci) => `
         <td><input id="bt-${esc(catKey)}-${esc(subKey)}-${ri}-${ci}" class="booktime-input" type="number" min="0" value="${esc(sub.data[rowLabel][c] ?? '')}" placeholder="N/A" onchange="setBookTimeCell(${jsArg(catKey)}, ${jsArg(subKey)}, ${ri}, ${ci}, this.value)"></td>
       `).join("")}
@@ -1696,7 +1697,27 @@ function renderBookTimeGridTable(catKey, subKey, sub) {
       <thead><tr><th></th>${headerCells}</tr></thead>
       <tbody>${bodyRows}</tbody>
     </table>
+    <div class="bt-struct">
+      <input id="bt-add-${esc(catKey)}-${esc(subKey)}-row" data-draft="1" class="admin-input" placeholder="New model" value="${esc(state.structDrafts[rowKey] || "")}" oninput="state.structDrafts[${jsArg(rowKey)}] = this.value">
+      <button class="btn small" onclick="editBookTimeStructure(${a}, 'addRow')">+ Add model</button>
+      <input id="bt-add-${esc(catKey)}-${esc(subKey)}-col" data-draft="1" class="admin-input" placeholder="New repair type" value="${esc(state.structDrafts[colKey] || "")}" oninput="state.structDrafts[${jsArg(colKey)}] = this.value" style="margin-left:10px">
+      <button class="btn small" onclick="editBookTimeStructure(${a}, 'addCol')">+ Add repair type</button>
+    </div>
   `;
+}
+async function editBookTimeStructure(catKey, subKey, op, index) {
+  const sub = state.bookTimeCategories[catKey].subtypes[subKey];
+  const draftKey = `${catKey}|${subKey}|${op === "addRow" ? "row" : "col"}`;
+  let name = null;
+  if (op === "addRow" || op === "addCol") {
+    name = (state.structDrafts[draftKey] || "").trim();
+    if (!name) { showToast(`Type a ${op === "addRow" ? "model" : "repair type"} name first`, "error"); return; }
+  } else {
+    const label = op === "delRow" ? sub.rows[index] : sub.columns[index];
+    if (!confirm(`Remove “${label}” and all its minutes from ${sub.label}?`)) return;
+  }
+  const r = await mutate("/admin/booktime-structure", { cat: catKey, sub: subKey, op, name, index });
+  if (r && name) { state.structDrafts[draftKey] = ""; render(); }
 }
 // Every category's sub-types stacked on one scrolling page.
 function renderBookTimeCategory() {

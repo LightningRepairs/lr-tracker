@@ -114,6 +114,14 @@ create table if not exists assignment_log (
   primary key (ticket_id, person_id, work_date)
 );
 
+-- Who had a ticket in their queue (assigned to them + in an "in the queue" status), by day.
+create table if not exists queue_log (
+  ticket_id   bigint not null,
+  person_id   text not null references people(id),
+  work_date   date not null,
+  primary key (ticket_id, person_id, work_date)
+);
+
 -- App settings + Book Time Database (json).
 create table if not exists settings (
   key    text primary key,
@@ -144,6 +152,7 @@ alter table timers          enable row level security;
 alter table time_entries    enable row level security;
 alter table notes           enable row level security;
 alter table assignment_log  enable row level security;
+alter table queue_log       enable row level security;
 alter table settings        enable row level security;
 alter table rs_cache        enable row level security;
 alter table login_attempts  enable row level security;
@@ -195,7 +204,7 @@ on conflict (id) do nothing;
 
 insert into settings (key, value) values
   ('over_book_threshold_pct', '15'),
-  ('diagnosis_eligible_statuses', '["Needs Called","Awaiting Client","Awaiting Parts","Backburner","Waiting on Customer","Waiting for Parts"]'),
+  ('diagnosis_eligible_statuses', '["Awaiting Client","Awaiting Parts"]'),
   ('book_times', $json${
  "mobile": {
   "label": "Mobile Book Times",

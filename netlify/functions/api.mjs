@@ -6,18 +6,18 @@ import { signToken, verifyToken } from "../../lib/auth.mjs";
 import { today, shopDate } from "../../lib/time.mjs";
 import { effectiveDevice, creditedMinutes } from "../../lib/booktime.mjs";
 import {
-  getTickets, getUsers, getTicketComments, assignTicket, postComment, invalidate, patchCachedTicket, probeRs, RsError, RS_SUBDOMAIN,
+  getTickets, getUsers, assignTicket, setTicketIssueType, postComment, invalidate, patchCachedTicket, probeRs, RsError, RS_SUBDOMAIN,
 } from "../../lib/rs.mjs";
-import { syncFromRs } from "../../lib/sync.mjs";
+import { syncFromRs, DEFAULT_QUEUE_STATUSES } from "../../lib/sync.mjs";
+import { ensureSchema } from "../../lib/migrate.mjs";
+import { RS_ISSUE_TYPES } from "../../lib/booktime.mjs";
 
 // Time budgets so a page load always answers well inside Netlify's ~10s function limit.
-const TICKETS_WAIT_MS = 4500, USERS_WAIT_MS = 3000, COMMENTS_WAIT_MS = 2000;
-const sleep = ms => new Promise(r => setTimeout(r, ms));
+const TICKETS_WAIT_MS = 4500, USERS_WAIT_MS = 3000;
 
 export const config = { path: "/api/*" };
 
 const POSITIONS = ["Technician", "Float", "Sales", "Manager"];
-const DEFAULT_QUEUE_STATUSES = ["New", "In Progress", "Customer Reply", "Needs Parts Ordered", "Needs Called", "Awaiting Process"];
 const OUTCOMES = ["diagnosis_completed", "diagnosis_incomplete", "repair_completed", "repair_incomplete"];
 const PERSON_COLORS = ["var(--s1)", "var(--s2)", "var(--s3)", "var(--s4)", "var(--s5)", "#7a5af8", "#0f9fb5", "#b5651d"];
 
@@ -37,6 +37,7 @@ export default async (req, context) => {
     if (req.method === "GET" && route === "/health") return json(await health(url.searchParams.get("rs") === "1"));
     if (req.method === "POST" && route === "/login") return json(await login(req, context));
 
+    await ensureSchema();
     const me = await requireMe(req);
     const body = req.method === "POST" ? await req.json().catch(() => ({})) : {};
 
@@ -50,11 +51,13 @@ export default async (req, context) => {
         case "/outcome":       return json(await setOutcome(me, body));
         case "/note":          return json(await addNote(me, body));
         case "/assign":        return json(await assign(me, body));
+        case "/issue-type":    return json(await setIssueType(me, body));
       }
       if (route.startsWith("/admin/")) {
         if (!me.is_admin) throw new HttpError(403, "Admins only");
         switch (route) {
           case "/admin/booktime-cell":      return json(await setBookTimeCell(body));
+          case "/admin/booktime-structure": return json(await editBookTimeStructure(body));
           case "/admin/threshold":          return json(await setSetting("over_book_threshold_pct", Math.max(0, Math.round(Number(body.value) || 0))));
           case "/admin/eligible-statuses":  return json(await setSetting("diagnosis_eligible_statuses", (body.statuses || []).map(String).slice(0, 50)));
           case "/admin/queue-statuses":     return json(await setSetting("queue_statuses", (body.statuses || []).map(String).slice(0, 50)));
@@ -151,7 +154,7 @@ async function buildState(me) {
   const extraIds = extraIdRows.map(r => Number(r.ticket_id)).filter(id => !openIds.has(id));
   const ids = [...openIds, ...extraIds];
 
-  const [stateRows, workRows, assignRows, noteRows, timerRows, totalRows, todayRows, bookTodayRows, spentTodayRows, runningRows] = await Promise.all([
+  const [stateRows, workRows, assignRows, noteRows, timerRows, totalRows, todayRows, bookTodayRows, spentTodayRows, runningRows, queueRows] = await Promise.all([
     sql`select * from ticket_state where ticket_id = any(${ids}::bigint[])`,
     sql`select * from work_log where ticket_id = any(${ids}::bigint[]) and work_date = ${t0}`,
     sql`select * from assignment_log where ticket_id = any(${ids}::bigint[]) and work_date = ${t0}`,
@@ -162,11 +165,12 @@ async function buildState(me) {
     sql`select person_id, sum(credited_minutes)::int as m from work_log where work_date = ${t0} and outcome in ('diagnosis_completed','repair_completed') group by 1`,
     sql`select person_id, sum(seconds)::int as s from time_entries where work_date = ${t0} group by 1`,
     sql`select person_id, ticket_id, running_since from timers where state = 'running'`,
+    sql`select ticket_id, person_id from queue_log where ticket_id = any(${ids}::bigint[]) and work_date = ${t0}`,
   ]);
 
   const stateById = new Map(stateRows.map(r => [Number(r.ticket_id), r]));
   const group = (rows) => { const m = new Map(); for (const r of rows) { const k = Number(r.ticket_id); if (!m.has(k)) m.set(k, []); m.get(k).push(r); } return m; };
-  const workBy = group(workRows), assignBy = group(assignRows), notesBy = group(noteRows), timersBy = group(timerRows);
+  const workBy = group(workRows), assignBy = group(assignRows), notesBy = group(noteRows), timersBy = group(timerRows), queueBy = group(queueRows);
   const totalBy = group(totalRows), todayBy = group(todayRows);
 
   const baseTickets = [
@@ -199,29 +203,10 @@ async function buildState(me) {
       workLog: (workBy.get(t.id) || []).map(w => ({ personId: w.person_id, date: dstr(w.work_date), outcome: w.outcome, creditedMinutes: w.credited_minutes, loggedAt: ms(w.logged_at) })),
       assignmentLog: (assignBy.get(t.id) || []).map(a => ({ personId: a.person_id, date: dstr(a.work_date) })),
       notes: (notesBy.get(t.id) || []).map(n => ({ author: n.person_id, date: t0 })),
+      queuedToday: (queueBy.get(t.id) || []).map(q => q.person_id), // people who had it in their queue today
       timers,
     };
   });
-
-  // "Left a note today" can also come from a comment typed directly in RepairShopr. Only check the
-  // tickets where that's the missing piece for MY diagnosis-credit eligibility (keeps API calls low).
-  const myRsUserId = peopleRows.find(p => p.id === me.id)?.rs_user_id ?? null;
-  if (myRsUserId != null && !rsError) {
-    const eligible = new Set(settings.diagnosisEligibleStatuses);
-    const need = tickets.filter(t =>
-      t.assignedTo === me.id && eligible.has(t.status) &&
-      !t.notes.some(n => n.author === me.id) && !t.workLog.some(w => w.personId === me.id)
-    ).slice(0, 15);
-    const checks = Promise.all(need.map(async t => {
-      try {
-        const comments = await getTicketComments(t.id);
-        const mine = comments.some(c => c.createdAt && shopDate(c.createdAt) === t0 &&
-          (String(c.userId) === String(myRsUserId) || c.tech.trim().toLowerCase() === me.name.trim().toLowerCase()));
-        if (mine) t.notes.push({ author: me.id, date: t0, source: "rs" });
-      } catch { /* non-fatal */ }
-    }));
-    await Promise.race([checks, sleep(COMMENTS_WAIT_MS)]); // whatever didn't finish gets picked up next refresh
-  }
 
   const personToday = {};
   for (const p of peopleRows) personToday[p.id] = { bookSec: 0, spentSec: 0, runningSince: null, runningTicketId: null };
@@ -415,6 +400,22 @@ async function assign(me, { ticketId, personId }) {
   return { ok: true };
 }
 
+// Changes the Issue Type on the RepairShopr ticket itself (only RS's own types allowed), and resets
+// the model/repair picks since they belonged to the old type.
+async function setIssueType(me, { ticketId, issueType }) {
+  const id = ticketIdOf(ticketId);
+  if (!RS_ISSUE_TYPES.includes(issueType)) throw new HttpError(400, "Not a RepairShopr Issue Type");
+  await setTicketIssueType(id, issueType);
+  await patchCachedTicket(id, { issueType });
+  await db().begin(async tx => {
+    await tx`insert into ticket_state (ticket_id, rs_problem_type) values (${id}, ${issueType})
+             on conflict (ticket_id) do update set rs_problem_type = excluded.rs_problem_type,
+               device_category = null, device_subtype = null, device_row = null, repair_type = null, updated_at = now()`;
+    await recomputeCredits(tx, id);
+  });
+  return { ok: true };
+}
+
 /* ---------------- admin ---------------- */
 async function setSetting(key, value) {
   const sql = db();
@@ -435,6 +436,34 @@ async function setBookTimeCell({ cat, sub, rowIdx, colIdx, value }) {
     g.data[row][col] = trimmed === "" ? null : Math.max(0, Math.round(Number(trimmed) || 0));
     await tx`update settings set value = ${tx.json(bt)} where key = 'book_times'`;
     return { ok: true, value: g.data[row][col] };
+  });
+}
+
+// Add/remove a model (row) or repair type (column) in one Book Time Database sub-type.
+async function editBookTimeStructure({ cat, sub, op, name, index }) {
+  return db().begin(async tx => {
+    const [r] = await tx`select value from settings where key = 'book_times' for update`;
+    const bt = r?.value || {};
+    const g = bt?.[cat]?.subtypes?.[sub];
+    if (!g) throw new HttpError(400, "Unknown category/sub-type");
+    const label = String(name ?? "").trim().slice(0, 60);
+    if (op === "addRow" || op === "addCol") {
+      if (!label) throw new HttpError(400, "Name is empty");
+      const list = op === "addRow" ? g.rows : g.columns;
+      if (list.some(x => x.toLowerCase() === label.toLowerCase())) throw new HttpError(400, `"${label}" already exists`);
+      if (op === "addRow") { g.rows.push(label); g.data[label] = Object.fromEntries(g.columns.map(c => [c, null])); }
+      else { g.columns.push(label); for (const row of g.rows) g.data[row][label] = null; }
+    } else if (op === "delRow") {
+      const row = g.rows[index];
+      if (row == null) throw new HttpError(400, "Unknown model");
+      g.rows.splice(index, 1); delete g.data[row];
+    } else if (op === "delCol") {
+      const col = g.columns[index];
+      if (col == null) throw new HttpError(400, "Unknown repair type");
+      g.columns.splice(index, 1); for (const row of g.rows) delete g.data[row][col];
+    } else throw new HttpError(400, "Bad operation");
+    await tx`update settings set value = ${tx.json(bt)} where key = 'book_times'`;
+    return { ok: true };
   });
 }
 
