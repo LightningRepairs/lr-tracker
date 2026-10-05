@@ -478,7 +478,7 @@
   /* One compact line per ticket: ticket | status | type/model/repair | book | timer | note/time | outcome */
   .trow {
     display: grid; align-items: center; column-gap: 10px;
-    grid-template-columns: minmax(190px, 1.3fr) 118px minmax(380px, 2.4fr) 56px 150px 70px minmax(190px, 1.1fr);
+    grid-template-columns: minmax(190px, 1.3fr) 118px minmax(400px, 2.4fr) 56px 150px 70px minmax(190px, 1.1fr);
     padding: 5px 4px; border-bottom: 1px solid var(--grid); min-height: 44px;
   }
   .trow:last-child { border-bottom: none; }
@@ -489,8 +489,10 @@
   .tcell-ticket .ticket-subject { font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .tcell-ticket .diag-badge { font-size: 10px; padding: 0 6px; }
   .trow .ticket-status { justify-self: start; white-space: nowrap; }
-  .tcell-device { display: grid; grid-template-columns: 1fr 1.15fr 1.15fr; gap: 6px; min-width: 0; }
+  .tcell-device { display: grid; grid-template-columns: 150px 1fr 1fr; gap: 6px; min-width: 0; }
   .tcell-device .device-select { width: 100%; min-width: 0; padding: 4px 6px; }
+  .tcell-device .type-chip { justify-self: start; max-width: 100%; overflow: hidden; text-overflow: ellipsis; padding: 4px 10px; }
+  .type-chip.unset { color: var(--critical); border-color: color-mix(in srgb, var(--critical) 45%, transparent); }
   .tcell-book { font-size: 12px; font-weight: 700; font-variant-numeric: tabular-nums; color: var(--text-secondary); text-align: right; cursor: help; }
   .trow .timer-controls { gap: 6px; }
   .trow .timer-display { min-width: 64px; font-size: 12.5px; }
@@ -593,6 +595,10 @@ const ISSUE_TYPE_TO_DEVICE = {
 };
 // The only Issue Types RepairShopr offers — the Type dropdown never shows anything else.
 const RS_ISSUE_TYPES = Object.keys(ISSUE_TYPE_TO_DEVICE);
+const ISSUE_TYPE_ICONS = {
+  "Phone": "📱", "Tablet": "📱", "Smart Watch": "⌚", "Laptop": "💻", "Desktop": "🖥️", "All-in-One": "🖥️",
+  "Game Console": "🎮", "Game Controller": "🕹️", "Service/Consult": "🔧", "Other/Misc": "🔧",
+};
 const CATEGORY_ORDER = ["mobile", "computer", "gaming", "misc"];
 const STACK_ORDER_BY_CATEGORY = {
   mobile:   ["phone", "tablet", "watch"],
@@ -648,7 +654,8 @@ let state = {
   manualOpen: null,
   manualDrafts: {},
   manualConfirm: {},
-  structDrafts: {},        // Book Time Database "add model / add repair type" inputs
+  structDrafts: {},
+  typeEditOpen: null,      // ticket id whose Type chip is currently showing its dropdown        // Book Time Database "add model / add repair type" inputs
   outcomeEditOpen: null,    // ticket id currently showing its outcome dropdown in "Tickets I worked on today"
   bookTimeCategories: {},
   overBookThresholdPct: 15,
@@ -1178,10 +1185,22 @@ function persistDevice(t) {
     repairType: t.repairType || null,
   });
 }
+function openTypeEdit(ticketId) {
+  state.typeEditOpen = ticketId;
+  render();
+  const el = document.getElementById(`type-select-${ticketId}`);
+  if (el) { el.focus(); if (typeof el.showPicker === "function") { try { el.showPicker(); } catch (e) {} } }
+}
+function closeTypeEdit(ticketId) {
+  // let a pending onchange land first
+  setTimeout(() => { if (state.typeEditOpen === ticketId) { state.typeEditOpen = null; render(); } }, 150);
+}
 // Changing the Type changes the Issue Type on the RepairShopr ticket itself.
 function setIssueType(ticketId, val) {
-  if (!RS_ISSUE_TYPES.includes(val)) return;
+  state.typeEditOpen = null;
+  if (!RS_ISSUE_TYPES.includes(val)) { render(); return; }
   const t = findTicket(ticketId);
+  if (t.issueType === val) { render(); return; }
   mutate("/issue-type", { ticketId, issueType: val }, () => {
     t.issueType = val;
     t.deviceOverrideSubtype = null; t.deviceRow = null; t.repairType = null;
@@ -1218,12 +1237,15 @@ function renderBookCell(t) {
 }
 // Three always-visible dropdowns: Type (= RepairShopr Issue Type, editable), Model, Repair type.
 function renderDevicePicker(t) {
-  const typeOpts = RS_ISSUE_TYPES.map(it => `<option value="${esc(it)}" ${t.issueType === it ? "selected" : ""}>${esc(it)}</option>`).join("");
-  const typeSelect = `
-    <select class="device-select type-select" onchange="setIssueType(${t.id}, this.value)" title="RepairShopr Issue Type — changing it updates the ticket in RepairShopr">
-      ${RS_ISSUE_TYPES.includes(t.issueType) ? "" : `<option value="" selected disabled>${t.issueType ? esc(t.issueType) + " (not an RS type)" : "Type…"}</option>`}
-      ${typeOpts}
-    </select>`;
+  const typeOpts = RS_ISSUE_TYPES.map(it => `<option value="${esc(it)}" ${t.issueType === it ? "selected" : ""}>${ISSUE_TYPE_ICONS[it] || ""} ${esc(it)}</option>`).join("");
+  const known = RS_ISSUE_TYPES.includes(t.issueType);
+  // Looks like a plain chip (pulled from RepairShopr); click it to turn it into the dropdown.
+  const typeSelect = state.typeEditOpen === t.id
+    ? `<select id="type-select-${t.id}" class="device-select type-select" onchange="setIssueType(${t.id}, this.value)" onblur="closeTypeEdit(${t.id})" title="Changing this updates the Issue Type on the RepairShopr ticket">
+        ${known ? "" : `<option value="" selected disabled>${t.issueType ? esc(t.issueType) + " (not an RS type)" : "Type…"}</option>`}
+        ${typeOpts}
+      </select>`
+    : `<button type="button" class="device-chip clickable type-chip ${known ? "" : "unset"}" onclick="openTypeEdit(${t.id})" title="${known ? `Issue Type from RepairShopr: ${esc(t.issueType)} — click to change` : "No Issue Type on this ticket — click to set it"}">${known ? `${ISSUE_TYPE_ICONS[t.issueType]} ${esc(t.issueType)}` : "⚠ Set type"}</button>`;
   const mapped = ISSUE_TYPE_TO_DEVICE[t.issueType];
   const cat = mapped && state.bookTimeCategories[mapped.category];
   const subKeys = mapped && cat ? [mapped.subtype, ...(mapped.alt || [])].filter(k => cat.subtypes[k]) : [];
