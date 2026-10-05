@@ -6,22 +6,38 @@
 <title>Lightning Repairs — Tech Tool</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 24 24%27%3E%3Crect width=%2724%27 height=%2724%27 rx=%275%27 fill=%27%231596d1%27/%3E%3Cpath d=%27M13 2 3 14h7l-1 8 11-14h-7l0-6z%27 fill=%27%23ffcc00%27/%3E%3C/svg%3E">
 <style>
+  /* Three themes: Light (default), Dark (logo navy), Retro (logo sky blue + yellow).
+     Status colors (good/warning/serious/critical) are fixed in every theme. */
   :root {
     color-scheme: light;
-    --page: #f9f9f7;
-    --surface: #fcfcfb;
-    --surface-2: #f3f2ee;
-    --text-primary: #0b0b0b;
-    --text-secondary: #52514e;
-    --text-muted: #898781;
-    --grid: #e1e0d9;
-    --baseline: #c3c2b7;
-    --border: rgba(11,11,11,0.10);
+    --brand-navy: #0b1e3d;   /* the logo's outline navy */
+    --brand-blue: #1596d1;   /* the logo's sky blue */
+    --brand-gold: #ffcc00;   /* the logo's lightning-bolt yellow */
 
-    --brand-navy: #0b1e3d;
-    --brand-navy-2: #142c54;
-    --brand-blue: #1596d1; /* the bright sky-blue from the Lightning Repairs logo background */
-    --brand-gold: #ffcc00; /* the logo's lightning-bolt yellow */
+    /* Light: white, black/grey text */
+    --page: #ffffff;
+    --surface: #ffffff;
+    --surface-2: #f3f4f6;
+    --text-primary: #111111;
+    --text-secondary: #4b4f56;
+    --text-muted: #8a8f98;
+    --grid: #e5e7eb;
+    --baseline: #c7cbd1;
+    --border: rgba(17,17,17,0.12);
+    --accent: var(--brand-blue);
+
+    --topbar-bg: #ffffff;
+    --topbar-text: #111111;
+    --topbar-tab: #6b7079;
+    --topbar-line: #e5e7eb;
+    --tab-active: #111111;
+    --badge-bg: #f0f1f3;
+    --login-bg: #f3f4f6;
+    --primary-bg: #111111;
+    --primary-text: #ffffff;
+    --primary-border: #111111;
+    --panel-border: 1px solid var(--border);
+    --panel-shadow: none;
 
     --s1: #2a78d6; /* Drew */
     --s2: #eb6834; /* Aaron */
@@ -35,27 +51,60 @@
     --serious: #ec835a;
     --critical: #d03b3b;
   }
-  /* Dark mode — status colors (good/warning/serious/critical) are fixed and never themed;
-     only surfaces, text, borders and the per-person series colors flip. */
+  /* Dark: logo navy, white/grey text */
   :root[data-theme="dark"] {
     color-scheme: dark;
-    --page: #0d0d0d;
-    --surface: #1a1a19;
-    --surface-2: #242422;
+    --page: #0b1e3d;
+    --surface: #10264b;
+    --surface-2: #17305a;
     --text-primary: #ffffff;
-    --text-secondary: #c3c2b7;
-    --text-muted: #898781;
-    --grid: #2c2c2a;
-    --baseline: #383835;
-    --border: rgba(255,255,255,0.10);
+    --text-secondary: #c8d1e0;
+    --text-muted: #8c9ab3;
+    --grid: #1f3a66;
+    --baseline: #2c4a7a;
+    --border: rgba(255,255,255,0.12);
+    --accent: #7cc4ea;
 
-    --s1: #3987e5; /* Drew */
-    --s2: #d95926; /* Aaron */
-    --s3: #199e70; /* Chase */
-    --s4: #c98500; /* Zach */
-    --s5: #d55181; /* Nathan */
+    --topbar-bg: #081830;
+    --topbar-text: #ffffff;
+    --topbar-tab: #9aa8c0;
+    --topbar-line: #1f3a66;
+    --tab-active: #ffffff;
+    --badge-bg: rgba(255,255,255,0.10);
+    --login-bg: #0b1e3d;
+    --primary-bg: #ffffff;
+    --primary-text: #0b1e3d;
+    --primary-border: #ffffff;
 
-    --good-text: #0ca30c;
+    --s1: #3987e5; --s2: #d95926; --s3: #199e70; --s4: #c98500; --s5: #d55181;
+    --good-text: #3fd13f;
+  }
+  /* Retro: logo sky blues + yellows, navy outlines (like the wordmark) */
+  :root[data-theme="retro"] {
+    color-scheme: light;
+    --page: #8ed3f3;
+    --surface: #fffdf2;
+    --surface-2: #fff2a8;
+    --text-primary: #0b1e3d;
+    --text-secondary: #1f3d6b;
+    --text-muted: #4b6894;
+    --grid: #bfe3f5;
+    --baseline: #7fbfe0;
+    --border: #0b1e3d;
+    --accent: #0b1e3d;
+
+    --topbar-bg: #1596d1;
+    --topbar-text: #ffffff;
+    --topbar-tab: #e3f5fd;
+    --topbar-line: #0b1e3d;
+    --tab-active: #ffcc00;
+    --badge-bg: #0b1e3d;
+    --login-bg: #1596d1;
+    --primary-bg: #ffcc00;
+    --primary-text: #0b1e3d;
+    --primary-border: #0b1e3d;
+    --panel-border: 2px solid #0b1e3d;
+    --panel-shadow: 4px 4px 0 #0b1e3d;
   }
   * { box-sizing: border-box; }
   body {
@@ -83,8 +132,8 @@
     font-weight: 600;
   }
   .btn:hover { background: var(--surface-2); }
-  .btn.primary { background: var(--brand-blue); border-color: var(--brand-blue); color: #fff; }
-  .btn.primary:hover { background: color-mix(in srgb, var(--brand-blue) 82%, black); }
+  .btn.primary { background: var(--primary-bg); border-color: var(--primary-border); color: var(--primary-text); }
+  .btn.primary:hover { filter: brightness(0.92); }
   .btn.ghost { background: transparent; border-color: transparent; color: var(--text-secondary); }
   .btn.small { padding: 6px 10px; font-size: 12px; }
   .btn.danger-outline { border-color: color-mix(in srgb, var(--critical) 50%, transparent); color: var(--critical); background: transparent; }
@@ -92,10 +141,10 @@
   /* ---------- LOGIN ---------- */
   .login-screen {
     flex: 1; display: flex; align-items: center; justify-content: center;
-    background: linear-gradient(160deg, var(--brand-blue), var(--brand-navy));
+    background: var(--login-bg);
   }
   .login-card {
-    background: var(--surface);
+    background: var(--surface); border: var(--panel-border);
     border-radius: 16px;
     padding: 32px 30px 26px;
     width: 320px;
@@ -135,21 +184,31 @@
 
   /* ---------- APP SHELL ---------- */
   .topbar {
-    background: linear-gradient(135deg, var(--brand-blue), var(--brand-navy));
-    color: #fff; padding: 0 20px; display: flex; align-items: center; justify-content: space-between; height: 56px;
+    background: var(--topbar-bg); border-bottom: 1px solid var(--topbar-line);
+    color: var(--topbar-text); padding: 0 20px; display: flex; align-items: center; justify-content: space-between; height: 56px;
   }
   .topbar .tabs { display: flex; gap: 4px; height: 100%; }
   .topbar .tab {
-    background: transparent; border: none; color: #c9d3e4; font-size: 13px; font-weight: 600;
+    background: transparent; border: none; color: var(--topbar-tab); font-size: 13px; font-weight: 600;
     padding: 0 14px; height: 100%; border-bottom: 3px solid transparent;
   }
-  .topbar .tab.active { color: #fff; border-bottom-color: var(--brand-gold); }
-  .topbar .tab:hover { color: #fff; }
-  .who { display: flex; align-items: center; gap: 10px; font-size: 12.5px; color: #e8ecf3; }
+  .topbar .tab.active { color: var(--topbar-text); border-bottom-color: var(--tab-active); }
+  .topbar .tab:hover { color: var(--topbar-text); }
+  .who { display: flex; align-items: center; gap: 10px; font-size: 12.5px; color: var(--topbar-text); }
+  .who .logout-btn { color: var(--topbar-text); }
   .who .avatar { width: 26px; height: 26px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 700; color: #fff; }
-  .who .pos-badge { background: rgba(255,255,255,0.12); padding: 2px 8px; border-radius: 999px; font-size: 11px; border: none; color: #e8ecf3; font-family: inherit; }
+  .who .pos-badge { background: var(--badge-bg); padding: 2px 8px; border-radius: 999px; font-size: 11px; border: none; color: var(--topbar-text); font-family: inherit; }
   .who .pos-badge.clickable { cursor: pointer; }
-  .who .pos-badge.clickable:hover { background: rgba(255,255,255,0.2); }
+  .who .pos-badge.clickable:hover { filter: brightness(1.15); }
+  :root[data-theme="retro"] .who .pos-badge { color: #ffffff; }
+  :root[data-theme="retro"] .login-card { box-shadow: 6px 6px 0 #0b1e3d; }
+  /* Dark: status text in its own bright color (the light-theme versions are darkened for white backgrounds) */
+  :root[data-theme="dark"] .ticket-status.progress,
+  :root[data-theme="dark"] .ticket-status.needs_called { color: var(--warning); }
+  :root[data-theme="dark"] .ticket-status.backburner,
+  :root[data-theme="dark"] .status-chip.serious { color: var(--serious); }
+  :root[data-theme="dark"] .timer-display.logged-warning { color: var(--warning); }
+  :root[data-theme="retro"] .topbar .tab { text-shadow: 0 1px 0 rgba(11,30,61,0.35); }
   .pos-switcher { position: relative; }
   .pos-menu {
     position: absolute; top: calc(100% + 6px); left: 0; z-index: 20;
@@ -174,7 +233,7 @@
 
   /* ---------- GOAL METERS ---------- */
   .meters-row { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 20px; }
-  .meter-card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 16px 18px; }
+  .meter-card { background: var(--surface); border: var(--panel-border); box-shadow: var(--panel-shadow); border-radius: 10px; padding: 16px 18px; }
   .meter-top { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 8px; }
   .meter-title { font-size: 12.5px; color: var(--text-secondary); font-weight: 600; }
   .meter-value { font-size: 20px; font-weight: 700; }
@@ -188,7 +247,7 @@
   .meter-note { font-size: 11px; color: var(--text-muted); margin-top: 2px; }
 
   /* ---------- TICKET LIST ---------- */
-  .panel { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 16px 18px; margin-bottom: 16px; }
+  .panel { background: var(--surface); border: var(--panel-border); box-shadow: var(--panel-shadow); border-radius: 10px; padding: 16px 18px; margin-bottom: 16px; }
   .panel h2 { font-size: 13.5px; font-weight: 600; margin: 0 0 12px 0; }
   .ticket-row {
     display: flex; align-items: center; gap: 12px; padding: 12px 4px; border-bottom: 1px solid var(--grid);
@@ -488,7 +547,7 @@ let state = {
   position: null,
   attendance: {},         // personId -> position they're working today (= who's "logged in today")
   tab: "day",             // day | team | admin | settings
-  theme: store.get("lr_theme") || "light",
+  theme: ["light", "dark", "retro"].includes(store.get("lr_theme")) ? store.get("lr_theme") : "light",
   today: null,
   clockOffset: 0,
   tickets: [],
@@ -641,8 +700,8 @@ function fmtClock(sec) {
   return [h,m,s].map((v,i) => i===0 && v===0 ? null : String(v).padStart(2,"0")).filter(Boolean).join(":") || "0:00";
 }
 function fmtHM(sec) {
-  sec = Math.max(0, sec);
-  const h = Math.floor(sec/3600), m = Math.round((sec%3600)/60);
+  const total = Math.round(Math.max(0, sec) / 60); // round first so it never shows "5h 60m"
+  const h = Math.floor(total / 60), m = total % 60;
   return h > 0 ? `${h}h ${m}m` : `${m}m`;
 }
 function liveSpentSec(t) {
@@ -928,7 +987,7 @@ function renderApp() {
         </div>
         <div class="avatar" style="background:${esc(u.color)}">${esc(u.initials)}</div>
         <span>${esc(u.name)}</span>
-        <button class="btn ghost small" style="color:#e8ecf3" onclick="logout()">Log out</button>
+        <button class="btn ghost small logout-btn" onclick="logout()">Log out</button>
       </div>
     </div>
     <main class="content">
@@ -1772,11 +1831,12 @@ function renderSettings() {
       <div class="setting-row">
         <div>
           <div class="setting-label">Appearance</div>
-          <div class="meter-note">Light/dark — applies to this device only.</div>
+          <div class="meter-note">Light, Dark or Retro — applies to this device only.</div>
         </div>
         <div class="theme-toggle">
           <button class="theme-toggle-btn ${state.theme==='light'?'active':''}" onclick="setTheme('light')">☀ Light</button>
           <button class="theme-toggle-btn ${state.theme==='dark'?'active':''}" onclick="setTheme('dark')">🌙 Dark</button>
+          <button class="theme-toggle-btn ${state.theme==='retro'?'active':''}" onclick="setTheme('retro')">⚡ Retro</button>
         </div>
       </div>
     </div>
