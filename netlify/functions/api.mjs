@@ -17,6 +17,7 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
 export const config = { path: "/api/*" };
 
 const POSITIONS = ["Technician", "Float", "Sales", "Manager"];
+const DEFAULT_QUEUE_STATUSES = ["New", "In Progress", "Customer Reply", "Needs Parts Ordered", "Needs Called", "Awaiting Process"];
 const OUTCOMES = ["diagnosis_completed", "diagnosis_incomplete", "repair_completed", "repair_incomplete"];
 const PERSON_COLORS = ["var(--s1)", "var(--s2)", "var(--s3)", "var(--s4)", "var(--s5)", "#7a5af8", "#0f9fb5", "#b5651d"];
 
@@ -56,6 +57,7 @@ export default async (req, context) => {
           case "/admin/booktime-cell":      return json(await setBookTimeCell(body));
           case "/admin/threshold":          return json(await setSetting("over_book_threshold_pct", Math.max(0, Math.round(Number(body.value) || 0))));
           case "/admin/eligible-statuses":  return json(await setSetting("diagnosis_eligible_statuses", (body.statuses || []).map(String).slice(0, 50)));
+          case "/admin/queue-statuses":     return json(await setSetting("queue_statuses", (body.statuses || []).map(String).slice(0, 50)));
           case "/admin/person":             return json(await upsertPerson(me, body));
           case "/admin/pin":                return json(await setPin(body));
         }
@@ -123,6 +125,8 @@ async function loadSettings(sql) {
     bookTimes: s.book_times || {},
     overBookThresholdPct: Number(s.over_book_threshold_pct ?? 15),
     diagnosisEligibleStatuses: s.diagnosis_eligible_statuses || [],
+    // Statuses that count as "in the queue" — only these show under "Your assigned tickets".
+    queueStatuses: s.queue_statuses || DEFAULT_QUEUE_STATUSES,
   };
 }
 

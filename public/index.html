@@ -462,6 +462,7 @@ let state = {
   bookTimeCategories: {},
   overBookThresholdPct: 15,
   diagnosisEligibleStatuses: [],
+  queueStatuses: [],
   adminSection: null,    // null (menu) | users | booktime | rs | reports
   adminView: "home",     // within the booktime section: home | category
   adminCategory: null,   // mobile | computer | gaming
@@ -534,6 +535,7 @@ function applyServerState(d) {
   state.bookTimeCategories = d.settings.bookTimes || {};
   state.overBookThresholdPct = d.settings.overBookThresholdPct;
   state.diagnosisEligibleStatuses = d.settings.diagnosisEligibleStatuses || [];
+  state.queueStatuses = d.settings.queueStatuses || [];
   state.personToday = d.personToday || {};
   state.rsError = d.rsError;
   state.rsUsers = d.rsUsers || [];
@@ -911,6 +913,11 @@ function changePosition(pos) {
 /* ---------- My Day ---------- */
 function ticketsFor(userId) { return state.tickets.filter(t => t.assignedTo === userId && !t.notOpen); }
 function findTicket(id) { return state.tickets.find(x => x.id === id); }
+// "Your assigned tickets" on My Day: only tickets in an "in the queue" status. A ticket whose timer
+// you have running/paused stays visible even if its status moved on, so you can always stop it.
+function myQueueTickets(userId) {
+  return ticketsFor(userId).filter(t => state.queueStatuses.includes(t.status) || t.timerState === "running" || t.timerState === "paused");
+}
 
 // Book time = minutes credited today by claimed diagnoses/repairs. Time spent = everything logged today
 // (+ the live running timer). Both come from the server, so every device agrees.
@@ -1220,7 +1227,7 @@ function renderWorkedOnTodayList(userId) {
 function renderDay() {
   const goals = GOALS[state.position];
   const totals = computeTotals(state.me);
-  const tickets = ticketsFor(state.me);
+  const tickets = myQueueTickets(state.me);
 
   const meters = goals
     ? `<div class="meters-row">
@@ -1231,7 +1238,7 @@ function renderDay() {
 
   const diagCandidates = ticketsEligibleForDiagnosisCredit(state.me);
   const diagIds = new Set(diagCandidates.map(t => t.id));
-  const ticketRows = tickets.length ? tickets.map(t => renderTicketRow(t, diagIds.has(t.id))).join("") : `<div class="meter-note">No tickets assigned to you in RepairShopr right now.</div>`;
+  const ticketRows = tickets.length ? tickets.map(t => renderTicketRow(t, diagIds.has(t.id))).join("") : `<div class="meter-note">None of your assigned tickets are in the queue right now.</div>`;
   const statusList = state.diagnosisEligibleStatuses.join(", ") || "(none set — Admin Console → RepairShopr)";
   const diagSection = diagCandidates.length ? `
     <div class="panel">
@@ -1588,10 +1595,23 @@ async function runRsCheck() {
   catch (e) { state.rsCheck = { ok: false, errors: [e.message] }; }
   state.rsCheckLoading = false; render();
 }
-function toggleEligibleStatus(status) {
-  const cur = state.diagnosisEligibleStatuses;
+const STATUS_LISTS = {
+  queue:     { stateKey: "queueStatuses",             endpoint: "/admin/queue-statuses" },
+  diagnosis: { stateKey: "diagnosisEligibleStatuses", endpoint: "/admin/eligible-statuses" },
+};
+function toggleStatusIn(listKey, status) {
+  const L = STATUS_LISTS[listKey];
+  const cur = state[L.stateKey];
   const next = cur.includes(status) ? cur.filter(s => s !== status) : [...cur, status];
-  mutate("/admin/eligible-statuses", { statuses: next }, () => { state.diagnosisEligibleStatuses = next; });
+  mutate(L.endpoint, { statuses: next }, () => { state[L.stateKey] = next; });
+}
+function renderStatusChecklist(listKey, seenStatuses) {
+  const selected = state[STATUS_LISTS[listKey].stateKey];
+  const all = [...seenStatuses.map(s => s.value), ...selected.filter(s => !seenStatuses.some(x => x.value === s))];
+  return all.map(s => {
+    const seen = seenStatuses.find(x => x.value === s);
+    return `<label><input type="checkbox" ${selected.includes(s) ? "checked" : ""} onchange="toggleStatusIn('${listKey}', ${jsArg(s)})"> ${esc(s)} <span class="count">${seen ? `${seen.count} ticket${seen.count === 1 ? "" : "s"}` : "not seen in current tickets"}</span></label>`;
+  }).join("");
 }
 function copyRaw() {
   const el = document.getElementById("rs-raw");
@@ -1601,11 +1621,8 @@ function copyRaw() {
 function renderAdminRs() {
   const c = state.rsCheck;
   const seenStatuses = c && c.statuses ? c.statuses : [];
-  const allStatuses = [...seenStatuses.map(s => s.value), ...state.diagnosisEligibleStatuses.filter(s => !seenStatuses.some(x => x.value === s))];
-  const statusChecks = allStatuses.map(s => {
-    const seen = seenStatuses.find(x => x.value === s);
-    return `<label><input type="checkbox" ${state.diagnosisEligibleStatuses.includes(s) ? "checked" : ""} onchange="toggleEligibleStatus(${jsArg(s)})"> ${esc(s)} <span class="count">${seen ? `${seen.count} ticket${seen.count === 1 ? "" : "s"}` : "not seen in current tickets"}</span></label>`;
-  }).join("");
+  const statusChecks = renderStatusChecklist("diagnosis", seenStatuses);
+  const queueChecks = renderStatusChecklist("queue", seenStatuses);
   const issueRows = c && c.issueTypes ? c.issueTypes.map(it => `
     <label>${ISSUE_TYPE_TO_DEVICE[it.value] ? `<span class="ok-text">✓</span>` : `<span class="bad-text">–</span>`} ${esc(it.value)} <span class="count">${it.count} · ${ISSUE_TYPE_TO_DEVICE[it.value] ? `→ ${esc(ISSUE_TYPE_TO_DEVICE[it.value].category)} / ${esc(ISSUE_TYPE_TO_DEVICE[it.value].subtype)}` : "no book-time mapping (tech sets it by hand)"}</span></label>`).join("") : "";
   return `
@@ -1617,6 +1634,11 @@ function renderAdminRs() {
         <div style="margin-bottom:10px; font-size:13px">${c.ok ? `<span class="ok-text">✓ Connected</span> — ${c.ticketCount} open/resolved-today tickets pulled${c.openMeta ? ` (RS says ${esc(c.openMeta.total_entries)} open across ${esc(c.openMeta.total_pages)} pages)` : ""}, ${c.users ? c.users.length : 0} RS users.` : `<span class="bad-text">✗ Problem</span>`}</div>
         ${c.errors && c.errors.length ? `<div class="rs-warning">${c.errors.map(esc).join("<br>")}</div>` : ""}
       ` : `<div class="meter-note">Pulls tickets + users from RepairShopr right now and shows what came back.</div>`}
+    </div>
+    <div class="panel">
+      <h2>"In the queue" statuses</h2>
+      <div class="meter-note">Only tickets in a checked status show under "Your assigned tickets" on My Day. ${c ? "" : "Run the check above to list every status your open tickets are actually in."}</div>
+      <div class="check-list">${queueChecks || `<span class="meter-note">None set.</span>`}</div>
     </div>
     <div class="panel">
       <h2>Diagnosis-credit statuses</h2>
