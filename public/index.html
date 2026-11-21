@@ -592,8 +592,20 @@
   .h-actual { color: var(--actual) !important; }
   .trow.thead { min-height: 0; padding: 0 4px 4px; border-bottom: 1px solid var(--grid); font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-muted); }
   .trow.thead > div:nth-child(5) { text-align: right; }
-  .tcell-due { font-size: 12px; font-weight: 600; color: var(--text-secondary); white-space: nowrap; }
-  .tcell-due.none { color: var(--text-muted); }
+  .tcell-due { font-size: 12px; font-weight: 600; color: var(--text-secondary); white-space: nowrap; position: relative; }
+  .due-btn { background: transparent; border: 1px dashed transparent; border-radius: 999px; padding: 1px 2px; font: inherit; color: inherit; cursor: pointer; }
+  .due-btn:hover { border-color: var(--text-muted); }
+  .due-none { color: var(--text-muted); padding: 0 8px; }
+  .due-pop {
+    position: absolute; top: calc(100% + 4px); left: 0; z-index: 40; width: 210px;
+    background: var(--surface); border: var(--panel-border); border-radius: 10px; box-shadow: 0 10px 30px rgba(0,0,0,0.25);
+    padding: 6px; display: flex; flex-direction: column; gap: 2px;
+  }
+  .due-opt { display: flex; justify-content: space-between; align-items: center; gap: 8px; border: none; background: transparent; color: var(--text-primary); padding: 7px 9px; border-radius: 6px; font: inherit; font-size: 12.5px; cursor: pointer; text-align: left; }
+  .due-opt span { color: var(--text-muted); font-weight: 500; }
+  .due-opt:hover, .due-opt.current { background: var(--surface-2); }
+  .due-custom { display: flex; gap: 6px; padding: 6px 4px 2px; border-top: 1px solid var(--grid); margin-top: 2px; }
+  .due-custom input { flex: 1; min-width: 0; border: 1px solid var(--border); border-radius: 6px; padding: 4px 6px; font: inherit; font-size: 12px; background: var(--surface); color: var(--text-primary); }
   .due-pill { display: inline-block; padding: 2px 9px; border-radius: 999px; font-size: 11.5px; font-weight: 800; }
   .due-pill.today, .due-pill.overdue { background: var(--critical); color: #fff; }
   .due-pill.tomorrow { background: var(--warning); color: #3a2a00; }
@@ -797,6 +809,8 @@ let state = {
   manualConfirm: {},
   structDrafts: {},
   typeEditOpen: null,
+  dueEditOpen: null,       // ticket whose due-date popup is open
+  dueCustom: "",
   sortMode: "default",     // My Day order: default | reverse | oldest | newest
   diagStep: {},            // ticket id → "repair" once "diagnosis 100% completed?" was answered Yes
   diagMinRepairTotal: 119,
@@ -1318,16 +1332,58 @@ function daysUntil(day) {
   if (!day || !state.today) return null;
   return Math.round((Date.parse(day + "T00:00:00Z") - Date.parse(state.today + "T00:00:00Z")) / 86400000);
 }
+function addDays(day, n) {
+  const d = new Date(Date.parse(day + "T12:00:00Z") + n * 86400000);
+  return d.toISOString().slice(0, 10);
+}
+function shortDay(day) {
+  return new Date(day + "T12:00:00Z").toLocaleDateString([], { weekday: "short", month: "numeric", day: "numeric", timeZone: "UTC" });
+}
+// Due date — click it to change (writes the new due date to the RepairShopr ticket).
 function renderDueCell(t) {
   const n = daysUntil(t.dueDay);
-  if (n == null) return `<div class="tcell-due none">—</div>`;
-  const d = new Date(t.dueDay + "T12:00:00Z");
-  const short = d.toLocaleDateString([], { weekday: "short", month: "numeric", day: "numeric", timeZone: "UTC" });
-  if (n < 0) return `<div class="tcell-due"><span class="due-pill overdue" title="Was due ${esc(short)}">Overdue ${esc(short.replace(/^\w+,? /, ""))}</span></div>`;
-  if (n === 0) return `<div class="tcell-due"><span class="due-pill today" title="Due today">Today</span></div>`;
-  if (n === 1) return `<div class="tcell-due"><span class="due-pill tomorrow" title="Due tomorrow">Tomorrow</span></div>`;
-  return `<div class="tcell-due" title="Due ${esc(short)}">${esc(short)}</div>`;
+  let inner;
+  if (n == null) inner = `<span class="due-none">—</span>`;
+  else if (n < 0) inner = `<span class="due-pill overdue">Overdue ${esc(shortDay(t.dueDay).replace(/^\w+,? /, ""))}</span>`;
+  else if (n === 0) inner = `<span class="due-pill today">Today</span>`;
+  else if (n === 1) inner = `<span class="due-pill tomorrow">Tomorrow</span>`;
+  else inner = `<span>${esc(shortDay(t.dueDay))}</span>`;
+  return `<div class="tcell-due">
+    <button type="button" class="due-btn" onclick="toggleDueEdit(${t.id})" title="${t.dueDay ? `Due ${esc(shortDay(t.dueDay))}` : "No due date"} — click to change">${inner}</button>
+    ${state.dueEditOpen === t.id ? renderDuePop(t) : ""}
+  </div>`;
 }
+function renderDuePop(t) {
+  const opt = (n, label) => {
+    const day = addDays(state.today, n);
+    return `<button class="due-opt ${t.dueDay === day ? "current" : ""}" onclick="setDue(${t.id}, '${day}')"><b>${label}</b><span>${esc(shortDay(day))}</span></button>`;
+  };
+  return `<div class="due-pop" onclick="event.stopPropagation()">
+    ${opt(0, "Today")}${opt(1, "Tomorrow")}${opt(3, "In 3 days")}${opt(4, "In 4 days")}
+    <div class="due-custom">
+      <input id="due-date-${t.id}" type="date" value="${esc(state.dueCustom || t.dueDay || state.today)}" onchange="state.dueCustom = this.value">
+      <button class="btn small primary" onclick="setDue(${t.id}, document.getElementById('due-date-${t.id}').value)">Set</button>
+    </div>
+  </div>`;
+}
+function toggleDueEdit(id) {
+  state.dueEditOpen = state.dueEditOpen === id ? null : id;
+  state.dueCustom = "";
+  render();
+}
+function setDue(ticketId, day) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(day || "")) { showToast("Pick a date", "error"); return; }
+  const t = findTicket(ticketId);
+  state.dueEditOpen = null;
+  mutate("/due", { ticketId, day }, () => { t.dueDay = day; });
+}
+// Clicking anywhere else (or Esc) closes the due-date popup.
+document.addEventListener("click", e => {
+  if (state.dueEditOpen != null && !e.target.closest(".due-pop, .due-btn")) { state.dueEditOpen = null; render(); }
+});
+document.addEventListener("keydown", e => {
+  if (e.key === "Escape" && state.dueEditOpen != null) { state.dueEditOpen = null; render(); }
+});
 // Resolved today with a share of the credit for this person (by default: whoever was assigned when it was resolved).
 function myCompletedTickets(userId) {
   return state.tickets

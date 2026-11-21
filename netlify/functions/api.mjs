@@ -3,11 +3,11 @@
 // (optional: RS_SUBDOMAIN, SHOP_TZ).
 import { db } from "../../lib/db.mjs";
 import { signToken, verifyToken } from "../../lib/auth.mjs";
-import { today, shopDate } from "../../lib/time.mjs";
+import { today, shopDate, shopOffset, shopTimeOfDay } from "../../lib/time.mjs";
 import { effectiveDevice, creditedMinutes, repairMinutes } from "../../lib/booktime.mjs";
 import {
   getTickets, getUsers, assignTicket, setTicketIssueType, postComment, invalidate, patchCachedTicket, probeRs, RsError, RS_SUBDOMAIN,
-  whoIsKey, defaultKey, forgetDefaultKey,
+  whoIsKey, defaultKey, forgetDefaultKey, setTicketDueDate,
 } from "../../lib/rs.mjs";
 import { encryptSecret, decryptSecret, last4 } from "../../lib/secrets.mjs";
 
@@ -60,6 +60,7 @@ export default async (req, context) => {
         case "/issue-type":    return json(await setIssueType(me, body));
         case "/credit":        return json(await setCredit(me, body));
         case "/diagnosis":     return json(await answerDiagnosis(me, body));
+        case "/due":           return json(await setDueDate(me, body));
       }
       if (route.startsWith("/admin/")) {
         if (!me.is_admin) throw new HttpError(403, "Admins only");
@@ -550,6 +551,20 @@ async function answerDiagnosis(me, { ticketId, complete, bigRepair }) {
     await tx`update diag_prompts set state = 'claimed', answered_at = now() where id = ${pr.id}`;
     return { ok: true, claimed: true, minutes };
   });
+}
+
+// Change a ticket's due DATE in RepairShopr (made with the logged-in person's key). The time of day it
+// already had is kept; a ticket with no due date gets 5:00 PM.
+async function setDueDate(me, { ticketId, day }) {
+  const id = ticketIdOf(ticketId);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(String(day || "")) || isNaN(Date.parse(day))) throw new HttpError(400, "Pick a valid date");
+  const [cache] = await db()`select value from rs_cache where key = 'tickets'`;
+  const t = cache?.value?.list?.find(x => x.id === id);
+  const time = t?.dueAt ? shopTimeOfDay(t.dueAt) : "17:00:00";
+  const iso = `${day}T${time}${shopOffset(day)}`;
+  await setTicketDueDate(id, iso, keyFor(me));
+  await patchCachedTicket(id, { dueDay: day, dueAt: iso });
+  return { ok: true, dueDay: day };
 }
 
 /* ---------------- admin ---------------- */
