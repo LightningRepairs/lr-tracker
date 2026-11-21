@@ -502,6 +502,12 @@
   .tcell-outcome .outcome-select { width: 100%; min-width: 0; padding: 5px 7px; }
   .tcell-outcome .work-outcome-badge { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
   .diag-actions .tcell-device { width: 420px; }
+  .tcell-book.missing { color: var(--critical); }
+  .credit-chip { max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
+  .credit-chip.unset { color: var(--critical); border-color: color-mix(in srgb, var(--critical) 45%, transparent); }
+  .credit-editor { margin: 2px 4px 10px auto; max-width: 620px; padding: 10px 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface-2); display: flex; flex-direction: column; gap: 6px; font-size: 12.5px; }
+  .credit-quick, .credit-line, .credit-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .credit-line .device-select { min-width: 200px; }
   .bt-struct { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; margin-top: 8px; }
   .bt-del { border: none; background: transparent; color: var(--text-muted); cursor: pointer; font-size: 12px; padding: 0 3px; }
   .bt-del:hover { color: var(--critical); }
@@ -655,7 +661,9 @@ let state = {
   manualDrafts: {},
   manualConfirm: {},
   structDrafts: {},
-  typeEditOpen: null,      // ticket id whose Type chip is currently showing its dropdown        // Book Time Database "add model / add repair type" inputs
+  typeEditOpen: null,
+  creditEditOpen: null,    // completed ticket whose credit editor is open
+  creditDraft: [],      // ticket id whose Type chip is currently showing its dropdown        // Book Time Database "add model / add repair type" inputs
   outcomeEditOpen: null,    // ticket id currently showing its outcome dropdown in "Tickets I worked on today"
   bookTimeCategories: {},
   overBookThresholdPct: 15,
@@ -1106,13 +1114,23 @@ function changePosition(pos) {
 }
 
 /* ---------- My Day ---------- */
-function ticketsFor(userId) { return state.tickets.filter(t => t.assignedTo === userId && !t.notOpen); }
+// Open tickets assigned to someone (resolved ones live under "completed" instead).
+function ticketsFor(userId) { return state.tickets.filter(t => t.assignedTo === userId && !t.notOpen && t.status !== "Resolved"); }
 function findTicket(id) { return state.tickets.find(x => x.id === id); }
 // "Your assigned tickets" on My Day: only tickets in an "in the queue" status. A ticket whose timer
 // you have running/paused stays visible even if its status moved on, so you can always stop it.
+const normStatus = s => String(s || "").trim().toLowerCase();
+function isQueueStatus(status) { return state.queueStatuses.some(q => normStatus(q) === normStatus(status)); }
 function myQueueTickets(userId) {
-  return ticketsFor(userId).filter(t => state.queueStatuses.includes(t.status) || t.timerState === "running" || t.timerState === "paused");
+  return ticketsFor(userId).filter(t => isQueueStatus(t.status) || t.timerState === "running" || t.timerState === "paused");
 }
+// Resolved today with a share of the credit for this person (by default: whoever was assigned when it was resolved).
+function myCompletedTickets(userId) {
+  return state.tickets
+    .filter(t => t.completion && t.completion.shares.some(sh => sh.personId === userId))
+    .sort((a, b) => (b.completion.resolvedAt || 0) - (a.completion.resolvedAt || 0));
+}
+function myShare(t, userId) { const sh = t.completion && t.completion.shares.find(x => x.personId === userId); return sh ? sh.pct : 0; }
 
 // Book time = minutes credited today by claimed diagnoses/repairs. Time spent = everything logged today
 // (+ the live running timer). Both come from the server, so every device agrees.
@@ -1396,6 +1414,7 @@ function renderDay() {
   const goals = GOALS[state.position];
   const totals = computeTotals(state.me);
   const tickets = myQueueTickets(state.me);
+  const completed = myCompletedTickets(state.me);
 
   const meters = goals
     ? `<div class="meters-row">
@@ -1404,29 +1423,125 @@ function renderDay() {
        </div>`
     : `<div class="panel"><div class="meter-note">No repair-time goal for ${esc(state.position)} today.</div></div>`;
 
-  const diagCandidates = ticketsEligibleForDiagnosisCredit(state.me);
-  const diagIds = new Set(diagCandidates.map(t => t.id));
-  const ticketRows = tickets.length ? tickets.map(t => renderTicketRow(t, diagIds.has(t.id))).join("") : `<div class="meter-note">None of your assigned tickets are in the queue right now.</div>`;
-  const statusList = state.diagnosisEligibleStatuses.join(", ") || "(none set — Admin Console → RepairShopr)";
-  const diagSection = diagCandidates.length ? `
-    <div class="panel">
-      <h2>Diagnosis credit available</h2>
-      <div class="meter-note" style="margin-bottom:6px;">Tickets that were in your queue earlier today and are now in ${esc(statusList)}. Diagnosis and repair credit are each one-time and permanent — claiming repair also closes out diagnosis.</div>
-      ${diagCandidates.map(t => renderDiagnosisRow(t)).join("")}
-    </div>
-  ` : "";
+  const ticketRows = tickets.length ? tickets.map(t => renderTicketRow(t)).join("") : `<div class="meter-note">None of your assigned tickets are in the queue right now.</div>`;
+  const doneRows = completed.length ? completed.map(t => renderCompletedRow(t, state.me)).join("") : `<div class="meter-note">Nothing resolved under your name yet today.</div>`;
 
   return `
     ${meters}
-    ${diagSection}
     <div class="panel">
       <h2>Your assigned tickets</h2>
       ${ticketRows}
     </div>
-    ${renderWorkedOnTodayList(state.me)}
+    <div class="panel">
+      <h2>Your completed tickets <span class="meter-note" style="display:inline">&mdash; resolved today while assigned to you</span></h2>
+      ${doneRows}
+    </div>
   `;
 }
-function renderTicketRow(t, inDiagPanel) {
+function fmtTime(ms) { return ms ? new Date(ms).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }) : ""; }
+// A resolved ticket: worth its repair type's minutes, split by credit shares. Set Model/Repair type
+// here if they weren't picked before it was resolved.
+function renderCompletedRow(t, viewerId) {
+  const c = t.completion;
+  const pct = viewerId ? myShare(t, viewerId) : 100; // Team view (no viewer) shows the full value
+  const credited = Math.round((c.bookMinutes || 0) * pct / 100);
+  const v = t.spentSec ? bookTimeVerdict(t.spentSec, (c.bookMinutes || 0) * 60) : null;
+  const bookTitle = c.bookMinutes
+    ? `${t.repairType} = ${c.bookMinutes}m${pct < 100 ? ` · your share ${pct}% = ${credited}m` : ""}`
+    : "Pick the model & repair type — this ticket earns 0m until you do";
+  return `
+    <div class="trow" data-done="${t.id}">
+      ${ticketCell(t)}
+      <span class="ticket-status resolved" title="Resolved ${esc(fmtTime(c.resolvedAt))}">✓ ${esc(fmtTime(c.resolvedAt))}</span>
+      ${renderDevicePicker(t)}
+      <div class="tcell-book ${c.bookMinutes ? "" : "missing"}" title="${esc(bookTitle)}">${c.bookMinutes ? (pct < 100 ? `${credited}m` : fmtHM(c.bookMinutes * 60)) : "⚠ 0m"}</div>
+      ${viewerId ? `<div class="timer-controls"><div class="timer-display ${v ? `logged-${v.tier}` : ""}" title="${esc(v ? v.tooltip : "No time logged by you on this ticket")}">${v ? v.icon + " " : ""}${fmtClock(t.spentSec)}</div></div>` : "<div></div>"}
+      <div></div>
+      <div class="tcell-outcome">${renderCreditChip(t)}</div>
+    </div>
+    ${state.creditEditOpen === t.id ? renderCreditEditor(t) : ""}
+  `;
+}
+
+/* ----- credit (who gets a completed ticket's book time) ----- */
+function canEditCredit(t) {
+  const c = t.completion;
+  return !!c && (state.currentUser.admin || c.assignedPerson === state.me || c.shares.some(sh => sh.personId === state.me));
+}
+function renderCreditChip(t) {
+  const sh = t.completion.shares;
+  const label = !sh.length ? "⚠ No one credited"
+    : sh.length === 1 ? `👤 ${firstName(sh[0].personId)}`
+    : sh.map(x => `${firstName(x.personId)} ${x.pct}%`).join(" · ");
+  return canEditCredit(t)
+    ? `<button type="button" class="device-chip clickable credit-chip ${sh.length ? "" : "unset"}" onclick="openCreditEdit(${t.id})" title="Click to move or split the credit">${esc(label)}</button>`
+    : `<span class="device-chip credit-chip">${esc(label)}</span>`;
+}
+function openCreditEdit(ticketId) {
+  const t = findTicket(ticketId);
+  state.creditEditOpen = state.creditEditOpen === ticketId ? null : ticketId;
+  state.creditDraft = t.completion.shares.map(x => ({ ...x }));
+  if (!state.creditDraft.length) state.creditDraft = [{ personId: "", pct: 100 }];
+  render();
+}
+function creditDraftSet(i, field, val) {
+  state.creditDraft[i][field] = field === "pct" ? val : val;
+  if (field === "personId") render();
+}
+function creditDraftAdd() {
+  const used = state.creditDraft.reduce((a, x) => a + (Number(x.pct) || 0), 0);
+  state.creditDraft.push({ personId: "", pct: Math.max(0, 100 - used) });
+  render();
+}
+function creditDraftRemove(i) { state.creditDraft.splice(i, 1); render(); }
+function creditGiveAll(personId) { if (personId) { state.creditDraft = [{ personId, pct: 100 }]; render(); } }
+function creditSplitEven() {
+  const rows = state.creditDraft.filter(x => x.personId);
+  if (!rows.length) return;
+  const base = Math.floor(100 / rows.length);
+  rows.forEach((x, i) => { x.pct = base + (i < 100 - base * rows.length ? 1 : 0); });
+  state.creditDraft = rows; render();
+}
+async function saveCredit(ticketId) {
+  const shares = state.creditDraft.filter(x => x.personId).map(x => ({ personId: x.personId, pct: Number(x.pct) || 0 }));
+  const total = shares.reduce((a, x) => a + x.pct, 0);
+  if (shares.length && total !== 100) { showToast(`Shares add up to ${total}% — they need to add up to 100%`, "error"); return; }
+  const r = await mutate("/credit", { ticketId, shares });
+  if (r) { state.creditEditOpen = null; showToast("Credit updated"); render(); }
+}
+function renderCreditEditor(t) {
+  const people = activePeople();
+  const rows = state.creditDraft.map((x, i) => `
+    <div class="credit-line">
+      <select class="device-select" onchange="creditDraftSet(${i}, 'personId', this.value)">
+        <option value="" ${!x.personId ? "selected" : ""} disabled>Person…</option>
+        ${people.map(p => `<option value="${esc(p.id)}" ${x.personId === p.id ? "selected" : ""}>${esc(p.name)}</option>`).join("")}
+      </select>
+      <input id="credit-pct-${t.id}-${i}" data-draft="1" class="admin-input" type="number" min="1" max="100" value="${esc(x.pct)}" oninput="creditDraftSet(${i}, 'pct', this.value)" style="width:70px"> %
+      <button class="bt-del" onclick="creditDraftRemove(${i})" title="Remove">✕</button>
+    </div>`).join("");
+  const total = state.creditDraft.reduce((a, x) => a + (x.personId ? Number(x.pct) || 0 : 0), 0);
+  return `
+    <div class="credit-editor">
+      <div class="credit-quick">
+        Give all to
+        <select class="device-select" onchange="creditGiveAll(this.value)">
+          <option value="" selected disabled>Person…</option>
+          ${people.map(p => `<option value="${esc(p.id)}">${esc(p.name)}</option>`).join("")}
+        </select>
+        <span class="meter-note">or split it:</span>
+      </div>
+      ${rows}
+      <div class="credit-actions">
+        <button class="btn small ghost" onclick="creditDraftAdd()">+ Add person</button>
+        <button class="btn small ghost" onclick="creditSplitEven()">Split evenly</button>
+        <span class="meter-note" style="margin-left:auto">${t.completion.assignedPerson ? `Assigned when resolved: ${esc(firstName(t.completion.assignedPerson))}` : "Nobody was assigned when it was resolved"}</span>
+        <button class="btn small" onclick="openCreditEdit(${t.id})">Cancel</button>
+        <button class="btn small primary" onclick="saveCredit(${t.id})">Save</button>
+      </div>
+    </div>`;
+}
+function renderTicketRow(t) {
   const running = t.timerState === "running";
   const paused = t.timerState === "paused";
   const logged = t.timerState === "logged";
@@ -1449,12 +1564,6 @@ function renderTicketRow(t, inDiagPanel) {
     : `<button class="icon-btn play" onclick="toggleTimer(${t.id},'start')" title="${logged ? 'Start a new timer segment' : paused ? 'Resume' : 'Start'}">▶</button>
        ${paused ? `<button class="icon-btn stop" onclick="toggleTimer(${t.id},'stop')" title="Stop &amp; log time">■</button>` : ""}`;
 
-  // Claim credit right from the row. Tickets shown under "Diagnosis credit available" get their
-  // dropdown there instead, so it's never shown twice.
-  const myEntry = todaysEntry(t, state.me);
-  const outcomeArea = myEntry
-    ? `<span class="work-outcome-badge ${myEntry.outcome}" title="Change it in “Tickets I worked on today” below">${esc(outcomeBadgeLabel(myEntry, t))}</span>`
-    : (inDiagPanel ? "" : renderOutcomeSelect(t, null, "-row"));
 
   return `
     <div class="trow" data-id="${t.id}">
@@ -1470,7 +1579,7 @@ function renderTicketRow(t, inDiagPanel) {
         <button class="icon-btn ${state.noteOpen === t.id ? "on" : ""}" onclick="toggleNote(${t.id})" title="Quick note (also posts to RepairShopr)">📝</button>
         <button class="icon-btn ${state.manualOpen === t.id ? "on" : ""}" onclick="toggleManual(${t.id})" title="Set time manually">⏱</button>
       </div>
-      <div class="tcell-outcome">${outcomeArea}</div>
+      <div class="tcell-outcome"></div>
     </div>
     <div class="note-box" style="display:${state.noteOpen === t.id ? 'flex':'none'}; padding: 4px 4px 8px;">
       <textarea id="note-input-${t.id}" data-draft="1" rows="2" placeholder="Quick note — also posts to the RepairShopr ticket as a private comment" oninput="draftNote(${t.id}, this.value)">${esc(note)}</textarea>
@@ -1567,7 +1676,7 @@ function renderTeam() {
       </tr>
     `;
   }).join("");
-  const otherAssigned = state.tickets.filter(t => !t.notOpen && !t.assignedTo && t.assignedRsUserId != null);
+  const otherAssigned = state.tickets.filter(t => !t.notOpen && !t.assignedTo && t.assignedRsUserId != null && t.status !== "Resolved");
   return `
     <div class="panel">
       <h2>Today's team</h2>
@@ -1577,13 +1686,24 @@ function renderTeam() {
         <tbody>${rows}</tbody>
       </table>` : `<div class="meter-note">Nobody's logged in yet today.</div>`}
     </div>
+    ${renderTeamCompleted()}
     <div class="panel">
       <h2>All tickets in queue</h2>
-      ${renderQueueGroup("unassigned", "Unassigned", null, state.tickets.filter(t => !t.notOpen && t.assignedRsUserId == null))}
+      ${renderQueueGroup("unassigned", "Unassigned", null, state.tickets.filter(t => !t.notOpen && t.assignedRsUserId == null && t.status !== "Resolved"))}
       ${activePeople().map(p => renderQueueGroup(p.id, p.name, p.color, ticketsFor(p.id))).join("")}
       ${otherAssigned.length ? renderQueueGroup("other", "Assigned in RepairShopr to someone not in this app", null, otherAssigned) : ""}
     </div>
   `;
+}
+function renderTeamCompleted() {
+  const done = state.tickets.filter(t => t.completion).sort((a, b) => (b.completion.resolvedAt || 0) - (a.completion.resolvedAt || 0));
+  if (!done.length) return "";
+  const uncredited = done.filter(t => !t.completion.shares.length).length;
+  return `
+    <div class="panel">
+      <h2>Completed today <span class="meter-note" style="display:inline">&mdash; ${done.length} resolved${uncredited ? `, <span class="bad-text">${uncredited} with no one credited</span>` : ""}</span></h2>
+      ${done.map(t => renderCompletedRow(t, null)).join("")}
+    </div>`;
 }
 function renderQueueGroup(groupKey, label, color, tickets) {
   const collapsed = state.collapsedGroups.has(groupKey);

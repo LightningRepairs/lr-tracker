@@ -4,7 +4,7 @@
 import { db } from "../../lib/db.mjs";
 import { signToken, verifyToken } from "../../lib/auth.mjs";
 import { today, shopDate } from "../../lib/time.mjs";
-import { effectiveDevice, creditedMinutes } from "../../lib/booktime.mjs";
+import { effectiveDevice, creditedMinutes, repairMinutes } from "../../lib/booktime.mjs";
 import {
   getTickets, getUsers, assignTicket, setTicketIssueType, postComment, invalidate, patchCachedTicket, probeRs, RsError, RS_SUBDOMAIN,
 } from "../../lib/rs.mjs";
@@ -52,6 +52,7 @@ export default async (req, context) => {
         case "/note":          return json(await addNote(me, body));
         case "/assign":        return json(await assign(me, body));
         case "/issue-type":    return json(await setIssueType(me, body));
+        case "/credit":        return json(await setCredit(me, body));
       }
       if (route.startsWith("/admin/")) {
         if (!me.is_admin) throw new HttpError(403, "Admins only");
@@ -150,7 +151,8 @@ async function buildState(me) {
     select ticket_id from work_log where work_date = ${t0}
     union select ticket_id from time_entries where work_date = ${t0}
     union select ticket_id from timers where state in ('running','paused')
-    union select ticket_id from notes where work_date = ${t0}`;
+    union select ticket_id from notes where work_date = ${t0}
+    union select ticket_id from completions where work_date = ${t0}`;
   const extraIds = extraIdRows.map(r => Number(r.ticket_id)).filter(id => !openIds.has(id));
   const ids = [...openIds, ...extraIds];
 
@@ -162,13 +164,30 @@ async function buildState(me) {
     sql`select * from timers where ticket_id = any(${ids}::bigint[]) and state <> 'idle'`,
     sql`select ticket_id, person_id, sum(seconds)::int as s from time_entries where ticket_id = any(${ids}::bigint[]) group by 1,2`,
     sql`select ticket_id, person_id, sum(seconds)::int as s from time_entries where ticket_id = any(${ids}::bigint[]) and work_date = ${t0} group by 1,2`,
-    sql`select person_id, sum(credited_minutes)::int as m from work_log where work_date = ${t0} and outcome in ('diagnosis_completed','repair_completed') group by 1`,
+    sql`select c.*, coalesce(json_agg(json_build_object('personId', s.person_id, 'pct', s.pct) order by s.pct desc) filter (where s.person_id is not null), '[]') as shares
+        from completions c left join credit_shares s on s.ticket_id = c.ticket_id and s.work_date = c.work_date
+        where c.work_date = ${t0} group by c.ticket_id, c.work_date`,
     sql`select person_id, sum(seconds)::int as s from time_entries where work_date = ${t0} group by 1`,
     sql`select person_id, ticket_id, running_since from timers where state = 'running'`,
     sql`select ticket_id, person_id from queue_log where ticket_id = any(${ids}::bigint[]) and work_date = ${t0}`,
   ]);
 
   const stateById = new Map(stateRows.map(r => [Number(r.ticket_id), r]));
+  // Today's completions: worth the picked repair type's minutes (0 until one is picked).
+  const issueTypeById = new Map(rsList.map(t => [t.id, t.issueType]));
+  const completionBy = new Map();
+  for (const c of bookTodayRows) {
+    const id = Number(c.ticket_id);
+    const ts = stateById.get(id);
+    const dev = effectiveDevice(issueTypeById.get(id) ?? ts?.rs_problem_type, ts);
+    const mins = repairMinutes(settings.bookTimes, dev, dev.repairType) || 0;
+    if (c.book_minutes !== mins) await sql`update completions set book_minutes = ${mins} where ticket_id = ${id} and work_date = ${t0}`;
+    completionBy.set(id, {
+      resolvedAt: ms(c.resolved_at), assignedPerson: c.assigned_person || null,
+      assignedRsUser: c.assigned_rs_user != null ? Number(c.assigned_rs_user) : null,
+      bookMinutes: mins, shares: c.shares || [],
+    });
+  }
   const group = (rows) => { const m = new Map(); for (const r of rows) { const k = Number(r.ticket_id); if (!m.has(k)) m.set(k, []); m.get(k).push(r); } return m; };
   const workBy = group(workRows), assignBy = group(assignRows), notesBy = group(noteRows), timersBy = group(timerRows), queueBy = group(queueRows);
   const totalBy = group(totalRows), todayBy = group(todayRows);
@@ -204,13 +223,17 @@ async function buildState(me) {
       assignmentLog: (assignBy.get(t.id) || []).map(a => ({ personId: a.person_id, date: dstr(a.work_date) })),
       notes: (notesBy.get(t.id) || []).map(n => ({ author: n.person_id, date: t0 })),
       queuedToday: (queueBy.get(t.id) || []).map(q => q.person_id), // people who had it in their queue today
+      completion: completionBy.get(t.id) || null,
       timers,
     };
   });
 
   const personToday = {};
   for (const p of peopleRows) personToday[p.id] = { bookSec: 0, spentSec: 0, runningSince: null, runningTicketId: null };
-  for (const r of bookTodayRows) if (personToday[r.person_id]) personToday[r.person_id].bookSec = r.m * 60;
+  // Book time = each ticket resolved today, worth its repair type's minutes, split by credit shares.
+  for (const c of completionBy.values()) {
+    for (const sh of c.shares) if (personToday[sh.personId]) personToday[sh.personId].bookSec += Math.round((c.bookMinutes || 0) * 60 * sh.pct / 100);
+  }
   for (const r of spentTodayRows) if (personToday[r.person_id]) personToday[r.person_id].spentSec = r.s;
   for (const r of runningRows) if (personToday[r.person_id]) { personToday[r.person_id].runningSince = ms(r.running_since); personToday[r.person_id].runningTicketId = Number(r.ticket_id); }
 
@@ -412,6 +435,35 @@ async function setIssueType(me, { ticketId, issueType }) {
              on conflict (ticket_id) do update set rs_problem_type = excluded.rs_problem_type,
                device_category = null, device_subtype = null, device_row = null, repair_type = null, updated_at = now()`;
     await recomputeCredits(tx, id);
+  });
+  return { ok: true };
+}
+
+// Move all or part of a completed ticket's credit. shares = [{ personId, pct }], whole percents summing to 100.
+// Allowed for admins, the person it was assigned to, and anyone currently holding a share.
+async function setCredit(me, { ticketId, shares }) {
+  const id = ticketIdOf(ticketId);
+  const t0 = today();
+  const list = (Array.isArray(shares) ? shares : []).map(x => ({ personId: String(x.personId || ""), pct: Math.round(Number(x.pct)) }))
+    .filter(x => x.personId && x.pct > 0);
+  const merged = new Map();
+  for (const x of list) merged.set(x.personId, (merged.get(x.personId) || 0) + x.pct);
+  const total = [...merged.values()].reduce((a, b) => a + b, 0);
+  if (merged.size && total !== 100) throw new HttpError(400, `Shares must add up to 100% (they add up to ${total}%)`);
+  if ([...merged.values()].some(p => p < 1 || p > 100)) throw new HttpError(400, "Each share must be 1–100%");
+  await db().begin(async tx => {
+    const [c] = await tx`select * from completions where ticket_id = ${id} and work_date = ${t0} for update`;
+    if (!c) throw new HttpError(404, "That ticket isn't completed today");
+    const cur = await tx`select person_id from credit_shares where ticket_id = ${id} and work_date = ${t0}`;
+    const allowed = me.is_admin || c.assigned_person === me.id || cur.some(r => r.person_id === me.id);
+    if (!allowed) throw new HttpError(403, "Only the credited tech or an admin can move this credit");
+    if (merged.size) {
+      const known = new Set((await tx`select id from people where active`).map(r => r.id));
+      for (const pid of merged.keys()) if (!known.has(pid)) throw new HttpError(400, `Unknown person: ${pid}`);
+    }
+    await tx`delete from credit_shares where ticket_id = ${id} and work_date = ${t0}`;
+    const rows = [...merged].map(([person_id, pct]) => ({ ticket_id: id, work_date: t0, person_id, pct }));
+    if (rows.length) await tx`insert into credit_shares ${tx(rows, "ticket_id", "work_date", "person_id", "pct")}`;
   });
   return { ok: true };
 }
