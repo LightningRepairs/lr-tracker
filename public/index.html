@@ -738,7 +738,7 @@ const GOALS = { // seconds
   "Manager":    null,
 };
 const WORKDAY_START = 9, WORKDAY_END = 18; // 9a-6p, for the "on pace" tick
-const POLL_MS = 30000;
+const POLL_MS = 15000; // server re-pulls RepairShopr once its copy is 20s old
 
 const OUTCOME_LABELS = {
   diagnosis_completed: "Completed Diagnosis",
@@ -831,6 +831,7 @@ let state = {
   diagStep: {},            // ticket id → "repair" once "diagnosis 100% completed?" was answered Yes
   diagMinRepairTotal: 119,
   manualTimeNote: false,
+  showMoney: true,
   refreshing: false,
   creditEditOpen: null,
   actualEditOpen: null,
@@ -926,6 +927,7 @@ function applyServerState(d) {
   state.diagnosisEligibleStatuses = d.settings.diagnosisEligibleStatuses || [];
   state.diagMinRepairTotal = d.settings.diagMinRepairTotal ?? 119;
   state.manualTimeNote = !!d.settings.manualTimeNote;
+  state.showMoney = d.settings.showMoney !== false;
   state.queueStatuses = d.settings.queueStatuses || [];
   state.personToday = d.personToday || {};
   state.rsError = d.rsError;
@@ -2103,7 +2105,7 @@ function renderTeam() {
   const otherAssigned = state.tickets.filter(t => inQ(t) && !t.assignedTo && t.assignedRsUserId != null);
   const people = activePeople().slice().sort((a, b) => a.name.localeCompare(b.name));
   return `
-    ${renderMoney()}
+    ${state.showMoney ? renderMoney() : ""}
     <div class="panel">
       <h2>Today's team</h2>
       ${loggedInToday.length ? `
@@ -2153,7 +2155,7 @@ function renderMoney() {
           ${who ? `<div class="money-whos">${who}</div>` : ""}
         </div>
       </div>
-      <div class="meter-note" style="margin-top:6px">Invoiced % goes to whoever created the invoice in RepairShopr.</div>
+      <div class="meter-note" style="margin-top:6px">Invoiced % goes to whoever the invoice's ticket is assigned to — or whoever created the invoice, if it has no ticket.</div>
     </div>`;
 }
 function renderTeamCompleted() {
@@ -2343,6 +2345,7 @@ async function clearDefaultKey() {
   const r = await mutate("/admin/default-key", { key: null });
   if (r) loadKeysInfo();
 }
+function setShowMoney(on) { mutate("/admin/show-money", { on }, () => { state.showMoney = on; }); }
 function setManualTimeNote(on) { mutate("/admin/manual-time-note", { on }, () => { state.manualTimeNote = on; }); }
 function renderTimerPanel() {
   const withKey = Object.values(PEOPLE).filter(p => p.active && p.hasKey).map(p => p.name.split(" ")[0]);
@@ -2450,6 +2453,10 @@ function renderAdminRs() {
   return `
     ${renderDefaultKeyPanel()}
     ${renderTimerPanel()}
+    <div class="panel">
+      <h2>💰 Team tab</h2>
+      <label class="sort-option"><input type="checkbox" id="show-money" ${state.showMoney ? "checked" : ""} onchange="setShowMoney(this.checked)"> Show "Today's money" (payments + invoiced today) at the top of the Team tab — everyone who can open the Team tab sees it</label>
+    </div>
     <div class="panel">
       <h2>RepairShopr connection</h2>
       <div style="margin-bottom:12px"><button class="btn primary small" onclick="runRsCheck()" ${state.rsCheckLoading ? "disabled" : ""}>${state.rsCheckLoading ? "Checking…" : "Run check"}</button></div>

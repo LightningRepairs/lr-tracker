@@ -15,7 +15,7 @@ import { encryptSecret, decryptSecret, last4 } from "../../lib/secrets.mjs";
 // undefined → the default key is used.
 const keyFor = me => decryptSecret(me.rs_api_key_enc) || undefined;
 import { syncFromRs, DEFAULT_QUEUE_STATUSES } from "../../lib/sync.mjs";
-import { syncTimers, rsTimerAction, rsTimerTotals } from "../../lib/timers.mjs";
+import { syncTimers, syncTimersThrottled, rsTimerAction, rsTimerTotals } from "../../lib/timers.mjs";
 import { ensureSchema } from "../../lib/migrate.mjs";
 import { RS_ISSUE_TYPES } from "../../lib/booktime.mjs";
 
@@ -70,6 +70,7 @@ export default async (req, context) => {
           case "/admin/booktime-structure": return json(await editBookTimeStructure(body));
           case "/admin/threshold":          return json(await setSetting("over_book_threshold_pct", Math.max(0, Math.round(Number(body.value) || 0))));
           case "/admin/manual-time-note":   return json(await setSetting("manual_time_note", !!body.on));
+          case "/admin/show-money":         return json(await setSetting("show_money", !!body.on));
           case "/admin/diag-min-total":     return json(await setSetting("diag_min_repair_total", Math.max(0, Math.round(Number(body.value) || 0))));
           case "/admin/eligible-statuses":  return json(await setSetting("diagnosis_eligible_statuses", (body.statuses || []).map(String).slice(0, 50)));
           case "/admin/queue-statuses":     return json(await setSetting("queue_statuses", (body.statuses || []).map(String).slice(0, 50)));
@@ -149,6 +150,7 @@ async function loadSettings(sql) {
     // Repair total needed to earn diagnosis credit AND repair credit on the same ticket.
     diagMinRepairTotal: Number(s.diag_min_repair_total ?? 119),
     manualTimeNote: s.manual_time_note === true,
+    showMoney: s.show_money !== false, // Team tab "Today's money" panel (on by default)
     // Statuses that count as "in the queue" — only these show under "Your assigned tickets".
     queueStatuses: s.queue_statuses || DEFAULT_QUEUE_STATUSES,
   };
@@ -165,7 +167,11 @@ async function buildState(me, { force = false } = {}) {
   ]);
   const { peopleRows, rsUsers, personByRsUser } = sync;
   let rsError = sync.rsError;
-  if (force && !rsError) { try { await syncTimers(peopleRows); } catch (e) { rsError = `Timers: ${e.message}`; } }
+  // Timers: ⟳ forces a sync; otherwise page loads sync with RS once it's 20s old (short wait, then carry on).
+  if (!rsError) {
+    try { await syncTimersThrottled(peopleRows, { maxAgeSec: force ? 0 : 20, maxWaitMs: force ? 6000 : 2500 }); }
+    catch (e) { if (force) rsError = `Timers: ${e.message}`; }
+  }
   const rsList = sync.list;
 
   // Tickets not on RS's open list but touched today (e.g. resolved) still need to show up.
@@ -301,7 +307,7 @@ async function buildState(me, { force = false } = {}) {
 
   // 💰 Today's money (Team tab): payments received + invoiced, split by who created each invoice.
   let money = null;
-  try {
+  if (settings.showMoney) try {
     const m = (await getMoney({ force, maxWaitMs: force ? 6000 : 2500 })).value;
     if (m && m.day === t0) {
       const nameOfRs = uid => {
@@ -312,8 +318,9 @@ async function buildState(me, { force = false } = {}) {
       };
       const byMethod = {}, byWho = {};
       for (const p of m.payments) byMethod[p.method] = (byMethod[p.method] || 0) + p.amount;
+      // Credit: whoever the invoice's ticket is assigned to; no ticket (or unassigned ticket) → invoice creator.
       for (const i of m.invoices) {
-        const w = nameOfRs(i.userId), k = w.personId || w.name;
+        const w = nameOfRs(i.ticketId != null && i.ticketUserId != null ? i.ticketUserId : i.userId), k = w.personId || w.name;
         (byWho[k] ||= { ...w, total: 0, subtotal: 0, count: 0 });
         byWho[k].total += i.total; byWho[k].subtotal += i.subtotal; byWho[k].count++;
       }
