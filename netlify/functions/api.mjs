@@ -7,7 +7,7 @@ import { today, shopDate, shopOffset, shopTimeOfDay } from "../../lib/time.mjs";
 import { effectiveDevice, creditedMinutes, repairMinutes } from "../../lib/booktime.mjs";
 import {
   getTickets, getUsers, assignTicket, setTicketIssueType, postComment, invalidate, patchCachedTicket, probeRs, RsError, RS_SUBDOMAIN,
-  whoIsKey, defaultKey, forgetDefaultKey, setTicketDueDate,
+  whoIsKey, defaultKey, forgetDefaultKey, setTicketDueDate, getMoney,
 } from "../../lib/rs.mjs";
 import { encryptSecret, decryptSecret, last4 } from "../../lib/secrets.mjs";
 
@@ -299,7 +299,36 @@ async function buildState(me, { force = false } = {}) {
     if (r.status === "running") { personToday[pid].runningSince = ms(r.fetchedAt); personToday[pid].runningTicketId = r.ticketId; }
   }
 
+  // 💰 Today's money (Team tab): payments received + invoiced, split by who created each invoice.
+  let money = null;
+  try {
+    const m = (await getMoney({ force, maxWaitMs: force ? 6000 : 2500 })).value;
+    if (m && m.day === t0) {
+      const nameOfRs = uid => {
+        const pid = uid != null ? personByRsUser.get(String(uid)) : null;
+        if (pid) return { personId: pid, name: peopleRows.find(p => p.id === pid)?.name || pid };
+        const u = rsUsers.find(x => String(x.id) === String(uid));
+        return { personId: null, name: u ? u.name : (uid != null ? `RS user ${uid}` : "Unknown") };
+      };
+      const byMethod = {}, byWho = {};
+      for (const p of m.payments) byMethod[p.method] = (byMethod[p.method] || 0) + p.amount;
+      for (const i of m.invoices) {
+        const w = nameOfRs(i.userId), k = w.personId || w.name;
+        (byWho[k] ||= { ...w, total: 0, subtotal: 0, count: 0 });
+        byWho[k].total += i.total; byWho[k].subtotal += i.subtotal; byWho[k].count++;
+      }
+      money = {
+        paymentsTotal: m.payments.reduce((a, p) => a + p.amount, 0), paymentsCount: m.payments.length,
+        byMethod: Object.entries(byMethod).map(([method, amount]) => ({ method, amount })).sort((a, b) => b.amount - a.amount),
+        invoicedTotal: m.invoices.reduce((a, i) => a + i.total, 0), invoicedSubtotal: m.invoices.reduce((a, i) => a + i.subtotal, 0),
+        invoicedTax: m.invoices.reduce((a, i) => a + i.tax, 0), invoiceCount: m.invoices.length,
+        byWho: Object.values(byWho).sort((a, b) => b.total - a.total),
+      };
+    }
+  } catch (e) { console.warn("money", e.message); }
+
   return {
+    money,
     me: me.id,
     today: t0,
     serverNow: Date.now(),

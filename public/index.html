@@ -476,6 +476,22 @@
   .queue-group-header:hover { background: var(--grid); }
   .queue-caret { font-size: 9px; color: var(--text-muted); width: 12px; }
   .queue-group-label { font-weight: 700; flex: 1; }
+  .money-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 10px; }
+  .money-card { border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; background: var(--surface); }
+  .money-label { font-size: 11.5px; text-transform: uppercase; letter-spacing: .04em; color: var(--text-muted); }
+  .money-big { font-size: 26px; font-weight: 700; margin: 2px 0; font-variant-numeric: tabular-nums; }
+  .money-sub { font-size: 11.5px; color: var(--text-muted); }
+  .money-chips { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 8px; }
+  .money-chip { font-size: 11.5px; border: 1px solid var(--border); border-radius: 999px; padding: 1px 8px; }
+  .money-whos { margin-top: 8px; display: grid; gap: 5px; }
+  .money-who { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(30px, 1fr) 36px 132px; align-items: center; gap: 8px; font-size: 12.5px; }
+  .money-who-name .avatar, .money-noav { flex: none; }
+  .money-noav { display: inline-block; width: 18px; margin-right: 6px; }
+  @media (max-width: 520px) { .money-who { grid-template-columns: minmax(0, 1fr) 36px auto; } .money-bar { display: none !important; } }
+  .money-who-name { display: flex; align-items: center; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .money-bar { margin: 0; width: auto; display: block; }
+  .money-who-pct { text-align: right; font-weight: 600; font-variant-numeric: tabular-nums; }
+  .money-who-amt { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
   .queue-group-count { font-size: 11.5px; color: var(--text-muted); background: var(--surface); border: 1px solid var(--border); border-radius: 999px; padding: 1px 8px; }
   .queue-group-body { padding: 2px 12px; }
   .queue-group-body .ticket-row { padding: 10px 4px; gap: 10px; }
@@ -831,7 +847,7 @@ let state = {
   adminSection: null,    // null (menu) | users | booktime | rs | reports
   adminView: "home",     // within the booktime section: home | category
   adminCategory: null,   // mobile | computer | gaming
-  collapsedGroups: new Set(),
+  expandedGroups: new Set(), // Team tab queue groups start collapsed
   positionMenuOpen: false,
   pinDrafts: {},
   newPersonName: "",
@@ -914,6 +930,7 @@ function applyServerState(d) {
   state.personToday = d.personToday || {};
   state.rsError = d.rsError;
   state.rsUsers = d.rsUsers || [];
+  state.money = d.money || null;
   state.tickets = d.tickets.map(buildTicket);
 }
 
@@ -2068,7 +2085,7 @@ function renderTeam() {
     const pos = id === state.me ? state.position : state.attendance[id];
     const goals = GOALS[pos];
     const totals = computeTotals(id);
-    const tickets = ticketsFor(id);
+    const tickets = ticketsFor(id).filter(t => isQueueStatus(t.status));
     const anyRunning = !!(state.personToday[id] && state.personToday[id].runningSince);
     const bookPct = goals ? Math.min(100,(totals.book/goals.book)*100) : 0;
     const spentPct = goals ? Math.min(100,(totals.spent/goals.spent)*100) : 0;
@@ -2082,8 +2099,11 @@ function renderTeam() {
       </tr>
     `;
   }).join("");
-  const otherAssigned = state.tickets.filter(t => !t.notOpen && !t.assignedTo && t.assignedRsUserId != null && t.status !== "Resolved");
+  const inQ = t => !t.notOpen && isQueueStatus(t.status);
+  const otherAssigned = state.tickets.filter(t => inQ(t) && !t.assignedTo && t.assignedRsUserId != null);
+  const people = activePeople().slice().sort((a, b) => a.name.localeCompare(b.name));
   return `
+    ${renderMoney()}
     <div class="panel">
       <h2>Today's team</h2>
       ${loggedInToday.length ? `
@@ -2092,14 +2112,49 @@ function renderTeam() {
         <tbody>${rows}</tbody>
       </table>` : `<div class="meter-note">Nobody's logged in yet today.</div>`}
     </div>
-    ${renderTeamCompleted()}
     <div class="panel">
       <h2>All tickets in queue</h2>
-      ${renderQueueGroup("unassigned", "Unassigned", null, state.tickets.filter(t => !t.notOpen && t.assignedRsUserId == null && t.status !== "Resolved"))}
-      ${activePeople().map(p => renderQueueGroup(p.id, p.name, p.color, ticketsFor(p.id))).join("")}
+      ${renderQueueGroup("unassigned", "Unassigned", null, state.tickets.filter(t => inQ(t) && t.assignedRsUserId == null))}
+      ${people.map(p => renderQueueGroup(p.id, p.name, p.color, ticketsFor(p.id).filter(inQ))).join("")}
       ${otherAssigned.length ? renderQueueGroup("other", "Assigned in RepairShopr to someone not in this app", null, otherAssigned) : ""}
     </div>
+    ${renderTeamCompleted()}
   `;
+}
+const fmtMoney = n => "$" + (Number(n) || 0).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+function renderMoney() {
+  const m = state.money;
+  if (!m) return `<div class="panel money-panel"><h2>💰 Today's money</h2><div class="meter-note">Waiting on RepairShopr — numbers appear within a minute.</div></div>`;
+  const methods = m.byMethod.map(x => `<span class="money-chip">${esc(x.method)} ${fmtMoney(x.amount)}</span>`).join("");
+  const who = m.byWho.map(w => {
+    const p = w.personId && PEOPLE[w.personId];
+    const pct = m.invoicedTotal > 0 ? (w.total / m.invoicedTotal) * 100 : 0;
+    return `<div class="money-who">
+      <span class="money-who-name">${p ? `<span class="avatar" style="background:${esc(p.color)};width:18px;height:18px;font-size:8.5px;margin-right:6px">${esc(p.initials)}</span>` : `<span class="money-noav"></span>`}<span style="overflow:hidden;text-overflow:ellipsis">${esc(w.name)}</span></span>
+      <div class="mini-meter-track money-bar"><div class="mini-meter-fill" style="width:${pct.toFixed(1)}%"></div></div>
+      <span class="money-who-pct">${Math.round(pct)}%</span>
+      <span class="money-who-amt">${fmtMoney(w.total)} <span class="money-sub">· ${w.count} inv</span></span>
+    </div>`;
+  }).join("");
+  return `
+    <div class="panel money-panel">
+      <h2>💰 Today's money</h2>
+      <div class="money-grid">
+        <div class="money-card">
+          <div class="money-label">Total payments today</div>
+          <div class="money-big">${fmtMoney(m.paymentsTotal)}</div>
+          <div class="money-sub">${m.paymentsCount} payment${m.paymentsCount === 1 ? "" : "s"}</div>
+          ${methods ? `<div class="money-chips">${methods}</div>` : ""}
+        </div>
+        <div class="money-card">
+          <div class="money-label">Total invoiced today</div>
+          <div class="money-big">${fmtMoney(m.invoicedTotal)}</div>
+          <div class="money-sub">${m.invoiceCount} invoice${m.invoiceCount === 1 ? "" : "s"} · ${fmtMoney(m.invoicedSubtotal)} + ${fmtMoney(m.invoicedTax)} tax</div>
+          ${who ? `<div class="money-whos">${who}</div>` : ""}
+        </div>
+      </div>
+      <div class="meter-note" style="margin-top:6px">Invoiced % goes to whoever created the invoice in RepairShopr.</div>
+    </div>`;
 }
 function renderTeamCompleted() {
   const done = state.tickets.filter(t => t.completion).sort((a, b) => (b.completion.resolvedAt || 0) - (a.completion.resolvedAt || 0));
@@ -2113,7 +2168,7 @@ function renderTeamCompleted() {
     </div>`;
 }
 function renderQueueGroup(groupKey, label, color, tickets) {
-  const collapsed = state.collapsedGroups.has(groupKey);
+  const collapsed = !state.expandedGroups.has(groupKey);
   const swatch = color ? `<span class="avatar" style="background:${esc(color)};width:20px;height:20px;font-size:9px;margin-right:8px">${esc((label.match(/\b\w/g)||[]).join('').slice(0,2))}</span>` : `<span style="margin-right:8px;color:var(--text-muted)">—</span>`;
   return `
     <div class="queue-group">
@@ -2164,7 +2219,7 @@ function reassignTicket(ticketId, personIdOrEmpty) {
   });
 }
 function toggleGroup(key) {
-  if (state.collapsedGroups.has(key)) state.collapsedGroups.delete(key); else state.collapsedGroups.add(key);
+  if (state.expandedGroups.has(key)) state.expandedGroups.delete(key); else state.expandedGroups.add(key);
   render();
 }
 function assignToMe(ticketId) {
