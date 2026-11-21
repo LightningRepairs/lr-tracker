@@ -2029,7 +2029,7 @@ async function saveDefaultKey() {
   if (r) { state.defaultKeyDraft = ""; showToast(`Default key saved — it belongs to ${r.owner}`); loadKeysInfo(); }
 }
 async function clearDefaultKey() {
-  if (!confirm("Stop using the saved default key and go back to the RS_API_KEY set in Netlify?")) return;
+  if (!confirm("Are you sure?\n\nThis deletes the key saved here and switches back to the RS_API_KEY set in Netlify.")) return;
   const r = await mutate("/admin/default-key", { key: null });
   if (r) loadKeysInfo();
 }
@@ -2048,7 +2048,7 @@ function renderDefaultKeyPanel() {
       <div class="key-state">
         <input id="default-key-input" data-draft="1" class="admin-input key-input" type="password" autocomplete="off" placeholder="Paste a new default key" value="${esc(state.defaultKeyDraft || "")}" oninput="state.defaultKeyDraft = this.value">
         <button class="btn small primary" onclick="saveDefaultKey()">Save</button>
-        ${k && k.source === "admin" ? `<button class="btn small ghost" onclick="clearDefaultKey()">Use Netlify's RS_API_KEY instead</button>` : ""}
+        ${k && k.source === "admin" ? `<button class="btn small ghost" onclick="clearDefaultKey()">Revert to default (Netlify) key</button>` : ""}
       </div>
     </div>`;
 }
