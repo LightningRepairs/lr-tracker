@@ -47,7 +47,7 @@ export default async (req, context) => {
     const me = await requireMe(req);
     const body = req.method === "POST" ? await req.json().catch(() => ({})) : {};
 
-    if (req.method === "GET" && route === "/state") return json(await buildState(me));
+    if (req.method === "GET" && route === "/state") return json(await buildState(me, { force: url.searchParams.get("refresh") === "1" }));
     if (req.method === "POST") {
       switch (route) {
         case "/position":      return json(await setPosition(me, body));
@@ -59,6 +59,7 @@ export default async (req, context) => {
         case "/assign":        return json(await assign(me, body));
         case "/issue-type":    return json(await setIssueType(me, body));
         case "/credit":        return json(await setCredit(me, body));
+        case "/diagnosis":     return json(await answerDiagnosis(me, body));
       }
       if (route.startsWith("/admin/")) {
         if (!me.is_admin) throw new HttpError(403, "Admins only");
@@ -66,6 +67,7 @@ export default async (req, context) => {
           case "/admin/booktime-cell":      return json(await setBookTimeCell(body));
           case "/admin/booktime-structure": return json(await editBookTimeStructure(body));
           case "/admin/threshold":          return json(await setSetting("over_book_threshold_pct", Math.max(0, Math.round(Number(body.value) || 0))));
+          case "/admin/diag-min-total":     return json(await setSetting("diag_min_repair_total", Math.max(0, Math.round(Number(body.value) || 0))));
           case "/admin/eligible-statuses":  return json(await setSetting("diagnosis_eligible_statuses", (body.statuses || []).map(String).slice(0, 50)));
           case "/admin/queue-statuses":     return json(await setSetting("queue_statuses", (body.statuses || []).map(String).slice(0, 50)));
           case "/admin/person":             return json(await upsertPerson(me, body));
@@ -141,16 +143,19 @@ async function loadSettings(sql) {
     bookTimes: s.book_times || {},
     overBookThresholdPct: Number(s.over_book_threshold_pct ?? 15),
     diagnosisEligibleStatuses: s.diagnosis_eligible_statuses || [],
+    // Repair total needed to earn diagnosis credit AND repair credit on the same ticket.
+    diagMinRepairTotal: Number(s.diag_min_repair_total ?? 119),
     // Statuses that count as "in the queue" — only these show under "Your assigned tickets".
     queueStatuses: s.queue_statuses || DEFAULT_QUEUE_STATUSES,
   };
 }
 
-async function buildState(me) {
+// force = the ⟳ Refresh button: pull from RepairShopr right now (waits a bit longer for it).
+async function buildState(me, { force = false } = {}) {
   const sql = db();
   const t0 = today();
   const [sync, settings, attendanceRows] = await Promise.all([
-    syncFromRs({ ticketsWaitMs: TICKETS_WAIT_MS, usersWaitMs: USERS_WAIT_MS }),
+    syncFromRs({ force, ticketsWaitMs: force ? 7000 : TICKETS_WAIT_MS, usersWaitMs: USERS_WAIT_MS }),
     loadSettings(sql),
     sql`select person_id, position from attendance where work_date = ${t0}`,
   ]);
@@ -164,11 +169,12 @@ async function buildState(me) {
     union select ticket_id from time_entries where work_date = ${t0}
     union select ticket_id from timers where state in ('running','paused')
     union select ticket_id from notes where work_date = ${t0}
-    union select ticket_id from completions where work_date = ${t0}`;
+    union select ticket_id from completions where work_date = ${t0}
+    union select ticket_id from diag_prompts where state = 'pending'`;
   const extraIds = extraIdRows.map(r => Number(r.ticket_id)).filter(id => !openIds.has(id));
   const ids = [...openIds, ...extraIds];
 
-  const [stateRows, workRows, assignRows, noteRows, timerRows, totalRows, todayRows, bookTodayRows, spentTodayRows, runningRows, queueRows] = await Promise.all([
+  const [stateRows, workRows, assignRows, noteRows, timerRows, totalRows, todayRows, bookTodayRows, spentTodayRows, runningRows, queueRows, promptRows, diagCreditRows] = await Promise.all([
     sql`select * from ticket_state where ticket_id = any(${ids}::bigint[])`,
     sql`select * from work_log where ticket_id = any(${ids}::bigint[]) and work_date = ${t0}`,
     sql`select * from assignment_log where ticket_id = any(${ids}::bigint[]) and work_date = ${t0}`,
@@ -182,11 +188,23 @@ async function buildState(me) {
     sql`select person_id, sum(seconds)::int as s from time_entries where work_date = ${t0} group by 1`,
     sql`select person_id, ticket_id, running_since from timers where state = 'running'`,
     sql`select ticket_id, person_id from queue_log where ticket_id = any(${ids}::bigint[]) and work_date = ${t0}`,
+    sql`select * from diag_prompts where state = 'pending'`,
+    sql`select person_id, sum(credited_minutes)::int as m from work_log where work_date = ${t0} and outcome = 'diagnosis_completed' group by 1`,
   ]);
 
   const stateById = new Map(stateRows.map(r => [Number(r.ticket_id), r]));
   // Today's completions: worth the picked repair type's minutes (0 until one is picked).
   const issueTypeById = new Map(rsList.map(t => [t.id, t.issueType]));
+  // Pending diagnosis questions — only while the ticket still sits in a diagnosis status and diagnosis is unclaimed.
+  const diagSet = new Set(settings.diagnosisEligibleStatuses.map(x => String(x).trim().toLowerCase()));
+  const statusById = new Map(rsList.map(t => [t.id, t.status]));
+  const promptBy = new Map();
+  for (const pr of promptRows) {
+    const id = Number(pr.ticket_id);
+    if (stateById.get(id)?.diagnosis_locked) continue;
+    if (!diagSet.has(String(statusById.get(id) || "").trim().toLowerCase())) continue;
+    promptBy.set(id, { id: Number(pr.id), personId: pr.person_id, toStatus: pr.to_status });
+  }
   const completionBy = new Map();
   for (const c of bookTodayRows) {
     const id = Number(c.ticket_id);
@@ -220,6 +238,7 @@ async function buildState(me) {
     for (const r of todayBy.get(t.id) || []) (timers[r.person_id] ||= { state: "idle", runningSince: null, totalSec: 0, todaySec: 0 }).todaySec = r.s;
     return {
       id: t.id, num: t.num, subject: t.subject, status: t.status, issueType: t.issueType, customer: t.customer || "",
+      dueDay: t.dueDay || null, createdAt: t.createdAt || null,
       notOpen: !!t.notOpen,
       assignedRsUserId: t.rsUserId ?? null,
       assignedTo: t.rsUserId != null ? (personByRsUser.get(String(t.rsUserId)) || null) : null,
@@ -236,12 +255,15 @@ async function buildState(me) {
       notes: (notesBy.get(t.id) || []).map(n => ({ author: n.person_id, date: t0 })),
       queuedToday: (queueBy.get(t.id) || []).map(q => q.person_id), // people who had it in their queue today
       completion: completionBy.get(t.id) || null,
+      diagPrompt: promptBy.get(t.id) || null,
       timers,
     };
   });
 
   const personToday = {};
   for (const p of peopleRows) personToday[p.id] = { bookSec: 0, spentSec: 0, runningSince: null, runningTicketId: null };
+  // + diagnosis credits claimed today
+  for (const r of diagCreditRows) if (personToday[r.person_id]) personToday[r.person_id].bookSec += (r.m || 0) * 60;
   // Book time = each ticket resolved today, worth its repair type's minutes, split by credit shares.
   for (const c of completionBy.values()) {
     for (const sh of c.shares) if (personToday[sh.personId]) personToday[sh.personId].bookSec += Math.round((c.bookMinutes || 0) * 60 * sh.pct / 100);
@@ -332,7 +354,7 @@ async function recomputeCredits(tx, ticketId) {
   const [s] = await tx`select * from ticket_state where ticket_id = ${ticketId}`;
   const bookTimes = (await tx`select value from settings where key = 'book_times'`)[0]?.value || {};
   const dev = effectiveDevice(s?.rs_problem_type, s);
-  const rows = await tx`select id, outcome from work_log where ticket_id = ${ticketId} and work_date = ${today()}`;
+  const rows = await tx`select id, outcome from work_log where ticket_id = ${ticketId} and work_date = ${today()} and outcome <> 'diagnosis_completed'`;
   for (const r of rows) {
     await tx`update work_log set credited_minutes = ${creditedMinutes(bookTimes, dev, r.outcome)},
              repair_type = ${r.outcome === "repair_completed" ? dev.repairType : null} where id = ${r.id}`;
@@ -494,6 +516,40 @@ async function setCredit(me, { ticketId, shares, primary }) {
     await tx`update completions set primary_person = ${newPrimary} where ticket_id = ${id} and work_date = ${t0}`;
   });
   return { ok: true, reassigned: !!newPrimary && newPrimary !== c.primary_person };
+}
+
+// Answer the "Is the diagnosis 100% completed?" question.
+//  complete = false            → question goes away; diagnosis can still be claimed later (next queue → diagnosis move).
+//  complete = true, big = true  → diagnosis credit = the ticket's Diagnostics book time (30m).
+//  complete = true, big = false → diagnosis credit taken but worth 0m (repair credit still counts when resolved).
+// Diagnosis can only ever be claimed ONCE per ticket — any person, any day.
+async function answerDiagnosis(me, { ticketId, complete, bigRepair }) {
+  const id = ticketIdOf(ticketId);
+  const t0 = today();
+  return db().begin(async tx => {
+    const [pr] = await tx`select * from diag_prompts where ticket_id = ${id} and state = 'pending' for update`;
+    if (!pr) throw new HttpError(404, "There's no diagnosis question open for this ticket");
+    if (pr.person_id !== me.id && !me.is_admin) throw new HttpError(403, "That question belongs to whoever had the ticket");
+    if (!complete) {
+      await tx`update diag_prompts set state = 'declined', answered_at = now() where id = ${pr.id}`;
+      return { ok: true, claimed: false };
+    }
+    await tx`insert into ticket_state (ticket_id) values (${id}) on conflict do nothing`;
+    const [ts] = await tx`select * from ticket_state where ticket_id = ${id} for update`;
+    if (ts.diagnosis_locked) {
+      await tx`update diag_prompts set state = 'declined', answered_at = now() where id = ${pr.id}`;
+      throw new HttpError(409, "Diagnosis credit on this ticket was already claimed");
+    }
+    const bookTimes = (await tx`select value from settings where key = 'book_times'`)[0]?.value || {};
+    const dev = effectiveDevice(ts.rs_problem_type, ts);
+    const minutes = bigRepair ? (creditedMinutes(bookTimes, dev, "diagnosis_completed") || 30) : 0;
+    await tx`update ticket_state set diagnosis_claimed_by = ${pr.person_id}, diagnosis_claimed_at = ${t0}, diagnosis_locked = true, updated_at = now() where ticket_id = ${id}`;
+    await tx`insert into work_log (ticket_id, person_id, work_date, outcome, credited_minutes)
+             values (${id}, ${pr.person_id}, ${t0}, 'diagnosis_completed', ${minutes})
+             on conflict (ticket_id, person_id, work_date) do update set outcome = 'diagnosis_completed', credited_minutes = ${minutes}, logged_at = now()`;
+    await tx`update diag_prompts set state = 'claimed', answered_at = now() where id = ${pr.id}`;
+    return { ok: true, claimed: true, minutes };
+  });
 }
 
 /* ---------------- admin ---------------- */

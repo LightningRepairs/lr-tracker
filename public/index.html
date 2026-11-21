@@ -4,6 +4,8 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Lightning Repairs — Tech Tool</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=Pixelify+Sans:wght@400;600;700&display=swap" rel="stylesheet">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 24 24%27%3E%3Crect width=%2724%27 height=%2724%27 rx=%275%27 fill=%27%231596d1%27/%3E%3Cpath d=%27M13 2 3 14h7l-1 8 11-14h-7l0-6z%27 fill=%27%23ffcc00%27/%3E%3C/svg%3E">
 <style>
   /* Three themes: Light (default), Dark (logo navy), Retro (logo sky blue + yellow).
@@ -146,6 +148,37 @@
     --s1: #00ff41; --s2: #00ff41; --s3: #00ff41; --s4: #00ff41; --s5: #00ff41;
     --good: #00ff41; --good-text: #00ff41; --warning: #00ff41; --serious: #00ff41; --critical: #00ff41;
   }
+  /* 8-bit: NES/SNES — sky-blue overworld, chunky black outlines, coin yellow, square pixels */
+  :root[data-theme="8bit"] {
+    color-scheme: light;
+    --page: #5c94fc;
+    --surface: #fcfcfc;
+    --surface-2: #fce0a8;
+    --text-primary: #000000;
+    --text-secondary: #3c3c3c;
+    --text-muted: #6b6b6b;
+    --grid: #bcbcbc;
+    --baseline: #7c7c7c;
+    --border: #000000;
+    --accent: #0058f8;
+    --book: #0058f8;
+    --actual: #6844fc;
+
+    --topbar-bg: #000000;
+    --topbar-text: #fcfcfc;
+    --topbar-tab: #bcbcbc;
+    --topbar-line: #000000;
+    --tab-active: #fcbc3c;
+    --badge-bg: #c84c0c;
+    --login-bg: #5c94fc;
+    --primary-bg: #fcbc3c;
+    --primary-text: #000000;
+    --primary-border: #000000;
+    --panel-border: 4px solid #000000;
+    --panel-shadow: 6px 6px 0 #000000;
+
+    --good: #00a800; --good-text: #006800; --warning: #fcbc3c; --serious: #f87858; --critical: #d82800;
+  }
   /* Retro: logo sky blues + yellows, navy outlines (like the wordmark) */
   :root[data-theme="retro"] {
     color-scheme: light;
@@ -277,6 +310,40 @@
   :root:is([data-theme="dark"],[data-theme="blackout"]) .ticket-status.backburner,
   :root:is([data-theme="dark"],[data-theme="blackout"]) .status-chip.serious { color: var(--serious); }
   :root:is([data-theme="dark"],[data-theme="blackout"]) .timer-display.logged-warning { color: var(--warning); }
+
+  /* 8-bit: pixel fonts, no rounded corners, hard shadows, brick ground along the bottom */
+  :root[data-theme="8bit"] body { font-family: "Pixelify Sans", "Courier New", monospace; font-size: 15px; padding-bottom: 32px; }
+  /* brick "ground" pinned along the bottom of the window */
+  :root[data-theme="8bit"] body::after {
+    content: ""; position: fixed; left: 0; right: 0; bottom: 0; height: 24px; z-index: 50; pointer-events: none;
+    border-top: 3px solid #000;
+    background-color: #c84c0c;
+    background-image:
+      repeating-linear-gradient(0deg, transparent 0 10px, #000 10px 12px),
+      repeating-linear-gradient(90deg, transparent 0 22px, #000 22px 24px);
+  }
+  :root[data-theme="8bit"] *, :root[data-theme="8bit"] *::before { border-radius: 0 !important; }
+  :root[data-theme="8bit"] :is(.panel h2, .topbar .tab, .meter-title, .setting-label, .login-card h1, .booktime-stacked-heading, .trow.thead, .refresh-btn, .pos-badge) {
+    font-family: "Press Start 2P", monospace; letter-spacing: 0; font-weight: 400;
+  }
+  :root[data-theme="8bit"] .panel h2 { font-size: 12px; line-height: 1.6; }
+  :root[data-theme="8bit"] .topbar .tab { font-size: 10px; }
+  :root[data-theme="8bit"] .meter-title { font-size: 9px; }
+  :root[data-theme="8bit"] .trow.thead { font-size: 7.5px; white-space: nowrap; }
+  :root[data-theme="8bit"] .refresh-btn, :root[data-theme="8bit"] .pos-badge { font-size: 9px; color: #fcfcfc; }
+  :root[data-theme="8bit"] .meter-value { font-family: "Press Start 2P", monospace; font-size: 15px; }
+  :root[data-theme="8bit"] :is(.btn, .icon-btn, .pin-key, .device-chip, .theme-toggle-btn, select, input, textarea) {
+    border: 2px solid #000 !important; box-shadow: 2px 2px 0 #000;
+  }
+  :root[data-theme="8bit"] .btn:active, :root[data-theme="8bit"] .icon-btn:active { transform: translate(2px, 2px); box-shadow: none; }
+  :root[data-theme="8bit"] .meter-track { height: 14px; border: 2px solid #000; background: #fcfcfc; }
+  :root[data-theme="8bit"] .meter-fill { background-image: repeating-linear-gradient(90deg, transparent 0 8px, rgba(0,0,0,.18) 8px 10px); }
+  :root[data-theme="8bit"] .device-chip { background: #fcbc3c; color: #000; }
+  :root[data-theme="8bit"] .ticket-status, :root[data-theme="8bit"] .due-pill, :root[data-theme="8bit"] .status-chip { border: 2px solid #000; }
+  :root[data-theme="8bit"] .due-pill { font-size: 11px; padding: 1px 6px; }
+  :root[data-theme="8bit"] .login-card { border: 4px solid #000; box-shadow: 8px 8px 0 #000; }
+  :root[data-theme="8bit"] .bolt { color: #fcbc3c !important; filter: drop-shadow(2px 2px 0 #000); }
+  :root[data-theme="8bit"] .avatar { outline: 2px solid #000; }
 
   /* Terminal: force every colored element to black/green. Book-time verdicts stay distinguishable:
      under = plain green, slightly over = dim green box, way over = inverted (black on green). */
@@ -488,7 +555,7 @@
   /* One compact line per ticket: ticket | status | type/model/repair | book | timer | note/time | outcome */
   .trow {
     display: grid; align-items: center; column-gap: 10px;
-    grid-template-columns: minmax(190px, 1.3fr) 118px minmax(400px, 2.4fr) 56px 150px 70px minmax(190px, 1.1fr);
+    grid-template-columns: minmax(180px, 1.3fr) 92px 118px minmax(400px, 2.4fr) 56px 150px 50px minmax(170px, 1fr);
     padding: 5px 4px; border-bottom: 1px solid var(--grid); min-height: 44px;
   }
   .trow:last-child { border-bottom: none; }
@@ -524,7 +591,14 @@
   .h-book { color: var(--book) !important; }
   .h-actual { color: var(--actual) !important; }
   .trow.thead { min-height: 0; padding: 0 4px 4px; border-bottom: 1px solid var(--grid); font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-muted); }
-  .trow.thead > div:nth-child(4) { text-align: right; }
+  .trow.thead > div:nth-child(5) { text-align: right; }
+  .tcell-due { font-size: 12px; font-weight: 600; color: var(--text-secondary); white-space: nowrap; }
+  .tcell-due.none { color: var(--text-muted); }
+  .due-pill { display: inline-block; padding: 2px 9px; border-radius: 999px; font-size: 11.5px; font-weight: 800; }
+  .due-pill.today, .due-pill.overdue { background: var(--critical); color: #fff; }
+  .due-pill.tomorrow { background: var(--warning); color: #3a2a00; }
+  :root[data-theme="terminal"] .due-pill.today, :root[data-theme="terminal"] .due-pill.overdue { background: #00ff41; color: #000; text-shadow: none; }
+  :root[data-theme="terminal"] .due-pill.tomorrow { background: transparent; color: #00ff41; border: 1px dashed #00ff41; }
   .actual-btn {
     font: inherit; font-variant-numeric: tabular-nums; font-size: 12.5px; font-weight: 700; color: var(--actual);
     background: transparent; border: 1px dashed transparent; border-radius: 6px; padding: 2px 7px; min-width: 64px; text-align: right; cursor: text;
@@ -538,6 +612,20 @@
   .actual-edit input { width: 64px; text-align: right; padding: 3px 6px; border: 1.5px solid var(--actual); border-radius: 6px; font: inherit; font-size: 12.5px; background: var(--surface); color: var(--text-primary); }
   .actual-edit .hint { font-size: 10px; color: var(--text-muted); white-space: nowrap; }
   .credit-pct { width: 52px; text-align: right; }
+  .sort-options { display: flex; flex-direction: column; gap: 6px; font-size: 13px; }
+  .sort-option { display: flex; align-items: center; gap: 8px; cursor: pointer; }
+  .sort-option input { accent-color: var(--accent); }
+  .refresh-btn { background: var(--badge-bg); color: var(--topbar-text); border: none; border-radius: 999px; padding: 4px 10px; font: inherit; font-size: 11.5px; font-weight: 600; cursor: pointer; }
+  :root[data-theme="retro"] .refresh-btn { color: #fff; }
+  .refresh-btn:hover { filter: brightness(1.15); }
+  .refresh-btn.spinning { opacity: 0.6; pointer-events: none; }
+  .diag-panel { border-color: var(--book); }
+  .diag-prompt { display: grid; grid-template-columns: minmax(190px, 1.3fr) 118px 3fr; align-items: center; column-gap: 10px; padding: 8px 4px; border-bottom: 1px solid var(--grid); }
+  .diag-prompt:last-child { border-bottom: none; }
+  .diag-ask { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
+  .diag-q { font-size: 13px; margin-right: 4px; }
+  .diag-gain { font-weight: 800; margin-left: 4px; opacity: 0.85; }
+  @media (max-width: 1100px) { .diag-prompt { display: flex; flex-wrap: wrap; gap: 6px; } .diag-ask { justify-content: flex-start; } }
   .key-state { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-bottom: 4px; }
   .key-input { width: 190px; }
   .credit-line { justify-content: space-between; }
@@ -661,10 +749,10 @@ const STACK_ORDER_BY_CATEGORY = {
 };
 
 const THEMES = [
-  { key: "retro",    label: "⚡ Retro" },
-  { key: "light",    label: "☀ Light" },
+  { key: "retro",    label: "⚡ Default" },
   { key: "dark",     label: "🌙 Dark" },
   { key: "blackout", label: "◼ Blackout" },
+  { key: "8bit",     label: "👾 8-bit" },
   { key: "terminal", label: ">_ Terminal" },
 ];
 
@@ -709,6 +797,10 @@ let state = {
   manualConfirm: {},
   structDrafts: {},
   typeEditOpen: null,
+  sortMode: "default",     // My Day order: default | reverse | oldest | newest
+  diagStep: {},            // ticket id → "repair" once "diagnosis 100% completed?" was answered Yes
+  diagMinRepairTotal: 119,
+  refreshing: false,
   creditEditOpen: null,
   actualEditOpen: null,
   keyDrafts: {},           // Admin → Users: pasted API keys (never shown back once saved)
@@ -772,9 +864,9 @@ async function mutate(path, body, optimistic) {
 }
 
 let loading = null;
-async function loadState() {
+async function loadState(force) {
   const startedAt = performance.now();
-  const p = api("/state");
+  const p = api(force ? "/state?refresh=1" : "/state");
   loading = p;
   const data = await p;
   if (startedAt < lastMutationStartedAt) return; // a newer change is in flight — its own reload will land
@@ -782,10 +874,18 @@ async function loadState() {
   if (safeToRerender()) render(); else pendingRender = true;
 }
 
+// ⟳ Refresh: pull from RepairShopr now instead of waiting for the next automatic check.
+async function refreshNow() {
+  if (state.refreshing) return;
+  state.refreshing = true; render();
+  try { lastMutationStartedAt = performance.now(); await loadState(true); showToast("Up to date with RepairShopr"); }
+  catch (e) { showToast(e.message, "error"); }
+  finally { state.refreshing = false; render(); }
+}
 function applyServerState(d) {
   RS_SUBDOMAIN = d.rsSubdomain || RS_SUBDOMAIN;
   PEOPLE = Object.fromEntries(d.people.map(p => [p.id, { ...p, admin: p.isAdmin }]));
-  state.me = d.me;
+  if (state.me !== d.me) { state.me = d.me; loadSortMode(); }
   state.currentUser = PEOPLE[d.me];
   state.attendance = Object.fromEntries(d.attendance.map(a => [a.personId, a.position]));
   state.today = d.today;
@@ -793,6 +893,7 @@ function applyServerState(d) {
   state.bookTimeCategories = d.settings.bookTimes || {};
   state.overBookThresholdPct = d.settings.overBookThresholdPct;
   state.diagnosisEligibleStatuses = d.settings.diagnosisEligibleStatuses || [];
+  state.diagMinRepairTotal = d.settings.diagMinRepairTotal ?? 119;
   state.queueStatuses = d.settings.queueStatuses || [];
   state.personToday = d.personToday || {};
   state.rsError = d.rsError;
@@ -1128,6 +1229,7 @@ function renderApp() {
         ${isAdmin ? `<button class="tab ${state.tab==='admin'?'active':''}" onclick="setTab('admin')">Admin Console</button>` : ""}
       </div>
       <div class="who">
+        <button type="button" class="refresh-btn ${state.refreshing ? "spinning" : ""}" onclick="refreshNow()" title="Pull the latest from RepairShopr right now">⟳ Refresh</button>
         <div class="pos-switcher">
           ${canSwitch
             ? `<button class="pos-badge clickable" onclick="togglePositionMenu()">${esc(state.position)} ${state.positionMenuOpen ? '▲' : '▾'}</button>`
@@ -1174,8 +1276,57 @@ function findTicket(id) { return state.tickets.find(x => x.id === id); }
 // you have running/paused stays visible even if its status moved on, so you can always stop it.
 const normStatus = s => String(s || "").trim().toLowerCase();
 function isQueueStatus(status) { return state.queueStatuses.some(q => normStatus(q) === normStatus(status)); }
+const SORT_MODES = [
+  { key: "default",  label: "Default — due date, then device type, then oldest" },
+  { key: "reverse",  label: "Reverse default — top priority at the bottom" },
+  { key: "oldest",   label: "Ticket age — oldest at the top" },
+  { key: "newest",   label: "Ticket age — newest at the top" },
+];
+const createdMs = t => (t.createdAt ? Date.parse(t.createdAt) : Infinity);
 function myQueueTickets(userId) {
-  return ticketsFor(userId).filter(t => isQueueStatus(t.status) || t.timerState === "running" || t.timerState === "paused");
+  const list = ticketsFor(userId).filter(t => isQueueStatus(t.status) || t.timerState === "running" || t.timerState === "paused");
+  const mode = state.sortMode;
+  if (mode === "oldest") return list.sort((a, b) => createdMs(a) - createdMs(b));
+  if (mode === "newest") return list.sort((a, b) => createdMs(b) - createdMs(a));
+  list.sort(compareQueue);
+  return mode === "reverse" ? list.reverse() : list;
+}
+// Sort choice is per person (remembered on this device).
+function loadSortMode() {
+  const v = state.me ? store.get("lr_sort_" + state.me) : null;
+  state.sortMode = SORT_MODES.some(m => m.key === v) ? v : "default";
+}
+function setSortMode(mode) {
+  state.sortMode = mode;
+  if (state.me) store.set("lr_sort_" + state.me, mode);
+  render();
+}
+// My Day order: 1) nearest due DAY first (no due date → last)  2) device type priority
+// 3) oldest ticket first (exact created time).
+const TYPE_PRIORITY = ["Phone", "Game Console", "Tablet", "Smart Watch", "Laptop", "Desktop", "All-in-One", "Game Controller", "Other/Misc", "Service/Consult"];
+function typeRank(t) { const i = TYPE_PRIORITY.indexOf(t.issueType); return i < 0 ? TYPE_PRIORITY.length : i; }
+function compareQueue(a, b) {
+  const da = a.dueDay || "9999-12-31", db = b.dueDay || "9999-12-31";
+  if (da !== db) return da < db ? -1 : 1;
+  const ta = typeRank(a), tb = typeRank(b);
+  if (ta !== tb) return ta - tb;
+  const ca = a.createdAt ? Date.parse(a.createdAt) : Infinity, cb = b.createdAt ? Date.parse(b.createdAt) : Infinity;
+  return ca - cb;
+}
+// Whole days from today (shop time) to the due day: 0 = today, 1 = tomorrow, negative = overdue.
+function daysUntil(day) {
+  if (!day || !state.today) return null;
+  return Math.round((Date.parse(day + "T00:00:00Z") - Date.parse(state.today + "T00:00:00Z")) / 86400000);
+}
+function renderDueCell(t) {
+  const n = daysUntil(t.dueDay);
+  if (n == null) return `<div class="tcell-due none">—</div>`;
+  const d = new Date(t.dueDay + "T12:00:00Z");
+  const short = d.toLocaleDateString([], { weekday: "short", month: "numeric", day: "numeric", timeZone: "UTC" });
+  if (n < 0) return `<div class="tcell-due"><span class="due-pill overdue" title="Was due ${esc(short)}">Overdue ${esc(short.replace(/^\w+,? /, ""))}</span></div>`;
+  if (n === 0) return `<div class="tcell-due"><span class="due-pill today" title="Due today">Today</span></div>`;
+  if (n === 1) return `<div class="tcell-due"><span class="due-pill tomorrow" title="Due tomorrow">Tomorrow</span></div>`;
+  return `<div class="tcell-due" title="Due ${esc(short)}">${esc(short)}</div>`;
 }
 // Resolved today with a share of the credit for this person (by default: whoever was assigned when it was resolved).
 function myCompletedTickets(userId) {
@@ -1486,6 +1637,7 @@ function renderDay() {
       ${tickets.length ? tableHead("") : ""}
       ${ticketRows}
     </div>
+    ${renderDiagnosisSection()}
     <div class="panel">
       <h2>Your completed tickets <span class="meter-note" style="display:inline">&mdash; resolved today while assigned to you</span></h2>
       ${completed.length ? tableHead("Credit") : ""}
@@ -1494,7 +1646,7 @@ function renderDay() {
   `;
 }
 function tableHead(lastLabel) {
-  return `<div class="trow thead"><div>Ticket</div><div>Status</div><div>Type · Model · Repair</div><div class="h-book">📖 Book</div><div class="h-actual">⏱ Actual</div><div></div><div style="text-align:right">${lastLabel || ""}</div></div>`;
+  return `<div class="trow thead"><div>Ticket</div><div>${lastLabel === "Credit" ? "" : "Due"}</div><div>Status</div><div>Type · Model · Repair</div><div class="h-book">📖 Book</div><div class="h-actual">⏱ Actual</div><div></div><div style="text-align:right">${lastLabel || ""}</div></div>`;
 }
 // ⏱ Actual time for the logged-in tech — click the number to type it in (sets the total, doesn't add).
 function renderActualCell(t, controls) {
@@ -1544,6 +1696,49 @@ function saveActual(id, fromBlur) {
     t.runningSince = null; t.spentSec = minutes * 60; t.timerState = "logged";
   });
 }
+/* ----- 🩺 Diagnosis credit: appears only when one of your tickets moves from the queue into a
+   diagnosis status. One question at a time. Diagnosis can only ever be claimed once per ticket. ----- */
+function myDiagPrompts(userId) {
+  return state.tickets.filter(t => t.diagPrompt && t.diagPrompt.personId === userId && !t.diagnosisLocked);
+}
+function renderDiagnosisSection() {
+  const list = myDiagPrompts(state.me);
+  if (!list.length) return "";
+  return `
+    <div class="panel diag-panel">
+      <h2>🩺 Diagnosis credit</h2>
+      ${list.map(renderDiagPrompt).join("")}
+    </div>`;
+}
+function renderDiagPrompt(t) {
+  const step2 = state.diagStep[t.id] === "repair";
+  const diagMin = diagnosticsMinutesFor(t) || 30;
+  const question = step2
+    ? `<span class="diag-q">Will the repair total be <b>$${esc(state.diagMinRepairTotal)} or more</b> if the client accepts repairs?</span>
+       <button class="btn small primary" onclick="answerDiag(${t.id}, true, true)" title="You get ${diagMin}m diagnosis credit">Yes <span class="diag-gain">+${diagMin}m</span></button>
+       <button class="btn small" onclick="answerDiag(${t.id}, true, false)" title="Diagnosis credit is taken but worth 0m — the repair still earns its credit when resolved">No <span class="diag-gain">0m</span></button>
+       <button class="btn small ghost" onclick="diagBack(${t.id})">← Back</button>`
+    : `<span class="diag-q">Is the diagnosis for this <b>100% completed</b>?</span>
+       <button class="btn small primary" onclick="diagYes(${t.id})">Yes</button>
+       <button class="btn small" onclick="answerDiag(${t.id}, false)" title="Not yet — you (or someone else) can claim it the next time it goes back to the queue and out again">No</button>`;
+  return `
+    <div class="diag-prompt">
+      ${ticketCell(t)}
+      ${statusPill(t)}
+      <div class="diag-ask">${question}</div>
+    </div>`;
+}
+function diagYes(id) { state.diagStep[id] = "repair"; render(); }
+function diagBack(id) { delete state.diagStep[id]; render(); }
+async function answerDiag(ticketId, complete, bigRepair) {
+  const t = findTicket(ticketId);
+  delete state.diagStep[ticketId];
+  const r = await mutate("/diagnosis", { ticketId, complete, bigRepair: !!bigRepair }, () => {
+    t.diagPrompt = null;
+    if (complete) { t.diagnosisLocked = true; t.diagnosisClaimedBy = state.me; t.diagnosisClaimedAt = state.today; }
+  });
+  if (r && r.claimed) showToast(r.minutes ? `Diagnosis credit: +${r.minutes}m` : "Diagnosis credit taken (0m — repair credit still counts when it's resolved)");
+}
 function fmtTime(ms) { return ms ? new Date(ms).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }) : ""; }
 // A resolved ticket: worth its repair type's minutes, split by credit shares. Set Model/Repair type
 // here if they weren't picked before it was resolved.
@@ -1557,6 +1752,7 @@ function renderCompletedRow(t, viewerId) {
   return `
     <div class="trow" data-done="${t.id}">
       ${ticketCell(t)}
+      <div></div>
       <span class="ticket-status resolved" title="Resolved ${esc(fmtTime(c.resolvedAt))}">✓ ${esc(fmtTime(c.resolvedAt))}</span>
       ${renderDevicePicker(t)}
       <div class="tcell-book ${c.bookMinutes ? "" : "missing"}" title="${esc(bookTitle)}">${c.bookMinutes ? (pct < 100 ? `${credited}m` : fmtHM(c.bookMinutes * 60)) : "⚠ 0m"}</div>
@@ -1731,6 +1927,7 @@ function renderTicketRow(t) {
   return `
     <div class="trow" data-id="${t.id}">
       ${ticketCell(t)}
+      ${renderDueCell(t)}
       ${statusPill(t)}
       ${renderDevicePicker(t)}
       ${renderBookCell(t)}
@@ -2109,6 +2306,10 @@ function renderStatusChecklist(listKey, seenStatuses) {
     return `<label><input type="checkbox" ${selected.includes(s) ? "checked" : ""} onchange="toggleStatusIn('${listKey}', ${jsArg(s)})"> ${esc(s)} <span class="count">${seen ? `${seen.count} ticket${seen.count === 1 ? "" : "s"}` : "not seen in current tickets"}</span></label>`;
   }).join("");
 }
+function setDiagMinTotal(val) {
+  const v = Math.max(0, Math.round(Number(String(val).replace(/[^0-9.]/g, "")) || 0));
+  mutate("/admin/diag-min-total", { value: v }, () => { state.diagMinRepairTotal = v; });
+}
 function copyRaw() {
   const el = document.getElementById("rs-raw");
   if (!el) return;
@@ -2138,8 +2339,13 @@ function renderAdminRs() {
     </div>
     <div class="panel">
       <h2>Diagnosis-credit statuses</h2>
-      <div class="meter-note">Tickets sitting in a checked status (and that the tech worked on today) show up under "Diagnosis credit available". ${c ? "" : "Run the check above to list every status your open tickets are actually in."}</div>
+      <div class="meter-note">When a tech's ticket moves from an "in the queue" status into a checked status, My Day asks them "Is the diagnosis 100% completed?". Diagnosis credit can only ever be claimed once per ticket. ${c ? "" : "Run the check above to list every status your open tickets are actually in."}</div>
       <div class="check-list">${statusChecks || `<span class="meter-note">None set.</span>`}</div>
+      <div style="font-size:13px; padding-top:10px; border-top:1px solid var(--grid)">
+        Minimum repair total needed to collect a diagnosis credit <b>and</b> a repair credit on the same ticket:
+        $<input id="diag-min-input" class="booktime-input" style="width:70px" type="text" inputmode="numeric" value="${esc(state.diagMinRepairTotal)}" onchange="setDiagMinTotal(this.value)">
+        <div class="meter-note">Under this, the diagnosis credit is still taken but worth 0m.</div>
+      </div>
     </div>
     ${c && c.issueTypes ? `
     <div class="panel">
@@ -2270,10 +2476,19 @@ function renderSettings() {
       <div class="setting-row">
         <div>
           <div class="setting-label">Appearance</div>
-          <div class="meter-note">Retro is the default — your pick is remembered on this device.</div>
+          <div class="meter-note">Your pick is remembered on this device.</div>
         </div>
         <div class="theme-toggle">
           ${THEMES.map(t => `<button class="theme-toggle-btn ${state.theme === t.key ? 'active' : ''}" onclick="setTheme('${t.key}')">${t.label}</button>`).join("")}
+        </div>
+      </div>
+      <div class="setting-row" style="border-top:1px solid var(--grid); margin-top:10px; padding-top:14px; align-items:flex-start">
+        <div>
+          <div class="setting-label">My Day order</div>
+          <div class="meter-note">How "Your assigned tickets" is sorted — just for you.</div>
+        </div>
+        <div class="sort-options">
+          ${SORT_MODES.map(m => `<label class="sort-option"><input type="radio" name="sortmode" ${state.sortMode === m.key ? "checked" : ""} onchange="setSortMode('${m.key}')"> ${esc(m.label)}</label>`).join("")}
         </div>
       </div>
     </div>
