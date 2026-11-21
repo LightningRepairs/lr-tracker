@@ -24,7 +24,15 @@ const TICKETS_WAIT_MS = 4500, USERS_WAIT_MS = 3000;
 
 export const config = { path: "/api/*" };
 
-const POSITIONS = ["Technician", "Float", "Sales", "Manager"];
+const POSITIONS = ["Technician", "Float", "Sales", "Assistant Manager", "Manager"];
+// Daily goals per position, in minutes (null = no goal). Admin can change them; these are the defaults.
+const DEFAULT_GOALS = {
+  "Technician":        { book: 360, actual: 360 },
+  "Float":             { book: 240, actual: 240 },
+  "Sales":             null,
+  "Assistant Manager": { book: 120, actual: 120 },
+  "Manager":           null,
+};
 const OUTCOMES = ["diagnosis_completed", "diagnosis_incomplete", "repair_completed", "repair_incomplete"];
 const PERSON_COLORS = ["var(--s1)", "var(--s2)", "var(--s3)", "var(--s4)", "var(--s5)", "#7a5af8", "#0f9fb5", "#b5651d"];
 
@@ -70,6 +78,7 @@ export default async (req, context) => {
           case "/admin/booktime-structure": return json(await editBookTimeStructure(body));
           case "/admin/threshold":          return json(await setSetting("over_book_threshold_pct", Math.max(0, Math.round(Number(body.value) || 0))));
           case "/admin/manual-time-note":   return json(await setSetting("manual_time_note", !!body.on));
+          case "/admin/role-goal":          return json(await setRoleGoal(body));
           case "/admin/show-money":         return json(await setSetting("show_money", !!body.on));
           case "/admin/diag-min-total":     return json(await setSetting("diag_min_repair_total", Math.max(0, Math.round(Number(body.value) || 0))));
           case "/admin/eligible-statuses":  return json(await setSetting("diagnosis_eligible_statuses", (body.statuses || []).map(String).slice(0, 50)));
@@ -150,7 +159,9 @@ async function loadSettings(sql) {
     // Repair total needed to earn diagnosis credit AND repair credit on the same ticket.
     diagMinRepairTotal: Number(s.diag_min_repair_total ?? 119),
     manualTimeNote: s.manual_time_note === true,
-    showMoney: s.show_money !== false, // Team tab "Today's money" panel (on by default)
+    showMoney: s.show_money !== false,
+    positions: POSITIONS,
+    roleGoals: Object.fromEntries(POSITIONS.map(p => [p, s.role_goals && p in s.role_goals ? s.role_goals[p] : DEFAULT_GOALS[p]])), // Team tab "Today's money" panel (on by default)
     // Statuses that count as "in the queue" — only these show under "Your assigned tickets".
     queueStatuses: s.queue_statuses || DEFAULT_QUEUE_STATUSES,
   };
@@ -667,6 +678,15 @@ async function setDueDate(me, { ticketId, day }) {
 }
 
 /* ---------------- admin ---------------- */
+async function setRoleGoal({ position, book, actual }) {
+  if (!POSITIONS.includes(position)) throw new HttpError(400, "Unknown position");
+  const mins = v => { const n = Math.round(Number(v)); if (!Number.isFinite(n) || n < 0 || n > 1440) throw new HttpError(400, "Goals must be between 0 and 24 hours"); return n; };
+  const sql = db();
+  const [row] = await sql`select value from settings where key = 'role_goals'`;
+  const goals = { ...(row?.value || {}) };
+  goals[position] = book == null ? null : { book: mins(book), actual: mins(actual ?? book) };
+  return setSetting("role_goals", goals);
+}
 async function setSetting(key, value) {
   const sql = db();
   await sql`insert into settings (key, value) values (${key}, ${sql.json(value)}) on conflict (key) do update set value = excluded.value`;

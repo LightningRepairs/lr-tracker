@@ -737,11 +737,13 @@
 let RS_SUBDOMAIN = "lightningrepair"; // overwritten by the server's value on load
 function rsTicketUrl(internalId) { return `https://${RS_SUBDOMAIN}.repairshopr.com/tickets/${internalId}`; }
 
-const POSITIONS = ["Technician", "Float", "Sales", "Manager"];
-const GOALS = { // seconds
+let POSITIONS = ["Technician", "Float", "Sales", "Assistant Manager", "Manager"];
+// Daily goals per position, in seconds (null = no goal). Set by the admin (Admin Console → Daily goals); comes from the server.
+let GOALS = {
   "Technician": { book: 6*3600, spent: 6*3600 },
   "Float":      { book: 4*3600, spent: 4*3600 },
   "Sales":      null,
+  "Assistant Manager": { book: 2*3600, spent: 2*3600 },
   "Manager":    null,
 };
 const WORKDAY_START = 9, WORKDAY_END = 18; // 9a-6p, for the "on pace" tick
@@ -930,6 +932,8 @@ function applyServerState(d) {
   state.today = d.today;
   state.clockOffset = d.serverNow - Date.now();
   state.bookTimeCategories = d.settings.bookTimes || {};
+  if (d.settings.positions) POSITIONS = d.settings.positions;
+  if (d.settings.roleGoals) GOALS = Object.fromEntries(Object.entries(d.settings.roleGoals).map(([p, g]) => [p, g ? { book: g.book * 60, spent: g.actual * 60 } : null]));
   state.overBookThresholdPct = d.settings.overBookThresholdPct;
   state.diagnosisEligibleStatuses = d.settings.diagnosisEligibleStatuses || [];
   state.diagMinRepairTotal = d.settings.diagMinRepairTotal ?? 119;
@@ -2247,12 +2251,14 @@ function assignToMe(ticketId) {
 const ADMIN_MENU = [
   { key: "users",    icon: "👤", label: "Users",                  desc: "Positions, PINs & RepairShopr links per person" },
   { key: "booktime", icon: "📊", label: "Book Time Database",     desc: "Standard repair times by device type" },
+  { key: "goals",    icon: "🎯", label: "Daily goals",            desc: "Book & actual time goals for each role" },
   { key: "rs",       icon: "🔌", label: "RepairShopr connection", desc: "Check the API link, statuses & Issue Types" },
   { key: "reports",  icon: "📈", label: "Reports",                desc: "Coming soon" },
 ];
 function renderAdmin() {
   if (!state.adminSection) return renderAdminMenu();
   if (state.adminSection === "users") return renderAdminUsers();
+  if (state.adminSection === "goals") return renderAdminGoals();
   if (state.adminSection === "rs") return renderAdminRs();
   if (state.adminSection === "reports") return renderAdminReports();
   if (state.adminView === "category" && state.bookTimeCategories[state.adminCategory]) return renderBookTimeCategory();
@@ -2447,6 +2453,46 @@ function renderStatusChecklist(listKey, seenStatuses) {
     const seen = seenStatuses.find(x => x.value === s);
     return `<label><input type="checkbox" ${selected.includes(s) ? "checked" : ""} onchange="toggleStatusIn('${listKey}', ${jsArg(s)})"> ${esc(s)} <span class="count">${seen ? `${seen.count} ticket${seen.count === 1 ? "" : "s"}` : "not seen in current tickets"}</span></label>`;
   }).join("");
+}
+// ---- Admin: daily goals per role (entered in hours, stored in minutes) ----
+const hoursText = sec => { const h = sec / 3600; return String(Math.round(h * 100) / 100); };
+function parseHours(v) {
+  const n = Number(String(v).trim().replace(/h(ours?)?$/i, "").trim());
+  return Number.isFinite(n) && n >= 0 && n <= 24 ? Math.round(n * 60) : null;
+}
+function setRoleGoal(pos, field, val) {
+  const g = GOALS[pos];
+  const mins = parseHours(val);
+  if (mins == null) { showToast("Enter hours, like 5 or 4.5", "error"); render(); return; }
+  const book = field === "book" ? mins : Math.round(g.book / 60);
+  const actual = field === "actual" ? mins : Math.round(g.spent / 60);
+  mutate("/admin/role-goal", { position: pos, book, actual }, () => { GOALS[pos] = { book: book * 60, spent: actual * 60 }; });
+}
+function toggleRoleGoal(pos, on) {
+  mutate("/admin/role-goal", on ? { position: pos, book: 240, actual: 240 } : { position: pos, book: null },
+    () => { GOALS[pos] = on ? { book: 4 * 3600, spent: 4 * 3600 } : null; });
+}
+function renderAdminGoals() {
+  const rows = POSITIONS.map(pos => {
+    const g = GOALS[pos];
+    const inp = (field, sec) => `<input class="booktime-input" style="width:64px" type="text" inputmode="decimal" value="${esc(hoursText(sec))}" onchange="setRoleGoal(${jsArg(pos)}, '${field}', this.value)"> h`;
+    return `<tr>
+      <td><b>${esc(pos)}</b></td>
+      <td><label class="role-check"><input type="checkbox" ${g ? "checked" : ""} onchange="toggleRoleGoal(${jsArg(pos)}, this.checked)"> Has a goal</label></td>
+      <td>${g ? inp("book", g.book) : `<span class="meter-note">—</span>`}</td>
+      <td>${g ? inp("actual", g.spent) : `<span class="meter-note">—</span>`}</td>
+    </tr>`;
+  }).join("");
+  return `
+    ${backCrumb()}
+    <div class="panel">
+      <h2>🎯 Daily goals by role</h2>
+      <div class="meter-note" style="margin-bottom:10px">What each role aims for per day. Type hours (5, 4.5, 2.25). Changes show for everyone within ~15 seconds — including people already logged in today.</div>
+      <table>
+        <thead><tr><th>Role</th><th></th><th class="h-book">📖 Book time goal</th><th class="h-actual">⏱ Actual time goal</th></tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </div>`;
 }
 function setDiagMinTotal(val) {
   const v = Math.max(0, Math.round(Number(String(val).replace(/[^0-9.]/g, "")) || 0));
