@@ -15,6 +15,7 @@ import { encryptSecret, decryptSecret, last4 } from "../../lib/secrets.mjs";
 // undefined → the default key is used.
 const keyFor = me => decryptSecret(me.rs_api_key_enc) || undefined;
 import { syncFromRs, DEFAULT_QUEUE_STATUSES } from "../../lib/sync.mjs";
+import { syncTimers, rsTimerAction, rsTimerTotals } from "../../lib/timers.mjs";
 import { ensureSchema } from "../../lib/migrate.mjs";
 import { RS_ISSUE_TYPES } from "../../lib/booktime.mjs";
 
@@ -68,6 +69,7 @@ export default async (req, context) => {
           case "/admin/booktime-cell":      return json(await setBookTimeCell(body));
           case "/admin/booktime-structure": return json(await editBookTimeStructure(body));
           case "/admin/threshold":          return json(await setSetting("over_book_threshold_pct", Math.max(0, Math.round(Number(body.value) || 0))));
+          case "/admin/manual-time-note":   return json(await setSetting("manual_time_note", !!body.on));
           case "/admin/diag-min-total":     return json(await setSetting("diag_min_repair_total", Math.max(0, Math.round(Number(body.value) || 0))));
           case "/admin/eligible-statuses":  return json(await setSetting("diagnosis_eligible_statuses", (body.statuses || []).map(String).slice(0, 50)));
           case "/admin/queue-statuses":     return json(await setSetting("queue_statuses", (body.statuses || []).map(String).slice(0, 50)));
@@ -146,6 +148,7 @@ async function loadSettings(sql) {
     diagnosisEligibleStatuses: s.diagnosis_eligible_statuses || [],
     // Repair total needed to earn diagnosis credit AND repair credit on the same ticket.
     diagMinRepairTotal: Number(s.diag_min_repair_total ?? 119),
+    manualTimeNote: s.manual_time_note === true,
     // Statuses that count as "in the queue" — only these show under "Your assigned tickets".
     queueStatuses: s.queue_statuses || DEFAULT_QUEUE_STATUSES,
   };
@@ -160,7 +163,9 @@ async function buildState(me, { force = false } = {}) {
     loadSettings(sql),
     sql`select person_id, position from attendance where work_date = ${t0}`,
   ]);
-  const { peopleRows, rsUsers, rsError, personByRsUser } = sync;
+  const { peopleRows, rsUsers, personByRsUser } = sync;
+  let rsError = sync.rsError;
+  if (force && !rsError) { try { await syncTimers(peopleRows); } catch (e) { rsError = `Timers: ${e.message}`; } }
   const rsList = sync.list;
 
   // Tickets not on RS's open list but touched today (e.g. resolved) still need to show up.
@@ -261,6 +266,22 @@ async function buildState(me, { force = false } = {}) {
     };
   });
 
+  // RepairShopr timers (mirrored in rs_timers) count toward time spent, same as the app's own timer.
+  const ticketById = new Map(tickets.map(t => [t.id, t]));
+  let rsTimerRows = [];
+  try { rsTimerRows = await rsTimerTotals(ids); } catch (e) { console.warn("rs timers", e.message); }
+  for (const r of rsTimerRows) {
+    const pid = r.rsUserId != null ? personByRsUser.get(r.rsUserId) : null;
+    const t = pid && ticketById.get(r.ticketId);
+    if (!t) continue;
+    const x = (t.timers[pid] ||= { state: "idle", runningSince: null, totalSec: 0, todaySec: 0 });
+    x.totalSec += r.seconds; if (r.today) x.todaySec += r.seconds;
+    x.rs = true;
+    if (r.status === "running") { x.state = "running"; x.runningSince = ms(r.fetchedAt); }
+    else if (r.status === "paused" && x.state !== "running") x.state = "paused";
+    else if (r.status === "stopped" && x.state === "idle") x.state = "logged";
+  }
+
   const personToday = {};
   for (const p of peopleRows) personToday[p.id] = { bookSec: 0, spentSec: 0, runningSince: null, runningTicketId: null };
   // + diagnosis credits claimed today
@@ -271,6 +292,12 @@ async function buildState(me, { force = false } = {}) {
   }
   for (const r of spentTodayRows) if (personToday[r.person_id]) personToday[r.person_id].spentSec = r.s;
   for (const r of runningRows) if (personToday[r.person_id]) { personToday[r.person_id].runningSince = ms(r.running_since); personToday[r.person_id].runningTicketId = Number(r.ticket_id); }
+  for (const r of rsTimerRows) {
+    const pid = r.rsUserId != null ? personByRsUser.get(r.rsUserId) : null;
+    if (!pid || !personToday[pid]) continue;
+    if (r.today) personToday[pid].spentSec += r.seconds;
+    if (r.status === "running") { personToday[pid].runningSince = ms(r.fetchedAt); personToday[pid].runningTicketId = r.ticketId; }
+  }
 
   return {
     me: me.id,
@@ -309,9 +336,33 @@ async function finalizeRunning(tx, ticketId, personId, t0) {
       from timers where ticket_id = ${ticketId} and person_id = ${personId} and state = 'running' and running_since is not null`;
 }
 
+// Close out the app's own (local) timer on a ticket — used when RepairShopr's timer takes over.
+async function settleLocalTimers(me, { exceptTicket, onlyTicket, to }) {
+  const t0 = today();
+  await db().begin(async tx => {
+    const rows = await tx`select ticket_id from timers where person_id = ${me.id} and state = 'running' for update`;
+    for (const r of rows) {
+      const tid = Number(r.ticket_id);
+      if (exceptTicket != null && tid === exceptTicket) continue;
+      if (onlyTicket != null && tid !== onlyTicket) continue;
+      await finalizeRunning(tx, tid, me.id, t0);
+      await tx`update timers set state = ${to}, running_since = null where ticket_id = ${tid} and person_id = ${me.id}`;
+    }
+  });
+}
+
 async function timerAction(me, { ticketId, action }) {
   const id = ticketIdOf(ticketId);
   if (!["start", "pause", "stop"].includes(action)) throw new HttpError(400, "Bad timer action");
+  const myKey = keyFor(me);
+  if (myKey && me.rs_user_id != null) {
+    // RepairShopr's timer is the real one: drive it with this person's key.
+    await rsTimerAction(me, myKey, id, action);
+    if (action === "start") await settleLocalTimers(me, { to: "paused" });                 // nothing else may run
+    else await settleLocalTimers(me, { onlyTicket: id, to: action === "stop" ? "logged" : "paused" });
+    if (action === "stop") await db()`update timers set state = 'logged' where ticket_id = ${id} and person_id = ${me.id} and state = 'paused'`;
+    return { ok: true, rs: true };
+  }
   const t0 = today();
   await db().begin(async tx => {
     await tx`insert into timers (ticket_id, person_id) values (${id}, ${me.id}) on conflict do nothing`;
@@ -335,19 +386,31 @@ async function timerAction(me, { ticketId, action }) {
 }
 
 // SETS this person's total logged time on the ticket to exactly `minutes` (not additive), and stops the timer.
+// (Nothing is pushed to RepairShopr's timer. If the admin setting is on, a private note records it.)
 async function manualTime(me, { ticketId, minutes }) {
   const id = ticketIdOf(ticketId);
   const target = Math.round(Number(minutes) * 60);
   if (!Number.isFinite(target) || target < 0 || target > 24 * 3600) throw new HttpError(400, "Enter minutes between 0 and 1440");
   const t0 = today();
+  const myKey = keyFor(me);
+  // Stop my RepairShopr timer on this ticket first, so its time is final.
+  if (myKey && me.rs_user_id != null) { try { await rsTimerAction(me, myKey, id, "stop"); } catch (e) { console.warn("rs stop", e.message); } }
+  const [{ rsSec }] = me.rs_user_id != null
+    ? await db()`select coalesce(sum(seconds),0)::int as "rsSec" from rs_timers where ticket_id = ${id} and rs_user_id = ${me.rs_user_id}`
+    : [{ rsSec: 0 }];
   await db().begin(async tx => {
     await tx`insert into timers (ticket_id, person_id) values (${id}, ${me.id}) on conflict do nothing`;
     await tx`select 1 from timers where ticket_id = ${id} and person_id = ${me.id} for update`;
     const [{ s }] = await tx`select coalesce(sum(seconds),0)::int as s from time_entries where ticket_id = ${id} and person_id = ${me.id}`;
-    const delta = target - s;  // running segment is discarded: the typed number IS the total
+    const delta = target - (s + rsSec);  // running segment is discarded: the typed number IS the total
     if (delta !== 0) await tx`insert into time_entries (ticket_id, person_id, work_date, seconds, kind) values (${id}, ${me.id}, ${t0}, ${delta}, 'manual')`;
     await tx`update timers set state = 'logged', running_since = null where ticket_id = ${id} and person_id = ${me.id}`;
   });
+  const [note] = await db()`select value from settings where key = 'manual_time_note'`;
+  if (note?.value === true) {
+    try { await postComment(id, me.name, `${me.name} reports spending ${Math.round(target / 60)} minutes on this ticket (entered in the ticket tracker).`, myKey); }
+    catch (e) { console.warn("manual-time note", e.message); }
+  }
   return { ok: true };
 }
 

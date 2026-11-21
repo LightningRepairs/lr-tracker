@@ -814,6 +814,7 @@ let state = {
   sortMode: "default",     // My Day order: default | reverse | oldest | newest
   diagStep: {},            // ticket id → "repair" once "diagnosis 100% completed?" was answered Yes
   diagMinRepairTotal: 119,
+  manualTimeNote: false,
   refreshing: false,
   creditEditOpen: null,
   actualEditOpen: null,
@@ -908,6 +909,7 @@ function applyServerState(d) {
   state.overBookThresholdPct = d.settings.overBookThresholdPct;
   state.diagnosisEligibleStatuses = d.settings.diagnosisEligibleStatuses || [];
   state.diagMinRepairTotal = d.settings.diagMinRepairTotal ?? 119;
+  state.manualTimeNote = !!d.settings.manualTimeNote;
   state.queueStatuses = d.settings.queueStatuses || [];
   state.personToday = d.personToday || {};
   state.rsError = d.rsError;
@@ -2286,6 +2288,18 @@ async function clearDefaultKey() {
   const r = await mutate("/admin/default-key", { key: null });
   if (r) loadKeysInfo();
 }
+function setManualTimeNote(on) { mutate("/admin/manual-time-note", { on }, () => { state.manualTimeNote = on; }); }
+function renderTimerPanel() {
+  const withKey = Object.values(PEOPLE).filter(p => p.active && p.hasKey).map(p => p.name.split(" ")[0]);
+  const without = Object.values(PEOPLE).filter(p => p.active && !p.hasKey).map(p => p.name.split(" ")[0]);
+  return `
+    <div class="panel">
+      <h2>⏱ Timers</h2>
+      <div class="meter-note" style="margin-bottom:8px">People with their own API key use RepairShopr's real timer — ▶ ❚❚ ■ in the app drive it, and timers started in RepairShopr show up here within a minute (or on ⟳ Refresh). Only one timer per person ever runs; starting one pauses the other, even if nobody has the app open. People without a key use the app's own timer, which RepairShopr doesn't see.</div>
+      <div style="font-size:13px; margin-bottom:10px">Synced with RepairShopr: <b>${esc(withKey.join(", ") || "nobody yet")}</b><br>App-only timer: <b>${esc(without.join(", ") || "nobody")}</b></div>
+      <label class="sort-option"><input type="checkbox" ${state.manualTimeNote ? "checked" : ""} onchange="setManualTimeNote(this.checked)"> When someone types in their actual time, post a private note to the RepairShopr ticket ("Nathan reports spending 18 minutes on this ticket…")</label>
+    </div>`;
+}
 function renderDefaultKeyPanel() {
   const k = state.keysInfo && state.keysInfo.default;
   const now = !k ? `<span class="meter-note">Loading…</span>`
@@ -2380,6 +2394,7 @@ function renderAdminRs() {
     <label>${ISSUE_TYPE_TO_DEVICE[it.value] ? `<span class="ok-text">✓</span>` : `<span class="bad-text">–</span>`} ${esc(it.value)} <span class="count">${it.count} · ${ISSUE_TYPE_TO_DEVICE[it.value] ? `→ ${esc(ISSUE_TYPE_TO_DEVICE[it.value].category)} / ${esc(ISSUE_TYPE_TO_DEVICE[it.value].subtype)}` : "no book-time mapping (tech sets it by hand)"}</span></label>`).join("") : "";
   return `
     ${renderDefaultKeyPanel()}
+    ${renderTimerPanel()}
     <div class="panel">
       <h2>RepairShopr connection</h2>
       <div style="margin-bottom:12px"><button class="btn primary small" onclick="runRsCheck()" ${state.rsCheckLoading ? "disabled" : ""}>${state.rsCheckLoading ? "Checking…" : "Run check"}</button></div>
