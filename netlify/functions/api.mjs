@@ -7,7 +7,13 @@ import { today, shopDate } from "../../lib/time.mjs";
 import { effectiveDevice, creditedMinutes, repairMinutes } from "../../lib/booktime.mjs";
 import {
   getTickets, getUsers, assignTicket, setTicketIssueType, postComment, invalidate, patchCachedTicket, probeRs, RsError, RS_SUBDOMAIN,
+  whoIsKey, defaultKey, forgetDefaultKey,
 } from "../../lib/rs.mjs";
+import { encryptSecret, decryptSecret, last4 } from "../../lib/secrets.mjs";
+
+// The logged-in person's own RepairShopr key, if they have one — so RS records the change as them.
+// undefined → the default key is used.
+const keyFor = me => decryptSecret(me.rs_api_key_enc) || undefined;
 import { syncFromRs, DEFAULT_QUEUE_STATUSES } from "../../lib/sync.mjs";
 import { ensureSchema } from "../../lib/migrate.mjs";
 import { RS_ISSUE_TYPES } from "../../lib/booktime.mjs";
@@ -64,8 +70,14 @@ export default async (req, context) => {
           case "/admin/queue-statuses":     return json(await setSetting("queue_statuses", (body.statuses || []).map(String).slice(0, 50)));
           case "/admin/person":             return json(await upsertPerson(me, body));
           case "/admin/pin":                return json(await setPin(body));
+          case "/admin/person-key":         return json(await setPersonKey(body));
+          case "/admin/default-key":        return json(await setDefaultKey(body));
         }
       }
+    }
+    if (req.method === "GET" && route === "/admin/keys") {
+      if (!me.is_admin) throw new HttpError(403, "Admins only");
+      return json(await keysInfo());
     }
     if (req.method === "GET" && route === "/admin/rs-check") {
       if (!me.is_admin) throw new HttpError(403, "Admins only");
@@ -246,7 +258,8 @@ async function buildState(me) {
     people: peopleRows.map(p => ({
       id: p.id, name: p.name, initials: p.initials, color: p.color, isAdmin: p.is_admin,
       positions: p.positions || [], rsUserId: p.rs_user_id != null ? Number(p.rs_user_id) : null,
-      hasPin: !!p.pin_hash, active: p.active,
+      hasPin: !!p.pin_hash, active: p.active, hasKey: !!p.rs_api_key_enc,
+      ...(me.is_admin ? { keyLast4: p.rs_api_key_last4 || null, keyOwner: p.rs_api_key_owner || null } : {}),
     })),
     attendance: attendanceRows.map(a => ({ personId: a.person_id, position: a.position })),
     settings,
@@ -397,7 +410,7 @@ async function addNote(me, { ticketId, text }) {
   const [n] = await sql`insert into notes (ticket_id, person_id, work_date, body) values (${id}, ${me.id}, ${today()}, ${body}) returning id`;
   let rsPosted = false, rsError = null;
   try {
-    await postComment(id, me.name, body);
+    await postComment(id, me.name, body, keyFor(me));
     rsPosted = true;
     await sql`update notes set rs_posted = true where id = ${n.id}`;
     await invalidate(`comments:${id}`);
@@ -416,7 +429,7 @@ async function assign(me, { ticketId, personId }) {
     if (p.rs_user_id == null) throw new HttpError(400, `${p.name} isn't linked to a RepairShopr user yet (Admin Console → Users)`);
     rsUserId = Number(p.rs_user_id);
   }
-  await assignTicket(id, rsUserId);
+  await assignTicket(id, rsUserId, keyFor(me));
   await patchCachedTicket(id, { rsUserId });
   await sql`update ticket_state set rs_user_id = ${rsUserId} where ticket_id = ${id}`;
   if (personId) await sql`insert into assignment_log (ticket_id, person_id, work_date) values (${id}, ${personId}, ${today()}) on conflict do nothing`;
@@ -428,7 +441,7 @@ async function assign(me, { ticketId, personId }) {
 async function setIssueType(me, { ticketId, issueType }) {
   const id = ticketIdOf(ticketId);
   if (!RS_ISSUE_TYPES.includes(issueType)) throw new HttpError(400, "Not a RepairShopr Issue Type");
-  await setTicketIssueType(id, issueType);
+  await setTicketIssueType(id, issueType, keyFor(me));
   await patchCachedTicket(id, { issueType });
   await db().begin(async tx => {
     await tx`insert into ticket_state (ticket_id, rs_problem_type) values (${id}, ${issueType})
@@ -452,11 +465,15 @@ async function setCredit(me, { ticketId, shares, primary }) {
   for (const x of list) merged.set(x.personId, (merged.get(x.personId) || 0) + x.pct);
   const total = [...merged.values()].reduce((a, b) => a + b, 0);
   if (merged.size && total !== 100) throw new HttpError(400, `Shares must add up to 100% (they add up to ${total}%)`);
-  let newPrimary = merged.size ? (primary ? String(primary) : (merged.size === 1 ? [...merged.keys()][0] : null)) : null;
-  if (merged.size && (!newPrimary || !merged.has(newPrimary))) throw new HttpError(400, "The primary has to be one of the people getting credit");
-
   const [c] = await sql`select * from completions where ticket_id = ${id} and work_date = ${t0}`;
   if (!c) throw new HttpError(404, "That ticket isn't completed today");
+  // Primary: as given; else keep the current primary if they still have a share; else the biggest share.
+  let newPrimary = null;
+  if (merged.size) {
+    const biggest = [...merged].sort((a, b) => b[1] - a[1])[0][0];
+    newPrimary = primary ? String(primary) : (merged.has(c.primary_person) ? c.primary_person : biggest);
+    if (!merged.has(newPrimary)) throw new HttpError(400, "The primary has to be one of the people getting credit");
+  }
   const owner = c.primary_person || c.assigned_person;
   if (!me.is_admin && owner !== me.id) throw new HttpError(403, "Only the primary on this ticket (or an admin) can change its credit");
   const people = new Map((await sql`select id, name, rs_user_id from people where active`).map(r => [r.id, r]));
@@ -466,7 +483,7 @@ async function setCredit(me, { ticketId, shares, primary }) {
   if (newPrimary && newPrimary !== c.primary_person) {
     const p = people.get(newPrimary);
     if (p.rs_user_id == null) throw new HttpError(400, `${p.name} isn't linked to a RepairShopr user yet (Admin Console → Users)`);
-    await assignTicket(id, Number(p.rs_user_id));
+    await assignTicket(id, Number(p.rs_user_id), keyFor(me));
     await patchCachedTicket(id, { rsUserId: Number(p.rs_user_id) });
     await sql`update ticket_state set rs_user_id = ${Number(p.rs_user_id)} where ticket_id = ${id}`;
   }
@@ -528,6 +545,62 @@ async function editBookTimeStructure({ cat, sub, op, name, index }) {
     await tx`update settings set value = ${tx.json(bt)} where key = 'book_times'`;
     return { ok: true };
   });
+}
+
+// Save (or remove, key = null) a person's own RepairShopr API key. The key is checked with RS first:
+// it has to work, and it has to belong to the RS user this person is linked to (or it links them).
+async function setPersonKey({ personId, key }) {
+  const sql = db();
+  const [p] = await sql`select * from people where id = ${personId}`;
+  if (!p) throw new HttpError(404, "Unknown person");
+  const k = String(key || "").trim();
+  if (!k) {
+    await sql`update people set rs_api_key_enc = null, rs_api_key_last4 = null, rs_api_key_owner = null where id = ${p.id}`;
+    return { ok: true, removed: true };
+  }
+  let who;
+  try { who = await whoIsKey(k); }
+  catch (e) { throw new HttpError(400, `RepairShopr didn't accept that key (${e.message.replace(/^RepairShopr /, "").slice(0, 120)})`); }
+  if (p.rs_user_id != null && who.id != null && String(p.rs_user_id) !== String(who.id)) {
+    throw new HttpError(400, `That key belongs to ${who.name} in RepairShopr, not ${p.name}. Check you copied the right key (or fix ${p.name}'s RepairShopr link first).`);
+  }
+  if (p.rs_user_id == null && who.id != null) {
+    const [other] = await sql`select name from people where rs_user_id = ${who.id} and id <> ${p.id}`;
+    if (other) throw new HttpError(400, `That key belongs to ${who.name} in RepairShopr, who is already ${other.name} in this app — not ${p.name}.`);
+    await sql`update people set rs_user_id = ${who.id} where id = ${p.id}`;
+  }
+  await sql`update people set rs_api_key_enc = ${encryptSecret(k)}, rs_api_key_last4 = ${last4(k)}, rs_api_key_owner = ${who.name} where id = ${p.id}`;
+  return { ok: true, owner: who.name };
+}
+
+// The default key (used for reading, and for anyone without their own key). key = null → go back to Netlify's RS_API_KEY.
+async function setDefaultKey({ key }) {
+  const sql = db();
+  const k = String(key || "").trim();
+  if (!k) {
+    await sql`delete from settings where key = 'default_rs_api_key'`;
+    forgetDefaultKey();
+    return { ok: true, removed: true };
+  }
+  let who;
+  try { who = await whoIsKey(k); }
+  catch (e) { throw new HttpError(400, `RepairShopr didn't accept that key (${e.message.replace(/^RepairShopr /, "").slice(0, 120)})`); }
+  const value = { enc: encryptSecret(k), last4: last4(k), owner: who.name };
+  await sql`insert into settings (key, value) values ('default_rs_api_key', ${sql.json(value)}) on conflict (key) do update set value = excluded.value`;
+  forgetDefaultKey();
+  await invalidate("tickets");
+  return { ok: true, owner: who.name };
+}
+
+async function keysInfo() {
+  const [row] = await db()`select value from settings where key = 'default_rs_api_key'`;
+  if (row) return { default: { source: "admin", last4: row.value.last4, owner: row.value.owner } };
+  if (process.env.RS_API_KEY) {
+    let owner = null;
+    try { owner = (await whoIsKey(process.env.RS_API_KEY)).name; } catch {}
+    return { default: { source: "netlify", last4: last4(process.env.RS_API_KEY), owner } };
+  }
+  return { default: { source: "none" } };
 }
 
 function slug(name) { return String(name).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 30) || "person"; }

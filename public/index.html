@@ -538,6 +538,8 @@
   .actual-edit input { width: 64px; text-align: right; padding: 3px 6px; border: 1.5px solid var(--actual); border-radius: 6px; font: inherit; font-size: 12.5px; background: var(--surface); color: var(--text-primary); }
   .actual-edit .hint { font-size: 10px; color: var(--text-muted); white-space: nowrap; }
   .credit-pct { width: 52px; text-align: right; }
+  .key-state { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-bottom: 4px; }
+  .key-input { width: 190px; }
   .credit-line { justify-content: space-between; }
   .credit-who { display: flex; align-items: center; gap: 8px; flex: 1; min-width: 0; }
   .credit-num { display: flex; align-items: center; gap: 6px; }
@@ -708,7 +710,10 @@ let state = {
   structDrafts: {},
   typeEditOpen: null,
   creditEditOpen: null,
-  actualEditOpen: null,    // ticket whose ⏱ actual time is being typed in
+  actualEditOpen: null,
+  keyDrafts: {},           // Admin → Users: pasted API keys (never shown back once saved)
+  defaultKeyDraft: "",
+  keysInfo: null,    // ticket whose ⏱ actual time is being typed in
   actualDraft: "",    // completed ticket whose credit editor is open
   creditDraft: [],      // ticket id whose Type chip is currently showing its dropdown        // Book Time Database "add model / add repair type" inputs
   outcomeEditOpen: null,    // ticket id currently showing its outcome dropdown in "Tickets I worked on today"
@@ -1094,6 +1099,7 @@ function applyRoute() {
   state.adminView = state.adminCategory ? "category" : "home";
   state.positionMenuOpen = false;
   if (state.adminSection === "rs" && !state.rsCheck && !state.rsCheckLoading) setTimeout(runRsCheck, 0);
+  if (state.adminSection === "rs") setTimeout(loadKeysInfo, 0);
   if (!location.hash) history.replaceState(null, "", routeFromState());
 }
 function navigate() {
@@ -1969,6 +1975,7 @@ function renderAdminUsers() {
         <button class="btn small" onclick="savePin(${jsArg(p.id)})">Set</button>
         <span class="pin-state ${p.hasPin ? "ok" : ""}">${p.hasPin ? "✓ has PIN" : "no PIN yet"}</span>
       </td>
+      <td style="white-space:nowrap">${renderKeyCell(p)}</td>
       <td>${p.id === state.me ? "" : `<button class="btn ghost small" onclick="setActive(${jsArg(p.id)}, ${!p.active})">${p.active ? "Deactivate" : "Reactivate"}</button>`}</td>
     </tr>
   `).join("");
@@ -1978,7 +1985,7 @@ function renderAdminUsers() {
       <h2>Users</h2>
       <div class="meter-note" style="margin-bottom:10px;">The RepairShopr link is how the app knows which RS tickets are whose. People are auto-linked when their name matches an RS user exactly.</div>
       <table>
-        <thead><tr><th>Person</th><th>Assigned positions</th><th>RepairShopr user</th><th>PIN</th><th></th></tr></thead>
+        <thead><tr><th>Person</th><th>Assigned positions</th><th>RepairShopr user</th><th>PIN</th><th>Their RepairShopr API key</th><th></th></tr></thead>
         <tbody>${peopleRows}</tbody>
       </table>
       <div style="margin-top:14px; display:flex; gap:8px; align-items:center;">
@@ -1987,6 +1994,63 @@ function renderAdminUsers() {
       </div>
     </div>
   `;
+}
+// Each person's own RS API key: anything they push to RepairShopr (notes, assigning, Type, credit
+// re-assigns) is done with it, so RS shows it as them. No key → the default key is used.
+function renderKeyCell(p) {
+  const draft = state.keyDrafts[p.id] || "";
+  const input = `<input id="key-input-${esc(p.id)}" data-draft="1" class="admin-input key-input" type="password" autocomplete="off" placeholder="${p.keyLast4 ? "Paste a new key to replace" : "Paste their API key"}" value="${esc(draft)}" oninput="state.keyDrafts[${jsArg(p.id)}] = this.value">
+    <button class="btn small" onclick="savePersonKey(${jsArg(p.id)})">Save</button>`;
+  return p.keyLast4
+    ? `<div class="key-state"><span class="pin-state ok">✓ ••••${esc(p.keyLast4)}</span> <span class="meter-note">${esc(p.keyOwner || "")}</span>
+         <button class="bt-del" onclick="removePersonKey(${jsArg(p.id)})" title="Remove their key (they'll use the default key)">✕</button></div>${input}`
+    : `<div class="key-state"><span class="pin-state">none — uses the default key</span></div>${input}`;
+}
+async function savePersonKey(personId) {
+  const key = (state.keyDrafts[personId] || "").trim();
+  if (!key) { showToast("Paste their API key first", "error"); return; }
+  const r = await mutate("/admin/person-key", { personId, key });
+  if (r) { state.keyDrafts[personId] = ""; showToast(`Key saved — RepairShopr says it belongs to ${r.owner}`); render(); }
+}
+async function removePersonKey(personId) {
+  if (!confirm(`Remove ${PEOPLE[personId].name}'s API key? Their changes will go through the default key instead.`)) return;
+  const r = await mutate("/admin/person-key", { personId, key: null });
+  if (r) showToast("Key removed");
+}
+// Default key: used for all reading, and for anyone without their own key.
+async function loadKeysInfo() {
+  try { state.keysInfo = await api("/admin/keys"); } catch (e) { state.keysInfo = { error: e.message }; }
+  render();
+}
+async function saveDefaultKey() {
+  const key = (state.defaultKeyDraft || "").trim();
+  if (!key) { showToast("Paste the API key first", "error"); return; }
+  const r = await mutate("/admin/default-key", { key });
+  if (r) { state.defaultKeyDraft = ""; showToast(`Default key saved — it belongs to ${r.owner}`); loadKeysInfo(); }
+}
+async function clearDefaultKey() {
+  if (!confirm("Stop using the saved default key and go back to the RS_API_KEY set in Netlify?")) return;
+  const r = await mutate("/admin/default-key", { key: null });
+  if (r) loadKeysInfo();
+}
+function renderDefaultKeyPanel() {
+  const k = state.keysInfo && state.keysInfo.default;
+  const now = !k ? `<span class="meter-note">Loading…</span>`
+    : k.source === "admin" ? `<span class="ok-text">✓ Saved here</span> ••••${esc(k.last4)} — belongs to <b>${esc(k.owner || "?")}</b>`
+    : k.source === "netlify" ? `Using <b>RS_API_KEY</b> from Netlify ••••${esc(k.last4)}${k.owner ? ` — belongs to <b>${esc(k.owner)}</b>` : ""}`
+    : `<span class="bad-text">No default key set</span>`;
+  return `
+    <div class="panel">
+      ${backCrumb()}
+      <h2>Default API key</h2>
+      <div class="meter-note" style="margin-bottom:8px">Used to read everything from RepairShopr, and for changes by anyone who doesn't have their own key (set those in Admin Console → Users).</div>
+      <div style="font-size:13px; margin-bottom:10px">${now}</div>
+      <div class="key-state">
+        <input id="default-key-input" data-draft="1" class="admin-input key-input" type="password" autocomplete="off" placeholder="Paste a new default key" value="${esc(state.defaultKeyDraft || "")}" oninput="state.defaultKeyDraft = this.value">
+        <button class="btn small primary" onclick="saveDefaultKey()">Save</button>
+        ${k && k.source === "admin" ? `<button class="btn small ghost" onclick="clearDefaultKey()">Use Netlify's RS_API_KEY instead</button>` : ""}
+      </div>
+    </div>`;
 }
 function toggleRole(personId, pos) {
   const p = PEOPLE[personId];
@@ -2058,8 +2122,8 @@ function renderAdminRs() {
   const issueRows = c && c.issueTypes ? c.issueTypes.map(it => `
     <label>${ISSUE_TYPE_TO_DEVICE[it.value] ? `<span class="ok-text">✓</span>` : `<span class="bad-text">–</span>`} ${esc(it.value)} <span class="count">${it.count} · ${ISSUE_TYPE_TO_DEVICE[it.value] ? `→ ${esc(ISSUE_TYPE_TO_DEVICE[it.value].category)} / ${esc(ISSUE_TYPE_TO_DEVICE[it.value].subtype)}` : "no book-time mapping (tech sets it by hand)"}</span></label>`).join("") : "";
   return `
+    ${renderDefaultKeyPanel()}
     <div class="panel">
-      ${backCrumb()}
       <h2>RepairShopr connection</h2>
       <div style="margin-bottom:12px"><button class="btn primary small" onclick="runRsCheck()" ${state.rsCheckLoading ? "disabled" : ""}>${state.rsCheckLoading ? "Checking…" : "Run check"}</button></div>
       ${c ? `
