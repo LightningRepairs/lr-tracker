@@ -631,8 +631,12 @@
   .due-badge { display: inline-block; min-width: 15px; padding: 0 4px; margin-left: 3px; border-radius: 999px; font-size: 9.5px; font-weight: 800; text-align: center; line-height: 15px; vertical-align: top; position: relative; top: -6px; }
   .due-badge.red { background: var(--critical); color: #fff; }
   .due-badge.yellow { background: var(--warning); color: #3a2a00; box-shadow: inset 0 0 0 1.5px rgba(0,0,0,.45); }
-  .queue-group-header .due-badge { top: -8px; }
-  .queue-group-count + .due-badge { margin-left: -3px; }
+  .due-badges { display: inline-flex; gap: 2px; width: 44px; flex: none; vertical-align: top; margin-left: 2px; }
+  .due-badges .due-badge { margin-left: 0; }
+  .queue-group-header .due-badges { align-self: flex-start; margin-top: -2px; margin-left: 0; }
+  .queue-group-header .due-badge { top: 0; }
+  .ticket-count { display: inline-block; min-width: 2ch; text-align: right; font-variant-numeric: tabular-nums; }
+  .queue-group-count { min-width: 30px; text-align: center; font-variant-numeric: tabular-nums; }
   :root[data-theme="8bit"] .due-badge { border: 2px solid #000; border-radius: 0; }
   :root[data-theme="terminal"] .due-badge.red { background: #00ff41; color: #000; }
   :root[data-theme="terminal"] .due-badge.yellow { background: transparent; color: #00ff41; border: 1px dashed #00ff41; }
@@ -2116,7 +2120,7 @@ function renderTeam() {
         <td>${esc(pos)}</td>
         <td>${goals ? `<div class="mini-meter-track"><div class="mini-meter-fill book" style="width:${bookPct}%"></div></div>${fmtHM(totals.book)} / ${fmtHM(goals.book)}` : '—'}</td>
         <td>${goals ? `<div class="mini-meter-track"><div class="mini-meter-fill actual" style="width:${spentPct}%"></div></div>${fmtHM(totals.spent)} / ${fmtHM(goals.spent)}` : '—'}</td>
-        <td>${tickets.length}${dueBadges(tickets)}</td>
+        <td><span class="ticket-count">${tickets.length}</span>${dueBadges(tickets)}</td>
       </tr>
     `;
   }).join("");
@@ -2192,8 +2196,8 @@ function renderTeamCompleted() {
 function dueBadges(tickets) {
   let red = 0, yellow = 0;
   for (const t of tickets) { const n = daysUntil(t.dueDay); if (n == null) continue; if (n <= 0) red++; else if (n === 1) yellow++; }
-  return (red ? `<span class="due-badge red" title="${red} due today or overdue">${red}</span>` : "")
-       + (yellow ? `<span class="due-badge yellow" title="${yellow} due tomorrow">${yellow}</span>` : "");
+  // Always the same width (room for both), so the counts line up whether or not there are badges.
+  return `<span class="due-badges">${red ? `<span class="due-badge red" title="${red} due today or overdue">${red}</span>` : ""}${yellow ? `<span class="due-badge yellow" title="${yellow} due tomorrow">${yellow}</span>` : ""}</span>`;
 }
 function renderQueueGroup(groupKey, label, color, tickets) {
   const collapsed = !state.expandedGroups.has(groupKey);
