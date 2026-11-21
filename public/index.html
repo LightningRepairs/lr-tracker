@@ -25,6 +25,8 @@
     --baseline: #c7cbd1;
     --border: rgba(17,17,17,0.12);
     --accent: var(--brand-blue);
+    --book: #1580c0;      /* 📖 book time — blue everywhere */
+    --actual: #7a3fd6;    /* ⏱ actual time — purple everywhere */
 
     --topbar-bg: #ffffff;
     --topbar-text: #111111;
@@ -64,6 +66,8 @@
     --baseline: #2c4a7a;
     --border: rgba(255,255,255,0.12);
     --accent: #7cc4ea;
+    --book: #5cc2f2;
+    --actual: #b99bff;
 
     --topbar-bg: #081830;
     --topbar-text: #ffffff;
@@ -92,6 +96,8 @@
     --baseline: #3a3a3a;
     --border: rgba(255,255,255,0.10);
     --accent: #4fb3e8;
+    --book: #4fb3e8;
+    --actual: #b39dff;
 
     --topbar-bg: #181818;
     --topbar-text: #ececec;
@@ -121,6 +127,8 @@
     --baseline: #0b5c22;
     --border: rgba(0,255,65,0.35);
     --accent: #00ff41;
+    --book: #00ff41;
+    --actual: #00ff41;
 
     --topbar-bg: #000000;
     --topbar-text: #00ff41;
@@ -151,6 +159,8 @@
     --baseline: #7fbfe0;
     --border: #0b1e3d;
     --accent: #0b1e3d;
+    --book: #0b6fb0;
+    --actual: #6a2fc9;
 
     --topbar-bg: #1596d1;
     --topbar-text: #ffffff;
@@ -496,6 +506,7 @@
   .tcell-book { font-size: 12px; font-weight: 700; font-variant-numeric: tabular-nums; color: var(--text-secondary); text-align: right; cursor: help; }
   .trow .timer-controls { gap: 6px; }
   .trow .timer-display { min-width: 64px; font-size: 12.5px; }
+  @media (max-width: 1100px) { .trow.thead { display: none; } }
   .trow .icon-btn { width: 28px; height: 28px; }
   .icon-btn.on { border-color: var(--brand-blue); background: color-mix(in srgb, var(--brand-blue) 14%, var(--surface)); }
   .tcell-outcome { min-width: 0; display: flex; justify-content: flex-end; }
@@ -503,6 +514,32 @@
   .tcell-outcome .work-outcome-badge { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
   .diag-actions .tcell-device { width: 420px; }
   .tcell-book.missing { color: var(--critical); }
+  /* 📖 book = blue, ⏱ actual = purple — same in the top bars, column headers and every number */
+  .tcell-book { color: var(--book); }
+  .meter-card.book .meter-fill, .mini-meter-fill.book { background: var(--book); }
+  .meter-card.actual .meter-fill, .mini-meter-fill.actual { background: var(--actual); }
+  .meter-card.book .meter-value { color: var(--book); }
+  .meter-card.actual .meter-value { color: var(--actual); }
+  .meter-card .meter-value .of { color: var(--text-muted); }
+  .h-book { color: var(--book) !important; }
+  .h-actual { color: var(--actual) !important; }
+  .trow.thead { min-height: 0; padding: 0 4px 4px; border-bottom: 1px solid var(--grid); font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-muted); }
+  .trow.thead > div:nth-child(4) { text-align: right; }
+  .actual-btn {
+    font: inherit; font-variant-numeric: tabular-nums; font-size: 12.5px; font-weight: 700; color: var(--actual);
+    background: transparent; border: 1px dashed transparent; border-radius: 6px; padding: 2px 7px; min-width: 64px; text-align: right; cursor: text;
+  }
+  .actual-btn:hover { border-color: var(--actual); }
+  .actual-btn.logged-good { background: color-mix(in srgb, var(--good) 16%, transparent); }
+  .actual-btn.logged-warning { background: color-mix(in srgb, var(--warning) 26%, transparent); }
+  .actual-btn.logged-critical { background: color-mix(in srgb, var(--critical) 18%, transparent); }
+  .actual-btn.running { animation: pulse 1.4s infinite; }
+  .actual-edit { display: flex; align-items: center; gap: 4px; }
+  .actual-edit input { width: 64px; text-align: right; padding: 3px 6px; border: 1.5px solid var(--actual); border-radius: 6px; font: inherit; font-size: 12.5px; background: var(--surface); color: var(--text-primary); }
+  .actual-edit .hint { font-size: 10px; color: var(--text-muted); white-space: nowrap; }
+  .credit-pct { width: 56px; text-align: right; }
+  .credit-rest { min-width: 56px; text-align: right; font-weight: 700; }
+  .credit-msg { font-size: 11.5px; }
   .credit-chip { max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
   .credit-chip.unset { color: var(--critical); border-color: color-mix(in srgb, var(--critical) 45%, transparent); }
   .credit-editor { margin: 2px 4px 10px auto; max-width: 620px; padding: 10px 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface-2); display: flex; flex-direction: column; gap: 6px; font-size: 12.5px; }
@@ -662,7 +699,9 @@ let state = {
   manualConfirm: {},
   structDrafts: {},
   typeEditOpen: null,
-  creditEditOpen: null,    // completed ticket whose credit editor is open
+  creditEditOpen: null,
+  actualEditOpen: null,    // ticket whose ⏱ actual time is being typed in
+  actualDraft: "",    // completed ticket whose credit editor is open
   creditDraft: [],      // ticket id whose Type chip is currently showing its dropdown        // Book Time Database "add model / add repair type" inputs
   outcomeEditOpen: null,    // ticket id currently showing its outcome dropdown in "Tickets I worked on today"
   bookTimeCategories: {},
@@ -1139,7 +1178,7 @@ function computeTotals(userId) {
   const live = p.runningSince ? Math.max(0, (nowMs() - p.runningSince) / 1000) : 0;
   return { book: Math.max(0, p.bookSec), spent: Math.max(0, p.spentSec + live) };
 }
-function meterBlock(title, actualSec, goalSec) {
+function meterBlock(title, actualSec, goalSec, kind) {
   if (!goalSec) return "";
   const pct = Math.min(100, (actualSec/goalSec)*100);
   const d = new Date(nowMs());
@@ -1150,7 +1189,7 @@ function meterBlock(title, actualSec, goalSec) {
   const ahead = diff >= 0;
   const chip = `<span class="status-chip ${ahead ? 'good':'serious'}">${ahead ? '▲ Ahead' : '▼ Behind'} ${fmtHM(Math.abs(diff))}</span>`;
   return `
-    <div class="meter-card">
+    <div class="meter-card ${kind || ""}">
       <div class="meter-top">
         <span class="meter-title">${title}</span>
         ${chip}
@@ -1418,8 +1457,8 @@ function renderDay() {
 
   const meters = goals
     ? `<div class="meters-row">
-         ${meterBlock("Book time completed", totals.book, goals.book)}
-         ${meterBlock("Time spent", totals.spent, goals.spent)}
+         ${meterBlock("📖 Book time completed", totals.book, goals.book, "book")}
+         ${meterBlock("⏱ Actual time spent", totals.spent, goals.spent, "actual")}
        </div>`
     : `<div class="panel"><div class="meter-note">No repair-time goal for ${esc(state.position)} today.</div></div>`;
 
@@ -1430,13 +1469,69 @@ function renderDay() {
     ${meters}
     <div class="panel">
       <h2>Your assigned tickets</h2>
+      ${tickets.length ? tableHead("") : ""}
       ${ticketRows}
     </div>
     <div class="panel">
       <h2>Your completed tickets <span class="meter-note" style="display:inline">&mdash; resolved today while assigned to you</span></h2>
+      ${completed.length ? tableHead("Credit") : ""}
       ${doneRows}
     </div>
   `;
+}
+function tableHead(lastLabel) {
+  return `<div class="trow thead"><div>Ticket</div><div>Status</div><div>Type · Model · Repair</div><div class="h-book">📖 Book</div><div class="h-actual">⏱ Actual</div><div></div><div style="text-align:right">${lastLabel || ""}</div></div>`;
+}
+// ⏱ Actual time for the logged-in tech — click the number to type it in (sets the total, doesn't add).
+function renderActualCell(t, controls) {
+  if (state.actualEditOpen === t.id) {
+    return `<div class="timer-controls actual-edit">
+      <input id="actual-input-${t.id}" data-draft="1" type="text" inputmode="numeric" autocomplete="off"
+        value="${esc(state.actualDraft)}" placeholder="min" oninput="state.actualDraft = this.value"
+        onkeydown="if (event.key === 'Enter') saveActual(${t.id}); else if (event.key === 'Escape') cancelActual();"
+        onblur="setTimeout(() => { if (document.activeElement?.id !== 'actual-input-${t.id}') saveActual(${t.id}, true); }, 150)">
+      <button class="icon-btn" onmousedown="event.preventDefault()" onclick="saveActual(${t.id})" title="Save">✓</button>
+      <span class="hint">min or h:mm</span>
+    </div>`;
+  }
+  const running = t.timerState === "running", logged = t.timerState === "logged" || (!running && t.timerState !== "paused" && t.spentSec > 0 && !controls);
+  const book = t.completion ? (t.completion.bookMinutes || 0) * 60 : t.bookedSec;
+  const v = logged ? bookTimeVerdict(t.spentSec, book) : null;
+  const cls = running ? "running" : v ? `logged-${v.tier}` : "";
+  const tip = `${v && v.tooltip ? v.tooltip + " — " : ""}Click to type the actual time`;
+  return `<div class="timer-controls">
+    <button type="button" class="actual-btn ${cls}" onclick="openActualEdit(${t.id})" title="${esc(tip)}">${v ? v.icon + " " : ""}${fmtClock(liveSpentSec(t))}</button>
+    ${controls || ""}
+  </div>`;
+}
+function openActualEdit(id) {
+  const t = findTicket(id);
+  state.actualEditOpen = id;
+  state.actualDraft = String(Math.round(liveSpentSec(t) / 60));
+  render();
+  const el = document.getElementById(`actual-input-${id}`);
+  if (el) { el.focus(); el.select(); }
+}
+function cancelActual() { state.actualEditOpen = null; render(); }
+// "45" = 45 minutes, "1:15" = 1h 15m
+function parseMinutes(raw) {
+  const s = String(raw || "").trim();
+  let m = s.match(/^(\d+):(\d{1,2})$/);
+  if (m) return Number(m[1]) * 60 + Number(m[2]);
+  m = s.match(/^\d+$/);
+  return m ? Number(s) : null;
+}
+function saveActual(id, fromBlur) {
+  if (state.actualEditOpen !== id) return;
+  const t = findTicket(id);
+  const minutes = parseMinutes(state.actualDraft);
+  const current = Math.round(liveSpentSec(t) / 60);
+  if (minutes == null) { if (fromBlur) cancelActual(); else showToast("Type minutes (45) or hours:minutes (1:15)", "error"); return; }
+  if (fromBlur && minutes === current) { cancelActual(); return; }
+  state.actualEditOpen = null;
+  mutate("/manual-time", { ticketId: id, minutes }, () => {
+    t.runningSince = null; t.spentSec = minutes * 60; t.timerState = "logged";
+  });
 }
 function fmtTime(ms) { return ms ? new Date(ms).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }) : ""; }
 // A resolved ticket: worth its repair type's minutes, split by credit shares. Set Model/Repair type
@@ -1445,7 +1540,6 @@ function renderCompletedRow(t, viewerId) {
   const c = t.completion;
   const pct = viewerId ? myShare(t, viewerId) : 100; // Team view (no viewer) shows the full value
   const credited = Math.round((c.bookMinutes || 0) * pct / 100);
-  const v = t.spentSec ? bookTimeVerdict(t.spentSec, (c.bookMinutes || 0) * 60) : null;
   const bookTitle = c.bookMinutes
     ? `${t.repairType} = ${c.bookMinutes}m${pct < 100 ? ` · your share ${pct}% = ${credited}m` : ""}`
     : "Pick the model & repair type — this ticket earns 0m until you do";
@@ -1455,7 +1549,7 @@ function renderCompletedRow(t, viewerId) {
       <span class="ticket-status resolved" title="Resolved ${esc(fmtTime(c.resolvedAt))}">✓ ${esc(fmtTime(c.resolvedAt))}</span>
       ${renderDevicePicker(t)}
       <div class="tcell-book ${c.bookMinutes ? "" : "missing"}" title="${esc(bookTitle)}">${c.bookMinutes ? (pct < 100 ? `${credited}m` : fmtHM(c.bookMinutes * 60)) : "⚠ 0m"}</div>
-      ${viewerId ? `<div class="timer-controls"><div class="timer-display ${v ? `logged-${v.tier}` : ""}" title="${esc(v ? v.tooltip : "No time logged by you on this ticket")}">${v ? v.icon + " " : ""}${fmtClock(t.spentSec)}</div></div>` : "<div></div>"}
+      ${viewerId ? renderActualCell(t) : "<div></div>"}
       <div></div>
       <div class="tcell-outcome">${renderCreditChip(t)}</div>
     </div>
@@ -1480,47 +1574,86 @@ function renderCreditChip(t) {
 function openCreditEdit(ticketId) {
   const t = findTicket(ticketId);
   state.creditEditOpen = state.creditEditOpen === ticketId ? null : ticketId;
-  state.creditDraft = t.completion.shares.map(x => ({ ...x }));
-  if (!state.creditDraft.length) state.creditDraft = [{ personId: "", pct: 100 }];
+  state.creditDraft = t.completion.shares.map(x => ({ personId: x.personId, pct: String(x.pct) }));
+  if (!state.creditDraft.length) state.creditDraft = [{ personId: "", pct: "100" }];
   render();
 }
-function creditDraftSet(i, field, val) {
-  state.creditDraft[i][field] = field === "pct" ? val : val;
-  if (field === "personId") render();
+// The LAST person always gets "the rest", so the split adds up to 100% by itself — you only type
+// the other people's percentages.
+function creditRest() {
+  const d = state.creditDraft;
+  const others = d.slice(0, -1).reduce((a, x) => a + (parseInt(x.pct, 10) || 0), 0);
+  return 100 - others;
 }
+function creditProblem() {
+  const d = state.creditDraft;
+  if (d.some(x => !x.personId)) return "Pick a person for every line";
+  if (new Set(d.map(x => x.personId)).size !== d.length) return "Each person can only be listed once";
+  if (d.slice(0, -1).some(x => !(parseInt(x.pct, 10) >= 1))) return "Every share needs at least 1%";
+  if (creditRest() < 1) return "That's more than 100% — lower someone's share";
+  return "";
+}
+// Typing updates the "gets the rest" number and the Save button in place — no re-render while you type.
+function creditPctInput(ticketId, i, el) {
+  const clean = el.value.replace(/[^0-9]/g, "").slice(0, 3);
+  if (clean !== el.value) el.value = clean;
+  state.creditDraft[i].pct = clean;
+  const rest = document.getElementById(`credit-rest-${ticketId}`);
+  if (rest) rest.textContent = `${creditRest()}%`;
+  const msg = document.getElementById(`credit-msg-${ticketId}`);
+  const problem = creditProblem();
+  if (msg) msg.textContent = problem;
+  const save = document.getElementById(`credit-save-${ticketId}`);
+  if (save) save.disabled = !!problem;
+}
+function creditDraftSet(i, val) { state.creditDraft[i].personId = val; render(); }
 function creditDraftAdd() {
-  const used = state.creditDraft.reduce((a, x) => a + (Number(x.pct) || 0), 0);
-  state.creditDraft.push({ personId: "", pct: Math.max(0, 100 - used) });
+  const d = state.creditDraft;
+  if (d.length) d[d.length - 1].pct = String(Math.max(1, creditRest())); // old "rest" line becomes a typed share
+  d.push({ personId: "", pct: "" });
+  // start the new person at an even split
+  const even = Math.floor(100 / d.length);
+  d.slice(0, -1).forEach(x => { x.pct = String(even); });
   render();
 }
-function creditDraftRemove(i) { state.creditDraft.splice(i, 1); render(); }
-function creditGiveAll(personId) { if (personId) { state.creditDraft = [{ personId, pct: 100 }]; render(); } }
+function creditDraftRemove(i) {
+  state.creditDraft.splice(i, 1);
+  if (!state.creditDraft.length) state.creditDraft = [{ personId: "", pct: "100" }];
+  render();
+}
+function creditGiveAll(personId) { if (personId) { state.creditDraft = [{ personId, pct: "100" }]; render(); } }
 function creditSplitEven() {
-  const rows = state.creditDraft.filter(x => x.personId);
-  if (!rows.length) return;
-  const base = Math.floor(100 / rows.length);
-  rows.forEach((x, i) => { x.pct = base + (i < 100 - base * rows.length ? 1 : 0); });
-  state.creditDraft = rows; render();
+  const d = state.creditDraft;
+  const even = Math.floor(100 / d.length);
+  d.slice(0, -1).forEach(x => { x.pct = String(even); });
+  render();
 }
 async function saveCredit(ticketId) {
-  const shares = state.creditDraft.filter(x => x.personId).map(x => ({ personId: x.personId, pct: Number(x.pct) || 0 }));
-  const total = shares.reduce((a, x) => a + x.pct, 0);
-  if (shares.length && total !== 100) { showToast(`Shares add up to ${total}% — they need to add up to 100%`, "error"); return; }
+  if (creditProblem()) return;
+  const d = state.creditDraft;
+  const shares = d.map((x, i) => ({ personId: x.personId, pct: i === d.length - 1 ? creditRest() : parseInt(x.pct, 10) }));
   const r = await mutate("/credit", { ticketId, shares });
   if (r) { state.creditEditOpen = null; showToast("Credit updated"); render(); }
 }
 function renderCreditEditor(t) {
   const people = activePeople();
-  const rows = state.creditDraft.map((x, i) => `
+  const d = state.creditDraft;
+  const problem = creditProblem();
+  const rows = d.map((x, i) => {
+    const last = i === d.length - 1;
+    const pctCell = last
+      ? `<span class="credit-rest" id="credit-rest-${t.id}" title="Always gets whatever is left, so it adds up to 100%">${creditRest()}%</span> <span class="meter-note">${d.length > 1 ? "gets the rest" : ""}</span>`
+      : `<input id="credit-pct-${t.id}-${i}" data-draft="1" class="admin-input credit-pct" type="text" inputmode="numeric" autocomplete="off" value="${esc(x.pct)}" oninput="creditPctInput(${t.id}, ${i}, this)"> %`;
+    return `
     <div class="credit-line">
-      <select class="device-select" onchange="creditDraftSet(${i}, 'personId', this.value)">
+      <select class="device-select" onchange="creditDraftSet(${i}, this.value)">
         <option value="" ${!x.personId ? "selected" : ""} disabled>Person…</option>
         ${people.map(p => `<option value="${esc(p.id)}" ${x.personId === p.id ? "selected" : ""}>${esc(p.name)}</option>`).join("")}
       </select>
-      <input id="credit-pct-${t.id}-${i}" data-draft="1" class="admin-input" type="number" min="1" max="100" value="${esc(x.pct)}" oninput="creditDraftSet(${i}, 'pct', this.value)" style="width:70px"> %
-      <button class="bt-del" onclick="creditDraftRemove(${i})" title="Remove">✕</button>
-    </div>`).join("");
-  const total = state.creditDraft.reduce((a, x) => a + (x.personId ? Number(x.pct) || 0 : 0), 0);
+      ${pctCell}
+      ${d.length > 1 ? `<button class="bt-del" onclick="creditDraftRemove(${i})" title="Remove">✕</button>` : ""}
+    </div>`;
+  }).join("");
   return `
     <div class="credit-editor">
       <div class="credit-quick">
@@ -1529,15 +1662,16 @@ function renderCreditEditor(t) {
           <option value="" selected disabled>Person…</option>
           ${people.map(p => `<option value="${esc(p.id)}">${esc(p.name)}</option>`).join("")}
         </select>
-        <span class="meter-note">or split it:</span>
+        <span class="meter-note">— or split it below</span>
       </div>
       ${rows}
       <div class="credit-actions">
         <button class="btn small ghost" onclick="creditDraftAdd()">+ Add person</button>
-        <button class="btn small ghost" onclick="creditSplitEven()">Split evenly</button>
+        ${d.length > 1 ? `<button class="btn small ghost" onclick="creditSplitEven()">Split evenly</button>` : ""}
+        <span class="credit-msg bad-text" id="credit-msg-${t.id}">${esc(problem)}</span>
         <span class="meter-note" style="margin-left:auto">${t.completion.assignedPerson ? `Assigned when resolved: ${esc(firstName(t.completion.assignedPerson))}` : "Nobody was assigned when it was resolved"}</span>
         <button class="btn small" onclick="openCreditEdit(${t.id})">Cancel</button>
-        <button class="btn small primary" onclick="saveCredit(${t.id})">Save</button>
+        <button class="btn small primary" id="credit-save-${t.id}" onclick="saveCredit(${t.id})" ${problem ? "disabled" : ""}>Save</button>
       </div>
     </div>`;
 }
@@ -1546,17 +1680,6 @@ function renderTicketRow(t) {
   const paused = t.timerState === "paused";
   const logged = t.timerState === "logged";
   const note = state.noteDrafts[t.id] ?? "";
-  const manualVal = state.manualDrafts[t.id] ?? "";
-  const confirm = state.manualConfirm[t.id];
-
-  let timerClass = running ? "running" : paused ? "paused" : "";
-  let icon = "", tooltipAttr = "";
-  if (logged) {
-    const v = bookTimeVerdict(t.spentSec, t.bookedSec);
-    timerClass = `logged-${v.tier}`;
-    icon = v.icon + " ";
-    tooltipAttr = v.tooltip ? ` title="${esc(v.tooltip)}"` : "";
-  }
 
   const controls = running
     ? `<button class="icon-btn stop" onclick="toggleTimer(${t.id},'pause')" title="Pause">❚❚</button>
@@ -1571,27 +1694,15 @@ function renderTicketRow(t) {
       ${statusPill(t)}
       ${renderDevicePicker(t)}
       ${renderBookCell(t)}
-      <div class="timer-controls">
-        <div class="timer-display ${timerClass}"${tooltipAttr}>${icon}${fmtClock(liveSpentSec(t))}</div>
-        ${controls}
-      </div>
+      ${renderActualCell(t, controls)}
       <div class="ticket-actions">
         <button class="icon-btn ${state.noteOpen === t.id ? "on" : ""}" onclick="toggleNote(${t.id})" title="Quick note (also posts to RepairShopr)">📝</button>
-        <button class="icon-btn ${state.manualOpen === t.id ? "on" : ""}" onclick="toggleManual(${t.id})" title="Set time manually">⏱</button>
       </div>
       <div class="tcell-outcome"></div>
     </div>
     <div class="note-box" style="display:${state.noteOpen === t.id ? 'flex':'none'}; padding: 4px 4px 8px;">
       <textarea id="note-input-${t.id}" data-draft="1" rows="2" placeholder="Quick note — also posts to the RepairShopr ticket as a private comment" oninput="draftNote(${t.id}, this.value)">${esc(note)}</textarea>
       <button class="btn small primary" onclick="saveNote(${t.id})">Save</button>
-    </div>
-    <div class="note-box" style="display:${state.manualOpen === t.id ? 'flex':'none'}; padding: 4px 4px 8px; flex-direction: column;">
-      <div style="display:flex; gap:8px;">
-        <input id="manual-input-${t.id}" data-draft="1" type="number" min="0" step="1" placeholder="total minutes spent" value="${esc(manualVal)}" oninput="draftManual(${t.id}, this.value)">
-        <button class="btn small primary" onclick="pushManualTime(${t.id})">Set time</button>
-      </div>
-      <div class="manual-hint">This SETS your total logged time on this ticket to exactly what you enter — it replaces whatever's tracked so far${running ? ", and stops the running timer" : ""}, it doesn't add on top.</div>
-      ${confirm != null ? `<div class="manual-confirm">✓ Set your total to ${confirm}m</div>` : ""}
     </div>
   `;
 }
@@ -1670,8 +1781,8 @@ function renderTeam() {
       <tr>
         <td><div class="person-cell"><div class="avatar" style="background:${esc(p.color)}">${esc(p.initials)}</div>${esc(p.name)}${anyRunning ? '<span class="live-dot" style="margin-left:8px" title="Timer running"></span>' : ''}</div></td>
         <td>${esc(pos)}</td>
-        <td>${goals ? `<div class="mini-meter-track"><div class="mini-meter-fill" style="width:${bookPct}%"></div></div>${fmtHM(totals.book)} / ${fmtHM(goals.book)}` : '—'}</td>
-        <td>${goals ? `<div class="mini-meter-track"><div class="mini-meter-fill" style="width:${spentPct}%"></div></div>${fmtHM(totals.spent)} / ${fmtHM(goals.spent)}` : '—'}</td>
+        <td>${goals ? `<div class="mini-meter-track"><div class="mini-meter-fill book" style="width:${bookPct}%"></div></div>${fmtHM(totals.book)} / ${fmtHM(goals.book)}` : '—'}</td>
+        <td>${goals ? `<div class="mini-meter-track"><div class="mini-meter-fill actual" style="width:${spentPct}%"></div></div>${fmtHM(totals.spent)} / ${fmtHM(goals.spent)}` : '—'}</td>
         <td>${tickets.length}</td>
       </tr>
     `;
@@ -1682,7 +1793,7 @@ function renderTeam() {
       <h2>Today's team</h2>
       ${loggedInToday.length ? `
       <table>
-        <thead><tr><th>Person</th><th>Position</th><th>Book time</th><th>Time spent</th><th>Tickets</th></tr></thead>
+        <thead><tr><th>Person</th><th>Position</th><th class="h-book">📖 Book time</th><th class="h-actual">⏱ Actual time</th><th>Tickets</th></tr></thead>
         <tbody>${rows}</tbody>
       </table>` : `<div class="meter-note">Nobody's logged in yet today.</div>`}
     </div>
@@ -1702,6 +1813,7 @@ function renderTeamCompleted() {
   return `
     <div class="panel">
       <h2>Completed today <span class="meter-note" style="display:inline">&mdash; ${done.length} resolved${uncredited ? `, <span class="bad-text">${uncredited} with no one credited</span>` : ""}</span></h2>
+      ${tableHead("Credit").replace('<div class="h-actual">⏱ Actual</div>', '<div></div>')}
       ${done.map(t => renderCompletedRow(t, null)).join("")}
     </div>`;
 }
