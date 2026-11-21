@@ -467,7 +467,10 @@
   .mini-meter-fill { position: absolute; left: 0; top: 0; height: 100%; border-radius: 4px; background: var(--brand-blue); }
 
   /* ---------- QUEUE GROUPS ---------- */
-  .queue-group { border: 1px solid var(--border); border-radius: 8px; margin-bottom: 10px; overflow: hidden; }
+  .queue-group { border: 1px solid var(--border); border-radius: 8px; margin-bottom: 10px; }
+  .queue-group > .queue-group-header { border-radius: 7px; }
+  .queue-group.open > .queue-group-header { border-radius: 7px 7px 0 0; }
+  .queue-due { width: 120px; flex: none; }
   .queue-group:last-child { margin-bottom: 0; }
   .queue-group-header {
     width: 100%; display: flex; align-items: center; gap: 4px; padding: 10px 12px;
@@ -625,10 +628,11 @@
   .due-pill { display: inline-block; padding: 2px 9px; border-radius: 999px; font-size: 11.5px; font-weight: 800; }
   .due-pill.today, .due-pill.overdue { background: var(--critical); color: #fff; }
   .due-pill.tomorrow { background: var(--warning); color: #3a2a00; }
-  .due-badge { display: inline-block; min-width: 18px; padding: 1px 6px; margin-left: 6px; border-radius: 999px; font-size: 11px; font-weight: 800; text-align: center; line-height: 16px; vertical-align: middle; }
+  .due-badge { display: inline-block; min-width: 15px; padding: 0 4px; margin-left: 3px; border-radius: 999px; font-size: 9.5px; font-weight: 800; text-align: center; line-height: 15px; vertical-align: top; position: relative; top: -6px; }
   .due-badge.red { background: var(--critical); color: #fff; }
   .due-badge.yellow { background: var(--warning); color: #3a2a00; box-shadow: inset 0 0 0 1.5px rgba(0,0,0,.45); }
-  .queue-group-header .due-badge { margin: 0 6px 0 0; }
+  .queue-group-header .due-badge { top: -8px; }
+  .queue-group-count + .due-badge { margin-left: -3px; }
   :root[data-theme="8bit"] .due-badge { border: 2px solid #000; border-radius: 0; }
   :root[data-theme="terminal"] .due-badge.red { background: #00ff41; color: #000; }
   :root[data-theme="terminal"] .due-badge.yellow { background: transparent; color: #00ff41; border: 1px dashed #00ff41; }
@@ -1330,7 +1334,11 @@ const SORT_MODES = [
 ];
 const createdMs = t => (t.createdAt ? Date.parse(t.createdAt) : Infinity);
 function myQueueTickets(userId) {
-  const list = ticketsFor(userId).filter(t => isQueueStatus(t.status) || t.timerState === "running" || t.timerState === "paused");
+  return sortQueue(ticketsFor(userId).filter(t => isQueueStatus(t.status) || t.timerState === "running" || t.timerState === "paused"));
+}
+// Same order everywhere (My Day + Team tab groups), using the viewer's "My Day order" setting.
+function sortQueue(list) {
+  list = list.slice();
   const mode = state.sortMode;
   if (mode === "oldest") return list.sort((a, b) => createdMs(a) - createdMs(b));
   if (mode === "newest") return list.sort((a, b) => createdMs(b) - createdMs(a));
@@ -2191,15 +2199,15 @@ function renderQueueGroup(groupKey, label, color, tickets) {
   const collapsed = !state.expandedGroups.has(groupKey);
   const swatch = color ? `<span class="avatar" style="background:${esc(color)};width:20px;height:20px;font-size:9px;margin-right:8px">${esc((label.match(/\b\w/g)||[]).join('').slice(0,2))}</span>` : `<span style="margin-right:8px;color:var(--text-muted)">—</span>`;
   return `
-    <div class="queue-group">
+    <div class="queue-group${collapsed ? "" : " open"}">
       <button class="queue-group-header" onclick="toggleGroup(${jsArg(groupKey)})">
         <span class="queue-caret">${collapsed ? '▶' : '▼'}</span>
         ${swatch}
         <span class="queue-group-label">${esc(label)}</span>
-        ${dueBadges(tickets)}<span class="queue-group-count">${tickets.length}</span>
+        <span class="queue-group-count">${tickets.length}</span>${dueBadges(tickets)}
       </button>
       ${collapsed ? "" : (tickets.length
-        ? `<div class="queue-group-body">${tickets.map(t => renderQueueRow(t)).join("")}</div>`
+        ? `<div class="queue-group-body">${sortQueue(tickets).map(t => renderQueueRow(t)).join("")}</div>`
         : `<div class="queue-group-body"><div class="meter-note" style="padding:8px 10px">Nothing here.</div></div>`)}
     </div>
   `;
@@ -2226,6 +2234,7 @@ function renderQueueRow(t) {
     <div class="ticket-row">
       ${ticketLink(t)}
       ${statusPill(t)}
+      <div class="queue-due">${renderDueCell(t)}</div>
       ${renderCreditBadges(t)}
       ${assignControl}
     </div>
