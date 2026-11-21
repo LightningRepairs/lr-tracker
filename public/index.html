@@ -537,7 +537,15 @@
   .actual-edit { display: flex; align-items: center; gap: 4px; }
   .actual-edit input { width: 64px; text-align: right; padding: 3px 6px; border: 1.5px solid var(--actual); border-radius: 6px; font: inherit; font-size: 12.5px; background: var(--surface); color: var(--text-primary); }
   .actual-edit .hint { font-size: 10px; color: var(--text-muted); white-space: nowrap; }
-  .credit-pct { width: 56px; text-align: right; }
+  .credit-pct { width: 52px; text-align: right; }
+  .credit-line { justify-content: space-between; }
+  .credit-who { display: flex; align-items: center; gap: 8px; flex: 1; min-width: 0; }
+  .credit-num { display: flex; align-items: center; gap: 6px; }
+  .credit-min { min-width: 52px; text-align: right; color: var(--book); font-weight: 700; font-variant-numeric: tabular-nums; }
+  .credit-primary { font-size: 10px; font-weight: 800; letter-spacing: 0.05em; padding: 2px 7px; border-radius: 999px; background: var(--primary-bg); color: var(--primary-text); }
+  .credit-name { font-weight: 700; }
+  .credit-line.is-primary { padding: 4px 0; }
+  .credit-note { font-size: 12px; color: var(--text-secondary); }
   .credit-rest { min-width: 56px; text-align: right; font-weight: 700; }
   .credit-msg { font-size: 11.5px; }
   .credit-chip { max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
@@ -1487,11 +1495,11 @@ function renderActualCell(t, controls) {
   if (state.actualEditOpen === t.id) {
     return `<div class="timer-controls actual-edit">
       <input id="actual-input-${t.id}" data-draft="1" type="text" inputmode="numeric" autocomplete="off"
-        value="${esc(state.actualDraft)}" placeholder="min" oninput="state.actualDraft = this.value"
+        value="${esc(state.actualDraft)}" placeholder="min" oninput="this.value = this.value.replace(/[^0-9]/g, '').slice(0, 4); state.actualDraft = this.value"
         onkeydown="if (event.key === 'Enter') saveActual(${t.id}); else if (event.key === 'Escape') cancelActual();"
         onblur="setTimeout(() => { if (document.activeElement?.id !== 'actual-input-${t.id}') saveActual(${t.id}, true); }, 150)">
       <button class="icon-btn" onmousedown="event.preventDefault()" onclick="saveActual(${t.id})" title="Save">✓</button>
-      <span class="hint">min or h:mm</span>
+      <span class="hint">min</span>
     </div>`;
   }
   const running = t.timerState === "running", logged = t.timerState === "logged" || (!running && t.timerState !== "paused" && t.spentSec > 0 && !controls);
@@ -1513,20 +1521,17 @@ function openActualEdit(id) {
   if (el) { el.focus(); el.select(); }
 }
 function cancelActual() { state.actualEditOpen = null; render(); }
-// "45" = 45 minutes, "1:15" = 1h 15m
+// Minutes only.
 function parseMinutes(raw) {
   const s = String(raw || "").trim();
-  let m = s.match(/^(\d+):(\d{1,2})$/);
-  if (m) return Number(m[1]) * 60 + Number(m[2]);
-  m = s.match(/^\d+$/);
-  return m ? Number(s) : null;
+  return /^\d+$/.test(s) ? Number(s) : null;
 }
 function saveActual(id, fromBlur) {
   if (state.actualEditOpen !== id) return;
   const t = findTicket(id);
   const minutes = parseMinutes(state.actualDraft);
   const current = Math.round(liveSpentSec(t) / 60);
-  if (minutes == null) { if (fromBlur) cancelActual(); else showToast("Type minutes (45) or hours:minutes (1:15)", "error"); return; }
+  if (minutes == null) { if (fromBlur) cancelActual(); else showToast("Type the total minutes, like 45", "error"); return; }
   if (fromBlur && minutes === current) { cancelActual(); return; }
   state.actualEditOpen = null;
   mutate("/manual-time", { ticketId: id, minutes }, () => {
@@ -1558,33 +1563,37 @@ function renderCompletedRow(t, viewerId) {
 }
 
 /* ----- credit (who gets a completed ticket's book time) ----- */
-function canEditCredit(t) {
-  const c = t.completion;
-  return !!c && (state.currentUser.admin || c.assignedPerson === state.me || c.shares.some(sh => sh.personId === state.me));
-}
+// The PRIMARY owns a completed ticket: it's assigned to them in RepairShopr and only they (or an admin)
+// can change how its credit is split. Anyone with a share sees it in their list, read-only.
+function creditOwner(t) { return t.completion.primaryPerson || t.completion.assignedPerson || null; }
+function canEditCredit(t) { return !!t.completion && (state.currentUser.admin || creditOwner(t) === state.me); }
+function fmtMin(m) { const r = Math.round(m * 10) / 10; return `${Number.isInteger(r) ? r : r.toFixed(1)}m`; }
 function renderCreditChip(t) {
-  const sh = t.completion.shares;
+  const c = t.completion, sh = c.shares, owner = creditOwner(t);
+  const ordered = [...sh].sort((a, b) => (b.personId === owner) - (a.personId === owner));
   const label = !sh.length ? "⚠ No one credited"
     : sh.length === 1 ? `👤 ${firstName(sh[0].personId)}`
-    : sh.map(x => `${firstName(x.personId)} ${x.pct}%`).join(" · ");
+    : ordered.map(x => `${firstName(x.personId)} ${x.pct}%`).join(" · ");
+  const detail = sh.length ? ordered.map(x => `${x.personId === owner ? "(PRIMARY) " : ""}${PEOPLE[x.personId]?.name || x.personId} — ${x.pct}% · ${fmtMin((c.bookMinutes || 0) * x.pct / 100)}`).join("\n") : "";
   return canEditCredit(t)
-    ? `<button type="button" class="device-chip clickable credit-chip ${sh.length ? "" : "unset"}" onclick="openCreditEdit(${t.id})" title="Click to move or split the credit">${esc(label)}</button>`
-    : `<span class="device-chip credit-chip">${esc(label)}</span>`;
+    ? `<button type="button" class="device-chip clickable credit-chip ${sh.length ? "" : "unset"}" onclick="openCreditEdit(${t.id})" title="${esc(detail ? detail + "\n\nClick to change" : "Click to give credit")}">${esc(label)}</button>`
+    : `<span class="device-chip credit-chip" title="${esc(detail + `\n\n${firstName(owner)} is primary — only they can change this`)}">${esc(label)}</span>`;
 }
+// Draft rows: row 0 is always the primary; the LAST row always gets whatever's left, so it adds up to 100%.
 function openCreditEdit(ticketId) {
   const t = findTicket(ticketId);
   state.creditEditOpen = state.creditEditOpen === ticketId ? null : ticketId;
-  state.creditDraft = t.completion.shares.map(x => ({ personId: x.personId, pct: String(x.pct) }));
-  if (!state.creditDraft.length) state.creditDraft = [{ personId: "", pct: "100" }];
+  const owner = creditOwner(t);
+  const rows = t.completion.shares.map(x => ({ personId: x.personId, pct: String(x.pct) }))
+    .sort((a, b) => (b.personId === owner) - (a.personId === owner));
+  state.creditDraft = rows.length ? rows : [{ personId: owner || "", pct: "100" }];
   render();
 }
-// The LAST person always gets "the rest", so the split adds up to 100% by itself — you only type
-// the other people's percentages.
 function creditRest() {
   const d = state.creditDraft;
-  const others = d.slice(0, -1).reduce((a, x) => a + (parseInt(x.pct, 10) || 0), 0);
-  return 100 - others;
+  return 100 - d.slice(0, -1).reduce((a, x) => a + (parseInt(x.pct, 10) || 0), 0);
 }
+function creditPct(i) { const d = state.creditDraft; return i === d.length - 1 ? creditRest() : (parseInt(d[i].pct, 10) || 0); }
 function creditProblem() {
   const d = state.creditDraft;
   if (d.some(x => !x.personId)) return "Pick a person for every line";
@@ -1593,32 +1602,41 @@ function creditProblem() {
   if (creditRest() < 1) return "That's more than 100% — lower someone's share";
   return "";
 }
-// Typing updates the "gets the rest" number and the Save button in place — no re-render while you type.
+// Typing only touches the numbers next to it — no re-render, so the cursor never jumps.
 function creditPctInput(ticketId, i, el) {
   const clean = el.value.replace(/[^0-9]/g, "").slice(0, 3);
   if (clean !== el.value) el.value = clean;
   state.creditDraft[i].pct = clean;
+  const t = findTicket(ticketId), book = t.completion.bookMinutes || 0, d = state.creditDraft;
+  d.forEach((x, k) => {
+    const m = document.getElementById(`credit-min-${ticketId}-${k}`);
+    if (m) m.textContent = fmtMin(book * creditPct(k) / 100);
+  });
   const rest = document.getElementById(`credit-rest-${ticketId}`);
   if (rest) rest.textContent = `${creditRest()}%`;
-  const msg = document.getElementById(`credit-msg-${ticketId}`);
   const problem = creditProblem();
-  if (msg) msg.textContent = problem;
-  const save = document.getElementById(`credit-save-${ticketId}`);
-  if (save) save.disabled = !!problem;
+  const msg = document.getElementById(`credit-msg-${ticketId}`); if (msg) msg.textContent = problem;
+  const save = document.getElementById(`credit-save-${ticketId}`); if (save) save.disabled = !!problem;
 }
 function creditDraftSet(i, val) { state.creditDraft[i].personId = val; render(); }
 function creditDraftAdd() {
   const d = state.creditDraft;
-  if (d.length) d[d.length - 1].pct = String(Math.max(1, creditRest())); // old "rest" line becomes a typed share
   d.push({ personId: "", pct: "" });
-  // start the new person at an even split
   const even = Math.floor(100 / d.length);
   d.slice(0, -1).forEach(x => { x.pct = String(even); });
   render();
 }
 function creditDraftRemove(i) {
+  if (i === 0) return; // the primary can't be removed — make someone else primary first
   state.creditDraft.splice(i, 1);
-  if (!state.creditDraft.length) state.creditDraft = [{ personId: "", pct: "100" }];
+  render();
+}
+function creditMakePrimary(i) {
+  const d = state.creditDraft;
+  const pcts = d.map((x, k) => creditPct(k));
+  const [row] = d.splice(i, 1); const [pct] = pcts.splice(i, 1);
+  d.unshift(row); pcts.unshift(pct);
+  d.forEach((x, k) => { x.pct = String(pcts[k]); }); // keep everyone's share as it was
   render();
 }
 function creditGiveAll(personId) { if (personId) { state.creditDraft = [{ personId, pct: "100" }]; render(); } }
@@ -1630,51 +1648,67 @@ function creditSplitEven() {
 }
 async function saveCredit(ticketId) {
   if (creditProblem()) return;
+  const t = findTicket(ticketId);
   const d = state.creditDraft;
-  const shares = d.map((x, i) => ({ personId: x.personId, pct: i === d.length - 1 ? creditRest() : parseInt(x.pct, 10) }));
-  const r = await mutate("/credit", { ticketId, shares });
-  if (r) { state.creditEditOpen = null; showToast("Credit updated"); render(); }
+  const shares = d.map((x, i) => ({ personId: x.personId, pct: creditPct(i) }));
+  const primary = d[0].personId;
+  const r = await mutate("/credit", { ticketId, shares, primary });
+  if (r) {
+    state.creditEditOpen = null;
+    showToast(r.reassigned ? `Credit updated — ticket re-assigned to ${PEOPLE[primary]?.name || primary} in RepairShopr` : "Credit updated");
+    render();
+  }
 }
 function renderCreditEditor(t) {
   const people = activePeople();
   const d = state.creditDraft;
+  const book = t.completion.bookMinutes || 0;
+  const owner = creditOwner(t);
   const problem = creditProblem();
+  const nameOf = pid => `${PEOPLE[pid]?.name || "—"}${pid === state.me ? " (you)" : ""}`;
   const rows = d.map((x, i) => {
-    const last = i === d.length - 1;
+    const last = i === d.length - 1, primary = i === 0;
+    const who = primary && x.personId
+      ? `<span class="credit-primary">PRIMARY</span> <span class="credit-name">${esc(nameOf(x.personId))}</span>`
+      : `${primary ? `<span class="credit-primary">PRIMARY</span>` : `<button class="btn small" onclick="creditMakePrimary(${i})" ${x.personId ? "" : "disabled"} title="Make them primary — re-assigns the ticket to them in RepairShopr">Make primary</button>`}
+         <select class="device-select" onchange="creditDraftSet(${i}, this.value)">
+           <option value="" ${!x.personId ? "selected" : ""} disabled>Person…</option>
+           ${people.map(p => `<option value="${esc(p.id)}" ${x.personId === p.id ? "selected" : ""}>${esc(p.name)}${p.id === state.me ? " (you)" : ""}</option>`).join("")}
+         </select>`;
     const pctCell = last
-      ? `<span class="credit-rest" id="credit-rest-${t.id}" title="Always gets whatever is left, so it adds up to 100%">${creditRest()}%</span> <span class="meter-note">${d.length > 1 ? "gets the rest" : ""}</span>`
-      : `<input id="credit-pct-${t.id}-${i}" data-draft="1" class="admin-input credit-pct" type="text" inputmode="numeric" autocomplete="off" value="${esc(x.pct)}" oninput="creditPctInput(${t.id}, ${i}, this)"> %`;
+      ? `<span class="credit-rest" id="credit-rest-${t.id}" title="Gets whatever is left, so it always adds up to 100%">${creditRest()}%</span>`
+      : `<input id="credit-pct-${t.id}-${i}" data-draft="1" class="admin-input credit-pct" type="text" inputmode="numeric" autocomplete="off" value="${esc(x.pct)}" oninput="creditPctInput(${t.id}, ${i}, this)"><span>%</span>`;
     return `
-    <div class="credit-line">
-      <select class="device-select" onchange="creditDraftSet(${i}, this.value)">
-        <option value="" ${!x.personId ? "selected" : ""} disabled>Person…</option>
-        ${people.map(p => `<option value="${esc(p.id)}" ${x.personId === p.id ? "selected" : ""}>${esc(p.name)}</option>`).join("")}
-      </select>
-      ${pctCell}
-      ${d.length > 1 ? `<button class="bt-del" onclick="creditDraftRemove(${i})" title="Remove">✕</button>` : ""}
+    <div class="credit-line ${primary ? "is-primary" : ""}">
+      <div class="credit-who">${who}</div>
+      <div class="credit-num">${pctCell}<span class="credit-min" id="credit-min-${t.id}-${i}" title="Book-time minutes in this share">${fmtMin(book * creditPct(i) / 100)}</span></div>
+      ${!primary ? `<button class="bt-del" onclick="creditDraftRemove(${i})" title="Remove">✕</button>` : `<span style="width:18px"></span>`}
     </div>`;
   }).join("");
+  const newPrimary = d[0].personId && d[0].personId !== owner;
   return `
     <div class="credit-editor">
       <div class="credit-quick">
         Give all to
         <select class="device-select" onchange="creditGiveAll(this.value)">
           <option value="" selected disabled>Person…</option>
-          ${people.map(p => `<option value="${esc(p.id)}">${esc(p.name)}</option>`).join("")}
+          ${people.map(p => `<option value="${esc(p.id)}">${esc(p.name)}${p.id === state.me ? " (you)" : ""}</option>`).join("")}
         </select>
-        <span class="meter-note">— or split it below</span>
+        <span class="meter-note">— or share it below. ${book ? `Worth ${fmtMin(book)} total.` : "Pick a repair type to give it a value."}</span>
       </div>
       ${rows}
+      ${newPrimary ? `<div class="credit-note">Saving re-assigns this ticket to <b>${esc(PEOPLE[d[0].personId]?.name || "")}</b> in RepairShopr and makes them primary — you won't be able to change it after.</div>` : ""}
       <div class="credit-actions">
-        <button class="btn small ghost" onclick="creditDraftAdd()">+ Add person</button>
+        <button class="btn small ghost" onclick="creditDraftAdd()">+ Share with someone</button>
         ${d.length > 1 ? `<button class="btn small ghost" onclick="creditSplitEven()">Split evenly</button>` : ""}
         <span class="credit-msg bad-text" id="credit-msg-${t.id}">${esc(problem)}</span>
-        <span class="meter-note" style="margin-left:auto">${t.completion.assignedPerson ? `Assigned when resolved: ${esc(firstName(t.completion.assignedPerson))}` : "Nobody was assigned when it was resolved"}</span>
+        <span style="margin-left:auto"></span>
         <button class="btn small" onclick="openCreditEdit(${t.id})">Cancel</button>
         <button class="btn small primary" id="credit-save-${t.id}" onclick="saveCredit(${t.id})" ${problem ? "disabled" : ""}>Save</button>
       </div>
     </div>`;
 }
+
 function renderTicketRow(t) {
   const running = t.timerState === "running";
   const paused = t.timerState === "paused";

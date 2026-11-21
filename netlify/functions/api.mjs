@@ -183,7 +183,7 @@ async function buildState(me) {
     const mins = repairMinutes(settings.bookTimes, dev, dev.repairType) || 0;
     if (c.book_minutes !== mins) await sql`update completions set book_minutes = ${mins} where ticket_id = ${id} and work_date = ${t0}`;
     completionBy.set(id, {
-      resolvedAt: ms(c.resolved_at), assignedPerson: c.assigned_person || null,
+      resolvedAt: ms(c.resolved_at), assignedPerson: c.assigned_person || null, primaryPerson: c.primary_person || null,
       assignedRsUser: c.assigned_rs_user != null ? Number(c.assigned_rs_user) : null,
       bookMinutes: mins, shares: c.shares || [],
     });
@@ -439,33 +439,44 @@ async function setIssueType(me, { ticketId, issueType }) {
   return { ok: true };
 }
 
-// Move all or part of a completed ticket's credit. shares = [{ personId, pct }], whole percents summing to 100.
-// Allowed for admins, the person it was assigned to, and anyone currently holding a share.
-async function setCredit(me, { ticketId, shares }) {
+// Set how a completed ticket's credit is split. Only the PRIMARY (or an admin) can do this. shares =
+// [{ personId, pct }] in whole percents summing to 100; primary = who owns it from now on. Changing the
+// primary also re-assigns the ticket to that person in RepairShopr.
+async function setCredit(me, { ticketId, shares, primary }) {
   const id = ticketIdOf(ticketId);
   const t0 = today();
+  const sql = db();
   const list = (Array.isArray(shares) ? shares : []).map(x => ({ personId: String(x.personId || ""), pct: Math.round(Number(x.pct)) }))
     .filter(x => x.personId && x.pct > 0);
   const merged = new Map();
   for (const x of list) merged.set(x.personId, (merged.get(x.personId) || 0) + x.pct);
   const total = [...merged.values()].reduce((a, b) => a + b, 0);
   if (merged.size && total !== 100) throw new HttpError(400, `Shares must add up to 100% (they add up to ${total}%)`);
-  if ([...merged.values()].some(p => p < 1 || p > 100)) throw new HttpError(400, "Each share must be 1–100%");
-  await db().begin(async tx => {
-    const [c] = await tx`select * from completions where ticket_id = ${id} and work_date = ${t0} for update`;
-    if (!c) throw new HttpError(404, "That ticket isn't completed today");
-    const cur = await tx`select person_id from credit_shares where ticket_id = ${id} and work_date = ${t0}`;
-    const allowed = me.is_admin || c.assigned_person === me.id || cur.some(r => r.person_id === me.id);
-    if (!allowed) throw new HttpError(403, "Only the credited tech or an admin can move this credit");
-    if (merged.size) {
-      const known = new Set((await tx`select id from people where active`).map(r => r.id));
-      for (const pid of merged.keys()) if (!known.has(pid)) throw new HttpError(400, `Unknown person: ${pid}`);
-    }
+  let newPrimary = merged.size ? (primary ? String(primary) : (merged.size === 1 ? [...merged.keys()][0] : null)) : null;
+  if (merged.size && (!newPrimary || !merged.has(newPrimary))) throw new HttpError(400, "The primary has to be one of the people getting credit");
+
+  const [c] = await sql`select * from completions where ticket_id = ${id} and work_date = ${t0}`;
+  if (!c) throw new HttpError(404, "That ticket isn't completed today");
+  const owner = c.primary_person || c.assigned_person;
+  if (!me.is_admin && owner !== me.id) throw new HttpError(403, "Only the primary on this ticket (or an admin) can change its credit");
+  const people = new Map((await sql`select id, name, rs_user_id from people where active`).map(r => [r.id, r]));
+  for (const pid of merged.keys()) if (!people.has(pid)) throw new HttpError(400, `Unknown person: ${pid}`);
+
+  // New primary → re-assign the ticket in RepairShopr first (if that fails, nothing changes).
+  if (newPrimary && newPrimary !== c.primary_person) {
+    const p = people.get(newPrimary);
+    if (p.rs_user_id == null) throw new HttpError(400, `${p.name} isn't linked to a RepairShopr user yet (Admin Console → Users)`);
+    await assignTicket(id, Number(p.rs_user_id));
+    await patchCachedTicket(id, { rsUserId: Number(p.rs_user_id) });
+    await sql`update ticket_state set rs_user_id = ${Number(p.rs_user_id)} where ticket_id = ${id}`;
+  }
+  await sql.begin(async tx => {
     await tx`delete from credit_shares where ticket_id = ${id} and work_date = ${t0}`;
     const rows = [...merged].map(([person_id, pct]) => ({ ticket_id: id, work_date: t0, person_id, pct }));
     if (rows.length) await tx`insert into credit_shares ${tx(rows, "ticket_id", "work_date", "person_id", "pct")}`;
+    await tx`update completions set primary_person = ${newPrimary} where ticket_id = ${id} and work_date = ${t0}`;
   });
-  return { ok: true };
+  return { ok: true, reassigned: !!newPrimary && newPrimary !== c.primary_person };
 }
 
 /* ---------------- admin ---------------- */
