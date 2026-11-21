@@ -625,6 +625,13 @@
   .due-pill { display: inline-block; padding: 2px 9px; border-radius: 999px; font-size: 11.5px; font-weight: 800; }
   .due-pill.today, .due-pill.overdue { background: var(--critical); color: #fff; }
   .due-pill.tomorrow { background: var(--warning); color: #3a2a00; }
+  .due-badge { display: inline-block; min-width: 18px; padding: 1px 6px; margin-left: 6px; border-radius: 999px; font-size: 11px; font-weight: 800; text-align: center; line-height: 16px; vertical-align: middle; }
+  .due-badge.red { background: var(--critical); color: #fff; }
+  .due-badge.yellow { background: var(--warning); color: #3a2a00; box-shadow: inset 0 0 0 1.5px rgba(0,0,0,.45); }
+  .queue-group-header .due-badge { margin: 0 6px 0 0; }
+  :root[data-theme="8bit"] .due-badge { border: 2px solid #000; border-radius: 0; }
+  :root[data-theme="terminal"] .due-badge.red { background: #00ff41; color: #000; }
+  :root[data-theme="terminal"] .due-badge.yellow { background: transparent; color: #00ff41; border: 1px dashed #00ff41; }
   :root[data-theme="terminal"] .due-pill.today, :root[data-theme="terminal"] .due-pill.overdue { background: #00ff41; color: #000; text-shadow: none; }
   :root[data-theme="terminal"] .due-pill.tomorrow { background: transparent; color: #00ff41; border: 1px dashed #00ff41; }
   .actual-btn {
@@ -2097,7 +2104,7 @@ function renderTeam() {
         <td>${esc(pos)}</td>
         <td>${goals ? `<div class="mini-meter-track"><div class="mini-meter-fill book" style="width:${bookPct}%"></div></div>${fmtHM(totals.book)} / ${fmtHM(goals.book)}` : '—'}</td>
         <td>${goals ? `<div class="mini-meter-track"><div class="mini-meter-fill actual" style="width:${spentPct}%"></div></div>${fmtHM(totals.spent)} / ${fmtHM(goals.spent)}` : '—'}</td>
-        <td>${tickets.length}</td>
+        <td>${tickets.length}${dueBadges(tickets)}</td>
       </tr>
     `;
   }).join("");
@@ -2169,6 +2176,13 @@ function renderTeamCompleted() {
       ${done.map(t => renderCompletedRow(t, null)).join("")}
     </div>`;
 }
+// Red = due today or overdue, yellow = due tomorrow (counts only; nothing shown when zero).
+function dueBadges(tickets) {
+  let red = 0, yellow = 0;
+  for (const t of tickets) { const n = daysUntil(t.dueDay); if (n == null) continue; if (n <= 0) red++; else if (n === 1) yellow++; }
+  return (red ? `<span class="due-badge red" title="${red} due today or overdue">${red}</span>` : "")
+       + (yellow ? `<span class="due-badge yellow" title="${yellow} due tomorrow">${yellow}</span>` : "");
+}
 function renderQueueGroup(groupKey, label, color, tickets) {
   const collapsed = !state.expandedGroups.has(groupKey);
   const swatch = color ? `<span class="avatar" style="background:${esc(color)};width:20px;height:20px;font-size:9px;margin-right:8px">${esc((label.match(/\b\w/g)||[]).join('').slice(0,2))}</span>` : `<span style="margin-right:8px;color:var(--text-muted)">—</span>`;
@@ -2178,7 +2192,7 @@ function renderQueueGroup(groupKey, label, color, tickets) {
         <span class="queue-caret">${collapsed ? '▶' : '▼'}</span>
         ${swatch}
         <span class="queue-group-label">${esc(label)}</span>
-        <span class="queue-group-count">${tickets.length}</span>
+        ${dueBadges(tickets)}<span class="queue-group-count">${tickets.length}</span>
       </button>
       ${collapsed ? "" : (tickets.length
         ? `<div class="queue-group-body">${tickets.map(t => renderQueueRow(t)).join("")}</div>`
