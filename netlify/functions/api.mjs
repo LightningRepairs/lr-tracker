@@ -18,6 +18,7 @@ import { syncFromRs, DEFAULT_QUEUE_STATUSES } from "../../lib/sync.mjs";
 import { syncTimers, syncTimersThrottled, rsTimerAction, rsTimerTotals } from "../../lib/timers.mjs";
 import { ensureSchema } from "../../lib/migrate.mjs";
 import { RS_ISSUE_TYPES } from "../../lib/booktime.mjs";
+import { buildReport, syncInvoiceSnaps, laborProducts } from "../../lib/reports.mjs";
 
 // Time budgets so a page load always answers well inside Netlify's ~10s function limit.
 const TICKETS_WAIT_MS = 4500, USERS_WAIT_MS = 3000;
@@ -79,6 +80,7 @@ export default async (req, context) => {
           case "/admin/threshold":          return json(await setSetting("over_book_threshold_pct", Math.max(0, Math.round(Number(body.value) || 0))));
           case "/admin/manual-time-note":   return json(await setSetting("manual_time_note", !!body.on));
           case "/admin/role-goal":          return json(await setRoleGoal(body));
+          case "/admin/labor-category":     return json(await setLaborCategory(body));
           case "/admin/show-money":         return json(await setSetting("show_money", !!body.on));
           case "/admin/diag-min-total":     return json(await setSetting("diag_min_repair_total", Math.max(0, Math.round(Number(body.value) || 0))));
           case "/admin/eligible-statuses":  return json(await setSetting("diagnosis_eligible_statuses", (body.statuses || []).map(String).slice(0, 50)));
@@ -93,6 +95,10 @@ export default async (req, context) => {
     if (req.method === "GET" && route === "/admin/keys") {
       if (!me.is_admin) throw new HttpError(403, "Admins only");
       return json(await keysInfo());
+    }
+    if (req.method === "GET" && route === "/admin/report") {
+      if (!me.is_admin) throw new HttpError(403, "Admins only");
+      return json(await report(url.searchParams));
     }
     if (req.method === "GET" && route === "/admin/rs-check") {
       if (!me.is_admin) throw new HttpError(403, "Admins only");
@@ -678,6 +684,37 @@ async function setDueDate(me, { ticketId, day }) {
 }
 
 /* ---------------- admin ---------------- */
+// Reports tab: today's numbers are "live" (pulls RepairShopr first, within a few seconds); past days come from snapshots.
+async function report(params) {
+  const t0 = today();
+  const isDay = v => /^\d{4}-\d{2}-\d{2}$/.test(v || "") && !isNaN(Date.parse(v));
+  const from = isDay(params.get("from")) ? params.get("from") : t0;
+  const to = isDay(params.get("to")) ? params.get("to") : from;
+  if (from > to) throw new HttpError(400, "From must be before To");
+  if ((Date.parse(to) - Date.parse(from)) / 86400e3 > 366) throw new HttpError(400, "Pick a range of a year or less");
+  let warning = null;
+  if (to >= t0) {
+    const live = (async () => {
+      const m = (await getMoney({ maxWaitMs: 5000 })).value;
+      if (m?.day === t0) await syncInvoiceSnaps(m.invoices, { maxFetch: 8 });
+    })();
+    live.catch(e => { warning = `Couldn't refresh from RepairShopr: ${e.message}`; });
+    await Promise.race([live.catch(() => {}), new Promise(r => setTimeout(r, 6000))]);
+  }
+  const r = await buildReport({ from, to: to > t0 ? t0 : to });
+  let labor = null;
+  try { const l = await laborProducts(); labor = { category: l.category, found: l.found, categories: l.categories, productCount: l.productIds.length }; }
+  catch (e) { labor = { error: e.message }; }
+  return { ...r, today: t0, labor, warning };
+}
+async function setLaborCategory({ name }) {
+  const n = String(name || "").trim();
+  if (!n || n.length > 80) throw new HttpError(400, "Enter a category name");
+  await setSetting("labor_category", n);
+  await invalidate("labor_products");
+  try { const l = await laborProducts({ force: true }); return { ok: true, found: l.found, productCount: l.productIds.length, categories: l.categories }; }
+  catch (e) { return { ok: true, error: e.message }; }
+}
 async function setRoleGoal({ position, book, actual }) {
   if (!POSITIONS.includes(position)) throw new HttpError(400, "Unknown position");
   const mins = v => { const n = Math.round(Number(v)); if (!Number.isFinite(n) || n < 0 || n > 1440) throw new HttpError(400, "Goals must be between 0 and 24 hours"); return n; };

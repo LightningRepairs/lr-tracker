@@ -635,6 +635,20 @@
   .due-badges .due-badge { margin-left: 0; }
   .queue-group-header .due-badges { align-self: flex-start; margin-top: -2px; margin-left: 0; }
   .queue-group-header .due-badge { top: 0; }
+  td.num-cell, th.num-cell { text-align: center; font-variant-numeric: tabular-nums; }
+  .report-table td, .report-table th { white-space: nowrap; }
+  .report-table tfoot td { border-top: 2px solid var(--border); padding-top: 8px; }
+  .quiet-row { opacity: .55; }
+  .book-text { color: var(--book); } .actual-text { color: var(--actual); }
+  .table-scroll { overflow-x: auto; }
+  .report-form { display: grid; gap: 12px; }
+  .report-field { display: grid; grid-template-columns: 80px 1fr; gap: 4px 10px; align-items: center; }
+  .report-field .report-label { font-weight: 600; font-size: 12.5px; color: var(--text-secondary); grid-row: span 3; align-self: start; padding-top: 4px; }
+  #report-who { max-width: 260px; }
+  .report-dates { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .report-quick { display: flex; gap: 6px; flex-wrap: wrap; }
+  .labor-setting { margin-top: 10px; font-size: 12.5px; color: var(--text-secondary); }
+  .labor-setting summary { cursor: pointer; }
   .ticket-count { display: inline-block; min-width: 2ch; text-align: right; font-variant-numeric: tabular-nums; }
   .queue-group-count { min-width: 30px; text-align: center; font-variant-numeric: tabular-nums; }
   :root[data-theme="8bit"] .due-badge { border: 2px solid #000; border-radius: 0; }
@@ -1111,6 +1125,7 @@ setInterval(() => {
 setInterval(() => {
   if (state.screen !== "app" || document.hidden) return;
   loadState().catch(e => console.warn(e));
+  if (state.tab === "reports") loadReportLive();
 }, POLL_MS);
 document.addEventListener("visibilitychange", () => {
   if (!document.hidden && state.screen === "app") loadState().catch(() => {});
@@ -1246,8 +1261,9 @@ function routeFromState() {
 function applyRoute() {
   const parts = location.hash.replace(/^#\/?/, "").split("/").filter(Boolean);
   let tab = parts[0] || "day";
-  if (!["day", "team", "settings", "admin"].includes(tab)) tab = "day";
-  if (tab === "admin" && !(state.currentUser && state.currentUser.admin)) tab = "day";
+  if (!["day", "team", "settings", "reports", "admin"].includes(tab)) tab = "day";
+  if ((tab === "admin" || tab === "reports") && !(state.currentUser && state.currentUser.admin)) tab = "day";
+  if (tab === "reports") setTimeout(loadReportLive, 0);
   state.tab = tab;
   state.adminSection = tab === "admin" ? (parts[1] || null) : null;
   state.adminCategory = tab === "admin" && parts[1] === "booktime" ? (parts[2] || null) : null;
@@ -1280,6 +1296,7 @@ function renderApp() {
         <button class="tab ${state.tab==='day'?'active':''}" onclick="setTab('day')">My Day</button>
         <button class="tab ${state.tab==='team'?'active':''}" onclick="setTab('team')">Team</button>
         <button class="tab ${state.tab==='settings'?'active':''}" onclick="setTab('settings')">Settings</button>
+        ${isAdmin ? `<button class="tab ${state.tab==='reports'?'active':''}" onclick="setTab('reports')">Reports</button>` : ""}
         ${isAdmin ? `<button class="tab ${state.tab==='admin'?'active':''}" onclick="setTab('admin')">Admin Console</button>` : ""}
       </div>
       <div class="who">
@@ -1306,7 +1323,7 @@ function renderApp() {
     </div>
     <main class="content">
       ${state.rsError ? `<div class="rs-warning"><b>Can't reach RepairShopr right now</b> — showing what the app already knows. ${state.currentUser.admin ? `<br><span style="opacity:.8">${esc(state.rsError)}</span>` : ""}</div>` : ""}
-      ${state.tab === 'day' ? renderDay() : state.tab === 'team' ? renderTeam() : state.tab === 'admin' ? renderAdmin() : renderSettings()}
+      ${state.tab === 'day' ? renderDay() : state.tab === 'team' ? renderTeam() : state.tab === 'admin' ? renderAdmin() : state.tab === 'reports' ? renderReports() : renderSettings()}
     </main>
   `;
 }
@@ -2113,13 +2130,14 @@ function renderTeam() {
     const tickets = ticketsFor(id).filter(t => isQueueStatus(t.status));
     const anyRunning = !!(state.personToday[id] && state.personToday[id].runningSince);
     const bookPct = goals ? Math.min(100,(totals.book/goals.book)*100) : 0;
-    const spentPct = goals ? Math.min(100,(totals.spent/goals.spent)*100) : 0;
+    const credit = creditCounts(id);
     return `
       <tr>
         <td><div class="person-cell"><div class="avatar" style="background:${esc(p.color)}">${esc(p.initials)}</div>${esc(p.name)}${anyRunning ? '<span class="live-dot" style="margin-left:8px" title="Timer running"></span>' : ''}</div></td>
         <td>${esc(pos)}</td>
         <td>${goals ? `<div class="mini-meter-track"><div class="mini-meter-fill book" style="width:${bookPct}%"></div></div>${fmtHM(totals.book)} / ${fmtHM(goals.book)}` : '—'}</td>
-        <td>${goals ? `<div class="mini-meter-track"><div class="mini-meter-fill actual" style="width:${spentPct}%"></div></div>${fmtHM(totals.spent)} / ${fmtHM(goals.spent)}` : '—'}</td>
+        <td class="num-cell">${credit.resolved}</td>
+        <td class="num-cell">${credit.total}</td>
         <td><span class="ticket-count">${tickets.length}</span>${dueBadges(tickets)}</td>
       </tr>
     `;
@@ -2133,7 +2151,7 @@ function renderTeam() {
       <h2>Today's team</h2>
       ${loggedInToday.length ? `
       <table>
-        <thead><tr><th>Person</th><th>Position</th><th class="h-book">📖 Book time</th><th class="h-actual">⏱ Actual time</th><th>Tickets</th></tr></thead>
+        <thead><tr><th>Person</th><th>Position</th><th class="h-book">📖 Book time</th><th class="num-cell" title="Resolved today as the primary (got the credit)">✅ Resolved</th><th class="num-cell" title="Every ticket they got credit for today: resolved, partial credit, or diagnosis credit (even 0m)">Total tickets</th><th>In queue</th></tr></thead>
         <tbody>${rows}</tbody>
       </table>` : `<div class="meter-note">Nobody's logged in yet today.</div>`}
     </div>
@@ -2180,6 +2198,17 @@ function renderMoney() {
       </div>
       <div class="meter-note" style="margin-top:6px">Invoiced % goes to whoever the invoice's ticket is assigned to — or whoever created the invoice, if it has no ticket.</div>
     </div>`;
+}
+// Today's credit for one person. Resolved = tickets they're primary on (and hold a share of).
+// Total = every ticket they got any credit for today: resolved, partial share, or diagnosis credit (even 0m).
+function creditCounts(pid) {
+  let resolved = 0; const all = new Set();
+  for (const t of state.tickets) {
+    const c = t.completion;
+    if (c && c.shares.some(sh => sh.personId === pid)) { all.add(t.id); if (c.primaryPerson === pid) resolved++; }
+    if ((t.workLog || []).some(w => w.personId === pid && w.date === state.today && w.outcome === "diagnosis_completed")) all.add(t.id);
+  }
+  return { resolved, total: all.size };
 }
 function renderTeamCompleted() {
   const done = state.tickets.filter(t => t.completion).sort((a, b) => (b.completion.resolvedAt || 0) - (a.completion.resolvedAt || 0));
@@ -2266,7 +2295,6 @@ const ADMIN_MENU = [
   { key: "booktime", icon: "📊", label: "Book Time Database",     desc: "Standard repair times by device type" },
   { key: "goals",    icon: "🎯", label: "Daily goals",            desc: "Book & actual time goals for each role" },
   { key: "rs",       icon: "🔌", label: "RepairShopr connection", desc: "Check the API link, statuses & Issue Types" },
-  { key: "reports",  icon: "📈", label: "Reports",                desc: "Coming soon" },
 ];
 function renderAdmin() {
   if (!state.adminSection) return renderAdminMenu();
@@ -2675,6 +2703,216 @@ function setThreshold(val) {
 }
 
 /* ---------- Settings (all users) ---------- */
+/* ---------- Reports (admins only) ---------- */
+const money$ = n => "$" + (Number(n) || 0).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const pct$ = (a, b) => (b > 0 ? Math.round((a / b) * 100) + "%" : "—");
+const qty$ = n => { const v = Math.round((Number(n) || 0) * 100) / 100; return String(v); };
+let reportLiveBusy = false;
+async function loadReportLive() {
+  if (reportLiveBusy || !state.currentUser || !state.currentUser.admin) return;
+  reportLiveBusy = true;
+  try { state.reportLive = await api("/admin/report"); state.reportLiveError = null; }
+  catch (e) { state.reportLiveError = e.message; }
+  finally { reportLiveBusy = false; if (state.tab === "reports") { if (safeToRerender()) render(); else pendingRender = true; } }
+}
+function reportForm() {
+  if (!state.reportForm) {
+    const y = addDays(state.today, -1);
+    state.reportForm = { type: "sales", who: "all", from: y, to: y };
+  }
+  return state.reportForm;
+}
+function setReportField(k, v) { reportForm()[k] = v; render(); }
+function setReportRange(kind) {
+  const f = reportForm(), t = state.today, [Y, M] = t.split("-").map(Number);
+  const iso = (y, m, d) => `${y}-${String(m).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+  if (kind === "today") { f.from = f.to = t; }
+  if (kind === "yesterday") { f.from = f.to = addDays(t, -1); }
+  if (kind === "7") { f.from = addDays(t, -7); f.to = addDays(t, -1); }
+  if (kind === "month") { f.from = iso(Y, M, 1); f.to = t; }
+  if (kind === "lastmonth") { const pm = M === 1 ? 12 : M - 1, py = M === 1 ? Y - 1 : Y; f.from = iso(py, pm, 1); f.to = addDays(iso(Y, M, 1), -1); }
+  render();
+}
+function renderReports() {
+  const r = state.reportLive;
+  const f = reportForm();
+  let live = `<div class="meter-note">Loading…</div>`;
+  if (state.reportLiveError && !r) live = `<div class="bad-text">${esc(state.reportLiveError)}</div>`;
+  if (r) {
+    const d = r.days[r.days.length - 1] || { people: {}, others: {} };
+    const ids = activePeople().slice().sort((a, b) => a.name.localeCompare(b.name)).map(p => p.id);
+    for (const pid of Object.keys(d.people)) if (!ids.includes(pid) && PEOPLE[pid]) ids.push(pid);
+    const tot = { revenue: 0, profit: 0, labor: 0, laborQty: 0, invoices: 0, book: 0, actual: 0, resolved: 0, total: 0 };
+    const moneyCells = m => `<td>${money$(m.revenue)}</td><td>${money$(m.profit)} <span class="money-sub">${pct$(m.profit, m.revenue)}</span></td><td>${money$(m.labor)} <span class="money-sub">· ${qty$(m.laborQty)}</span></td><td class="num-cell">${m.invoices}</td>`;
+    const rows = ids.map(pid => {
+      const p = PEOPLE[pid], m = d.people[pid] || { revenue: 0, profit: 0, labor: 0, laborQty: 0, invoices: 0 };
+      const tt = computeTotals(pid), cc = creditCounts(pid);
+      for (const k of ["revenue", "profit", "labor", "laborQty", "invoices"]) tot[k] += m[k] || 0;
+      tot.book += tt.book; tot.actual += tt.spent; tot.resolved += cc.resolved; tot.total += cc.total;
+      const quiet = !m.invoices && !tt.book && !tt.spent && !cc.total;
+      return `<tr class="${quiet ? "quiet-row" : ""}">
+        <td><div class="person-cell"><div class="avatar" style="background:${esc(p.color)}">${esc(p.initials)}</div>${esc(p.name)}</div></td>
+        ${moneyCells(m)}
+        <td class="book-text">${fmtHM(tt.book)}</td><td class="actual-text">${fmtHM(tt.spent)}</td>
+        <td class="num-cell">${cc.resolved}</td><td class="num-cell">${cc.total}</td></tr>`;
+    }).join("");
+    const others = Object.entries(d.others || {}).map(([name, m]) => {
+      for (const k of ["revenue", "profit", "labor", "laborQty", "invoices"]) tot[k] += m[k] || 0;
+      return `<tr class="quiet-row"><td><div class="person-cell"><span class="money-noav"></span>${esc(name)} <span class="money-sub">&nbsp;(not in app)</span></div></td>${moneyCells(m)}<td colspan="4"></td></tr>`;
+    }).join("");
+    live = `
+      <div class="table-scroll"><table class="report-table">
+        <thead><tr><th>Person</th><th>Revenue</th><th>Profit</th><th>Labor SKUs</th><th class="num-cell">Invoices</th>
+          <th class="h-book">📖 Book</th><th class="h-actual">⏱ Actual</th><th class="num-cell">✅ Resolved</th><th class="num-cell">Total tickets</th></tr></thead>
+        <tbody>${rows}${others}</tbody>
+        <tfoot><tr><td><b>Team</b></td><td><b>${money$(tot.revenue)}</b></td><td><b>${money$(tot.profit)}</b> <span class="money-sub">${pct$(tot.profit, tot.revenue)}</span></td>
+          <td><b>${money$(tot.labor)}</b> <span class="money-sub">· ${qty$(tot.laborQty)}</span></td><td class="num-cell"><b>${tot.invoices}</b></td>
+          <td class="book-text"><b>${fmtHM(tot.book)}</b></td><td class="actual-text"><b>${fmtHM(tot.actual)}</b></td><td class="num-cell"><b>${tot.resolved}</b></td><td class="num-cell"><b>${tot.total}</b></td></tr></tfoot>
+      </table></div>
+      <div class="meter-note" style="margin-top:8px">Revenue = invoice subtotals before tax · Profit = revenue − line-item cost · Labor SKUs = $ and count of items in RepairShopr's <b>${esc(r.labor?.category || "Repair Service")}</b> category${r.labor?.categories?.length > 1 ? ` (+ ${r.labor.categories.length - 1} subcategor${r.labor.categories.length === 2 ? "y" : "ies"})` : ""}. Invoices count for whoever the ticket is assigned to (no ticket → invoice creator).
+      ${r.labor && r.labor.found === false ? `<br><span class="bad-text">No RepairShopr product category named "${esc(r.labor.category)}" was found — labor shows $0.</span>` : ""}
+      ${r.warning ? `<br><span class="bad-text">${esc(r.warning)}</span>` : ""}</div>`;
+  }
+  const whoOpts = `<option value="all" ${f.who === "all" ? "selected" : ""}>Whole team</option>` +
+    Object.values(PEOPLE).filter(p => p.active).sort((a, b) => a.name.localeCompare(b.name)).map(p => `<option value="${esc(p.id)}" ${f.who === p.id ? "selected" : ""}>${esc(p.name)}</option>`).join("");
+  const since = r && r.salesSince;
+  return `
+    <div class="panel">
+      <h2>📈 Today — live <span class="money-sub">· updates every ~15s</span></h2>
+      ${live}
+    </div>
+    <div class="panel">
+      <h2>⬇ Download a PDF report</h2>
+      <div class="report-form">
+        <div class="report-field"><span class="report-label">Report</span>
+          <label class="sort-option"><input type="radio" name="rtype" ${f.type === "sales" ? "checked" : ""} onchange="setReportField('type','sales')"> 💰 Sales — revenue, profit, labor SKUs</label>
+          <label class="sort-option"><input type="radio" name="rtype" ${f.type === "time" ? "checked" : ""} onchange="setReportField('type','time')"> ⏱ Book time vs actual time</label>
+        </div>
+        <div class="report-field"><span class="report-label">Who</span><select id="report-who" onchange="setReportField('who', this.value)">${whoOpts}</select></div>
+        <div class="report-field"><span class="report-label">Dates</span>
+          <div class="report-dates"><input type="date" id="report-from" value="${esc(f.from)}" max="${esc(state.today)}" onchange="setReportField('from', this.value)"> to
+          <input type="date" id="report-to" value="${esc(f.to)}" max="${esc(state.today)}" onchange="setReportField('to', this.value)"></div>
+          <div class="report-quick">
+            ${[["today", "Today"], ["yesterday", "Yesterday"], ["7", "Last 7 days"], ["month", "This month"], ["lastmonth", "Last month"]].map(([k, l]) => `<button class="btn ghost small" onclick="setReportRange('${k}')">${l}</button>`).join("")}
+          </div>
+        </div>
+        <div><button class="btn primary" id="report-dl" onclick="downloadReport()" ${state.reportBusy ? "disabled" : ""}>${state.reportBusy ? "Building PDF…" : "Download PDF"}</button></div>
+      </div>
+      <div class="meter-note" style="margin-top:8px">${since ? `Sales numbers are recorded from <b>${esc(shortDay(since))}</b> on (when this report started tracking).` : "Sales numbers are recorded from today on."} Book/actual time goes back as far as the app has been in use.</div>
+      ${renderLaborSetting(r)}
+    </div>`;
+}
+function renderLaborSetting(r) {
+  const cat = (r && r.labor && r.labor.category) || "Repair Service";
+  return `<details class="labor-setting"><summary>Labor SKU category: <b>${esc(cat)}</b>${r && r.labor && r.labor.productCount != null ? ` · ${r.labor.productCount} products` : ""}</summary>
+    <div style="margin-top:6px">RepairShopr product category (its subcategories count too):
+      <input class="booktime-input" style="width:180px" type="text" value="${esc(cat)}" onchange="setLaborCategory(this.value)"></div></details>`;
+}
+async function setLaborCategory(name) {
+  const r = await mutate("/admin/labor-category", { name });
+  if (r) { showToast(r.found ? `Labor = ${r.productCount} products in ${r.categories.length} categor${r.categories.length === 1 ? "y" : "ies"}` : `No category named "${name}" in RepairShopr`, r.found ? undefined : "error"); loadReportLive(); }
+}
+
+// ---- PDF (jsPDF + autotable, loaded only when needed) ----
+function loadScriptOnce(src) {
+  return new Promise((resolve, reject) => {
+    if (document.querySelector(`script[src="${src}"]`)) return resolve();
+    const s = document.createElement("script"); s.src = src; s.onload = resolve; s.onerror = () => reject(new Error("Couldn't load the PDF maker"));
+    document.head.appendChild(s);
+  });
+}
+async function downloadReport() {
+  const f = reportForm();
+  if (!f.from || !f.to || f.from > f.to) { showToast("Pick a From date on or before the To date", "error"); return; }
+  state.reportBusy = true; render();
+  try {
+    await loadScriptOnce("/vendor/jspdf.umd.min.js");
+    await loadScriptOnce("/vendor/jspdf.plugin.autotable.min.js");
+    const data = await api(`/admin/report?from=${f.from}&to=${f.to}`);
+    const doc = f.type === "sales" ? buildSalesPdf(data, f) : buildTimePdf(data, f);
+    const who = f.who === "all" ? "team" : (PEOPLE[f.who]?.name || f.who).split(" ")[0].toLowerCase();
+    doc.save(`LR-${f.type}-${who}-${f.from}${f.to !== f.from ? "_to_" + f.to : ""}.pdf`);
+    showToast("Report downloaded");
+  } catch (e) { showToast(e.message, "error"); }
+  finally { state.reportBusy = false; render(); }
+}
+function pdfStart(title, data, f) {
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF({ unit: "pt", format: "letter" });
+  const range = f.from === f.to ? shortDay(f.from) : `${shortDay(f.from)} – ${shortDay(f.to)}`;
+  doc.setFont("helvetica", "bold"); doc.setFontSize(16); doc.text(`Lightning Repairs — ${title}`, 40, 48);
+  doc.setFont("helvetica", "normal"); doc.setFontSize(10); doc.setTextColor(90);
+  doc.text(`${range} · ${f.who === "all" ? "Whole team" : PEOPLE[f.who]?.name || f.who} · generated ${new Date().toLocaleString("en-US")}`, 40, 64);
+  doc.setTextColor(0);
+  return doc;
+}
+function pdfFinish(doc, note) {
+  const pages = doc.getNumberOfPages();
+  for (let i = 1; i <= pages; i++) {
+    doc.setPage(i); doc.setFontSize(8); doc.setTextColor(120);
+    if (note) doc.text(note, 40, doc.internal.pageSize.getHeight() - 24, { maxWidth: 440 });
+    doc.text(`Page ${i} of ${pages}`, doc.internal.pageSize.getWidth() - 40, doc.internal.pageSize.getHeight() - 24, { align: "right" });
+  }
+  return doc;
+}
+const PDF_TABLE = { theme: "grid", styles: { fontSize: 9, cellPadding: 4 }, headStyles: { fillColor: [22, 50, 92] }, footStyles: { fillColor: [235, 240, 248], textColor: 20, fontStyle: "bold" }, margin: { left: 40, right: 40 } };
+const sumInto = (acc, m, keys) => { for (const k of keys) acc[k] = (acc[k] || 0) + (m[k] || 0); return acc; };
+const MONEY_KEYS = ["revenue", "profit", "cost", "labor", "laborQty", "invoices"];
+const TIME_KEYS = ["bookSec", "actualSec", "resolved", "total"];
+const nameOf = pid => PEOPLE[pid]?.name || pid;
+function buildSalesPdf(data, f) {
+  const doc = pdfStart("Sales report", data, f);
+  const per = {}, others = {}, daily = [];
+  for (const d of data.days) {
+    const dayTot = {};
+    for (const [pid, m] of Object.entries(d.people)) {
+      if (f.who !== "all" && pid !== f.who) continue;
+      if (!m.invoices) continue;
+      sumInto(per[pid] ||= {}, m, MONEY_KEYS); sumInto(dayTot, m, MONEY_KEYS);
+    }
+    if (f.who === "all") for (const [n, m] of Object.entries(d.others || {})) { sumInto(others[n] ||= {}, m, MONEY_KEYS); sumInto(dayTot, m, MONEY_KEYS); }
+    daily.push([shortDay(d.day), dayTot.invoices || 0, money$(dayTot.revenue), money$(dayTot.profit), pct$(dayTot.profit || 0, dayTot.revenue || 0), money$(dayTot.labor), qty$(dayTot.laborQty)]);
+  }
+  const row = (name, m) => [name, m.invoices || 0, money$(m.revenue), money$(m.profit), pct$(m.profit || 0, m.revenue || 0), money$(m.labor), qty$(m.laborQty)];
+  const all = {};
+  const body = Object.entries(per).sort((a, b) => (b[1].revenue || 0) - (a[1].revenue || 0)).map(([pid, m]) => { sumInto(all, m, MONEY_KEYS); return row(nameOf(pid), m); });
+  for (const [n, m] of Object.entries(others)) { sumInto(all, m, MONEY_KEYS); body.push(row(`${n} (not in app)`, m)); }
+  const head = [["", "Invoices", "Revenue", "Profit", "Margin", "Labor $", "Labor SKUs"]];
+  head[0][0] = "Person";
+  doc.autoTable({ ...PDF_TABLE, startY: 80, head, body: body.length ? body : [["No invoices in this range", "", "", "", "", "", ""]], foot: [row("Total", all)] });
+  if (data.days.length > 1) {
+    doc.setFontSize(11); doc.setFont("helvetica", "bold"); doc.text("By day", 40, doc.lastAutoTable.finalY + 24); doc.setFont("helvetica", "normal");
+    doc.autoTable({ ...PDF_TABLE, startY: doc.lastAutoTable.finalY + 30, head: [["Day", "Invoices", "Revenue", "Profit", "Margin", "Labor $", "Labor SKUs"]], body: daily });
+  }
+  const since = data.salesSince ? ` Sales data is recorded from ${shortDay(data.salesSince)} on.` : "";
+  return pdfFinish(doc, `Revenue = invoice subtotals before tax. Profit = revenue - line-item cost. Labor SKUs = items in RepairShopr's "${data.labor?.category || "Repair Service"}" category (and subcategories). Invoices count for whoever the ticket is assigned to (no ticket: invoice creator).${since}`);
+}
+function buildTimePdf(data, f) {
+  const doc = pdfStart("Book time vs actual time", data, f);
+  const per = {}, days = {};
+  for (const d of data.days) for (const [pid, m] of Object.entries(d.people)) {
+    if (f.who !== "all" && pid !== f.who) continue;
+    if (!m.bookSec && !m.actualSec && !m.total) continue;
+    const x = sumInto(per[pid] ||= {}, m, TIME_KEYS); x.days = (x.days || 0) + 1;
+    (days[d.day] ||= []).push([pid, m]);
+  }
+  const eff = m => (m.actualSec > 0 ? Math.round((m.bookSec / m.actualSec) * 100) + "%" : "—");
+  const row = (name, m, extra = []) => [name, ...extra, fmtHM(m.bookSec || 0), fmtHM(m.actualSec || 0), eff(m), m.resolved || 0, m.total || 0];
+  const all = {}; let allDays = 0;
+  const body = Object.entries(per).sort((a, b) => nameOf(a[0]).localeCompare(nameOf(b[0]))).map(([pid, m]) => { sumInto(all, m, TIME_KEYS); allDays += m.days; return row(nameOf(pid), m, [m.days]); });
+  doc.autoTable({ ...PDF_TABLE, startY: 80, head: [["Person", "Days", "Book time", "Actual time", "Book ÷ actual", "Resolved", "Total tickets"]],
+    body: body.length ? body : [["Nothing recorded in this range", "", "", "", "", "", ""]], foot: [row("Total", all, [allDays])] });
+  if (data.days.length > 1 || f.who !== "all") {
+    const dBody = [];
+    for (const d of data.days) for (const [pid, m] of (days[d.day] || []).sort((a, b) => nameOf(a[0]).localeCompare(nameOf(b[0])))) dBody.push(row(shortDay(d.day), m, f.who === "all" ? [nameOf(pid)] : []));
+    if (dBody.length) {
+      doc.setFontSize(11); doc.setFont("helvetica", "bold"); doc.text("By day", 40, doc.lastAutoTable.finalY + 24); doc.setFont("helvetica", "normal");
+      doc.autoTable({ ...PDF_TABLE, startY: doc.lastAutoTable.finalY + 30, head: [["Day", ...(f.who === "all" ? ["Person"] : []), "Book time", "Actual time", "Book ÷ actual", "Resolved", "Total tickets"]], body: dBody });
+    }
+  }
+  return pdfFinish(doc, "Book time = credited minutes for resolved tickets (by credit share) + diagnosis credits. Actual time = app timer + RepairShopr timers + typed-in time. Resolved = primary on a resolved ticket. Total = every ticket with any credit, including diagnosis credit (even 0m).");
+}
+
 function renderSettings() {
   return `
     <div class="panel">
