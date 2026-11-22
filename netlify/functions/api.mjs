@@ -342,7 +342,7 @@ async function buildState(me, { force = false } = {}) {
         byWho[k].total += i.total; byWho[k].subtotal += i.subtotal; byWho[k].count++;
       }
       money = {
-        paymentsTotal: m.payments.reduce((a, p) => a + p.amount, 0), paymentsCount: m.payments.length,
+        paymentsTotal: m.payments.reduce((a, p) => a + p.amount, 0), paymentsCount: m.payments.length, paymentsError: m.paymentsError || null,
         byMethod: Object.entries(byMethod).map(([method, amount]) => ({ method, amount })).sort((a, b) => b.amount - a.amount),
         invoicedTotal: m.invoices.reduce((a, i) => a + i.total, 0), invoicedSubtotal: m.invoices.reduce((a, i) => a + i.subtotal, 0),
         invoicedTax: m.invoices.reduce((a, i) => a + i.tax, 0), invoiceCount: m.invoices.length,

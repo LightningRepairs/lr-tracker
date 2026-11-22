@@ -2185,8 +2185,10 @@ function renderMoney() {
       <div class="money-grid">
         <div class="money-card">
           <div class="money-label">Total payments today</div>
-          <div class="money-big">${fmtMoney(m.paymentsTotal)}</div>
-          <div class="money-sub">${m.paymentsCount} payment${m.paymentsCount === 1 ? "" : "s"}</div>
+          ${m.paymentsError
+            ? `<div class="money-big">—</div><div class="money-sub bad-text">${esc(m.paymentsError)} — give that user's group "Payments – View" in RepairShopr.</div>`
+            : `<div class="money-big">${fmtMoney(m.paymentsTotal)}</div>
+          <div class="money-sub">${m.paymentsCount} payment${m.paymentsCount === 1 ? "" : "s"}</div>`}
           ${methods ? `<div class="money-chips">${methods}</div>` : ""}
         </div>
         <div class="money-card">

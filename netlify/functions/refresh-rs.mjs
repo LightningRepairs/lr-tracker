@@ -11,7 +11,7 @@ export default async () => {
   let timers = "", money = "";
   try { const t = (await syncTimersThrottled(r.peopleRows, { maxAgeSec: 0 })).value; timers = ` · timers: ${t.running} running, ${t.paused} paused${t.autoPaused ? `, auto-paused ${t.autoPaused}` : ""}`; }
   catch (e) { timers = ` · timers failed: ${e.message}`; }
-  try { const m = (await getMoney({ force: true })).value; const s = await syncInvoiceSnaps(m.invoices); money = ` · today: ${m.payments.length} payments, ${m.invoices.length} invoices (${s.fetched} line-item pulls)`; }
+  try { const m = (await getMoney({ force: true })).value; const s = await syncInvoiceSnaps(m.invoices); money = ` · today: ${m.paymentsError ? `payments blocked (${m.paymentsError})` : `${m.payments.length} payments`}, ${m.invoices.length} invoices (${s.fetched} line-item pulls)`; }
   catch (e) { money = ` · money failed: ${e.message}`; }
   console.log(`refresh-rs: ${r.list.length} tickets in ${r.fetchMs ?? "?"}ms${timers}${money}${r.rsError ? ` — ${r.rsError}` : ""}`);
   return new Response("ok");
