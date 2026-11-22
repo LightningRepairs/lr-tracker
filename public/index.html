@@ -635,6 +635,7 @@
   .due-badges .due-badge { margin-left: 0; }
   .queue-group-header .due-badges { align-self: flex-start; margin-top: -2px; margin-left: 0; }
   .queue-group-header .due-badge { top: 0; }
+  .default-tag { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; color: var(--text-muted); border: 1px dashed var(--border); border-radius: 999px; padding: 0 6px; margin-left: 4px; }
   td.num-cell, th.num-cell { text-align: center; font-variant-numeric: tabular-nums; }
   .report-table td, .report-table th { white-space: nowrap; }
   .report-table tfoot td { border-top: 2px solid var(--border); padding-top: 8px; }
@@ -2120,11 +2121,19 @@ function pushManualTime(id) {
 
 /* ---------- Team tab ---------- */
 function activePeople() { return Object.values(PEOPLE).filter(p => p.active); }
+// Role someone is working today: what they picked when they logged in, else their default role.
+function todaysPosition(id) {
+  if (id === state.me && state.position) return state.position;
+  return state.attendance[id] || (PEOPLE[id] && PEOPLE[id].defaultPosition) || null;
+}
 function renderTeam() {
-  const loggedInToday = Object.keys(state.attendance).filter(id => PEOPLE[id]);
+  // Everyone active with a role shows up — logged in today or not (not logged in → their default role).
+  const loggedInToday = Object.values(PEOPLE).filter(p => p.active && (p.positions.length || state.attendance[p.id]))
+    .sort((a, b) => a.name.localeCompare(b.name)).map(p => p.id);
   const rows = loggedInToday.map(id => {
     const p = PEOPLE[id];
-    const pos = id === state.me ? state.position : state.attendance[id];
+    const pos = todaysPosition(id);
+    const picked = id === state.me || !!state.attendance[id];
     const goals = GOALS[pos];
     const totals = computeTotals(id);
     const tickets = ticketsFor(id).filter(t => isQueueStatus(t.status));
@@ -2134,7 +2143,7 @@ function renderTeam() {
     return `
       <tr>
         <td><div class="person-cell"><div class="avatar" style="background:${esc(p.color)}">${esc(p.initials)}</div>${esc(p.name)}${anyRunning ? '<span class="live-dot" style="margin-left:8px" title="Timer running"></span>' : ''}</div></td>
-        <td>${esc(pos)}</td>
+        <td>${esc(pos || "—")}${picked ? "" : ` <span class="default-tag" title="Hasn't logged in today — using their default role">default</span>`}</td>
         <td>${goals ? `<div class="mini-meter-track"><div class="mini-meter-fill book" style="width:${bookPct}%"></div></div>${fmtHM(totals.book)} / ${fmtHM(goals.book)}` : '—'}</td>
         <td class="num-cell">${credit.resolved}</td>
         <td class="num-cell">${credit.total}</td>
@@ -2153,7 +2162,7 @@ function renderTeam() {
       <table>
         <thead><tr><th>Person</th><th>Position</th><th class="h-book">📖 Book time</th><th class="num-cell" title="Resolved today as the primary (got the credit)">✅ Resolved</th><th class="num-cell" title="Every ticket they got credit for today: resolved, partial credit, or diagnosis credit (even 0m)">Total tickets</th><th>In queue</th></tr></thead>
         <tbody>${rows}</tbody>
-      </table>` : `<div class="meter-note">Nobody's logged in yet today.</div>`}
+      </table>` : `<div class="meter-note">No active people yet — add them in Admin Console → Users.</div>`}
     </div>
     <div class="panel">
       <h2>All tickets in queue</h2>
@@ -2342,6 +2351,9 @@ function renderAdminUsers() {
           ${pos}
         </label>
       `).join("")}</td>
+      <td>${p.positions.length > 1
+        ? `<select class="admin-input" onchange="setDefaultPosition(${jsArg(p.id)}, this.value)">${p.positions.map(pos => `<option ${pos === p.defaultPosition ? "selected" : ""}>${esc(pos)}</option>`).join("")}</select>`
+        : `<span class="meter-note">${esc(p.positions[0] || "—")}</span>`}</td>
       <td>
         <select class="admin-input" onchange="linkRsUser(${jsArg(p.id)}, this.value)" ${state.rsUsers.length ? "" : "title='RepairShopr users not loaded'"}>${rsOpts(p.rsUserId)}</select>
       </td>
@@ -2360,7 +2372,7 @@ function renderAdminUsers() {
       <h2>Users</h2>
       <div class="meter-note" style="margin-bottom:10px;">The RepairShopr link is how the app knows which RS tickets are whose. People are auto-linked when their name matches an RS user exactly.</div>
       <table>
-        <thead><tr><th>Person</th><th>Assigned positions</th><th>RepairShopr user</th><th>PIN</th><th>Their RepairShopr API key</th><th></th></tr></thead>
+        <thead><tr><th>Person</th><th>Assigned positions</th><th title="Used on the Team tab when they haven't logged in and picked a role today">Default role</th><th>RepairShopr user</th><th>PIN</th><th>Their RepairShopr API key</th><th></th></tr></thead>
         <tbody>${peopleRows}</tbody>
       </table>
       <div style="margin-top:14px; display:flex; gap:8px; align-items:center;">
@@ -2443,7 +2455,10 @@ function renderDefaultKeyPanel() {
 function toggleRole(personId, pos) {
   const p = PEOPLE[personId];
   const next = p.positions.includes(pos) ? p.positions.filter(x => x !== pos) : POSITIONS.filter(x => x === pos || p.positions.includes(x));
-  mutate("/admin/person", { id: personId, positions: next }, () => { p.positions = next; });
+  mutate("/admin/person", { id: personId, positions: next }, () => { p.positions = next; if (!next.includes(p.defaultPosition)) p.defaultPosition = next[0] || null; });
+}
+function setDefaultPosition(personId, pos) {
+  mutate("/admin/person", { id: personId, defaultPosition: pos }, () => { PEOPLE[personId].defaultPosition = pos; });
 }
 function linkRsUser(personId, rsUserId) {
   mutate("/admin/person", { id: personId, rsUserId: rsUserId || null }, () => { PEOPLE[personId].rsUserId = rsUserId ? Number(rsUserId) : null; });

@@ -360,7 +360,9 @@ async function buildState(me, { force = false } = {}) {
     rsError,
     people: peopleRows.map(p => ({
       id: p.id, name: p.name, initials: p.initials, color: p.color, isAdmin: p.is_admin,
-      positions: p.positions || [], rsUserId: p.rs_user_id != null ? Number(p.rs_user_id) : null,
+      positions: p.positions || [],
+      defaultPosition: (p.positions || []).includes(p.default_position) ? p.default_position : ((p.positions || [])[0] || null),
+      rsUserId: p.rs_user_id != null ? Number(p.rs_user_id) : null,
       hasPin: !!p.pin_hash, active: p.active, hasKey: !!p.rs_api_key_enc,
       ...(me.is_admin ? { keyLast4: p.rs_api_key_last4 || null, keyOwner: p.rs_api_key_owner || null } : {}),
     })),
@@ -851,6 +853,11 @@ async function upsertPerson(me, b) {
   if (b.positions !== undefined) {
     const pos = (b.positions || []).filter(x => POSITIONS.includes(x));
     await sql`update people set positions = ${pos}::text[] where id = ${p.id}`;
+  }
+  if (b.defaultPosition !== undefined) {
+    const cur = b.positions !== undefined ? (b.positions || []) : (p.positions || []);
+    if (!cur.includes(b.defaultPosition)) throw new HttpError(400, "Pick one of their assigned positions as the default");
+    await sql`update people set default_position = ${b.defaultPosition} where id = ${p.id}`;
   }
   if (b.rsUserId !== undefined) {
     const v = b.rsUserId === null || b.rsUserId === "" ? null : Number(b.rsUserId);
