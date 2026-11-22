@@ -203,7 +203,7 @@ async function buildState(me, { force = false } = {}) {
   const extraIds = extraIdRows.map(r => Number(r.ticket_id)).filter(id => !openIds.has(id));
   const ids = [...openIds, ...extraIds];
 
-  const [stateRows, workRows, assignRows, noteRows, timerRows, totalRows, todayRows, bookTodayRows, spentTodayRows, runningRows, queueRows, promptRows, diagCreditRows] = await Promise.all([
+  const [stateRows, workRows, assignRows, noteRows, timerRows, totalRows, todayRows, bookTodayRows, spentTodayRows, runningRows, queueRows, promptRows, diagCreditRows, appNoteRows, moneyCache] = await Promise.all([
     sql`select * from ticket_state where ticket_id = any(${ids}::bigint[])`,
     sql`select * from work_log where ticket_id = any(${ids}::bigint[]) and work_date = ${t0}`,
     sql`select * from assignment_log where ticket_id = any(${ids}::bigint[]) and work_date = ${t0}`,
@@ -219,6 +219,8 @@ async function buildState(me, { force = false } = {}) {
     sql`select ticket_id, person_id from queue_log where ticket_id = any(${ids}::bigint[]) and work_date = ${t0}`,
     sql`select * from diag_prompts where state = 'pending'`,
     sql`select person_id, sum(credited_minutes)::int as m from work_log where work_date = ${t0} and outcome = 'diagnosis_completed' group by 1`,
+    sql`select distinct person_id from notes where work_date = ${t0}`,
+    sql`select value from rs_cache where key = 'money'`,
   ]);
 
   const stateById = new Map(stateRows.map(r => [Number(r.ticket_id), r]));
@@ -322,6 +324,19 @@ async function buildState(me, { force = false } = {}) {
     if (r.status === "running") { personToday[pid].runningSince = ms(r.fetchedAt); personToday[pid].runningTicketId = r.ticketId; }
   }
 
+  // Who has shown up today (Team tab lists only them). Any one signal is enough.
+  const activeToday = {};
+  const mark = (pid, why) => { if (pid && personToday[pid]) (activeToday[pid] ||= new Set()).add(why); };
+  for (const a of attendanceRows) mark(a.person_id, "logged in");
+  for (const t of rsList) for (const uid of t.noteByToday || []) mark(personByRsUser.get(uid), "RepairShopr note");
+  for (const r of appNoteRows) mark(r.person_id, "note");
+  for (const [pid, p] of Object.entries(personToday)) if (p.spentSec > 0 || p.runningSince) mark(pid, "timer");
+  for (const c of completionBy.values()) for (const sh of c.shares) mark(sh.personId, "credit");
+  for (const r of diagCreditRows) mark(r.person_id, "credit");
+  const mc = moneyCache[0]?.value;
+  if (mc?.day === t0) for (const i of mc.invoices || []) mark(i.userId != null ? personByRsUser.get(String(i.userId)) : null, "invoice");
+  mark(me.id, "logged in");
+
   // 💰 Today's money (Team tab): payments received + invoiced, split by who created each invoice.
   let money = null;
   if (settings.showMoney) try {
@@ -370,6 +385,7 @@ async function buildState(me, { force = false } = {}) {
     settings,
     tickets,
     personToday,
+    activeToday: Object.fromEntries(Object.entries(activeToday).map(([k, v]) => [k, [...v]])),
     rsUsers: me.is_admin ? rsUsers : [],
   };
 }

@@ -635,6 +635,22 @@
   .due-badges .due-badge { margin-left: 0; }
   .queue-group-header .due-badges { align-self: flex-start; margin-top: -2px; margin-left: 0; }
   .queue-group-header .due-badge { top: 0; }
+  .team-book .meter-track.tb-track { height: 16px; border-radius: 8px; }
+  .team-book .tb-track .meter-fill { background: var(--book); border-radius: 8px; }
+  .team-book .meter-value { font-size: 22px; font-weight: 700; margin: 4px 0 8px; }
+  .team-book .meter-value .of { font-size: 13px; font-weight: 500; color: var(--text-muted); }
+  .tb-head { display: flex; justify-content: space-between; align-items: baseline; margin: 14px 0 6px; font-size: 12px; font-weight: 600; color: var(--text-secondary); }
+  .tb-list { display: grid; gap: 5px; }
+  .tb-row { display: grid; grid-template-columns: 110px 1fr 56px 70px; gap: 8px; align-items: center; font-size: 12.5px; }
+  .tb-name { display: flex; align-items: center; white-space: nowrap; overflow: hidden; }
+  .tb-bar { position: relative; height: 10px; background: var(--grid); border-radius: 5px; }
+  .tb-mid { position: absolute; left: 50%; top: -3px; bottom: -3px; width: 2px; background: var(--text-muted); opacity: .6; }
+  .tb-fill { position: absolute; top: 0; height: 100%; }
+  .tb-fill.up { background: var(--good, #1f9d55); border-radius: 0 5px 5px 0; }
+  .tb-fill.down { background: var(--critical); border-radius: 5px 0 0 5px; }
+  .tb-pct { text-align: right; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .tb-pct.up { color: var(--good, #1f9d55); } .tb-pct.down { color: var(--critical); }
+  .tb-sub { color: var(--text-muted); font-size: 11.5px; text-align: right; font-variant-numeric: tabular-nums; }
   .default-tag { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; color: var(--text-muted); border: 1px dashed var(--border); border-radius: 999px; padding: 0 6px; margin-left: 4px; }
   td.num-cell, th.num-cell { text-align: center; font-variant-numeric: tabular-nums; }
   .report-table td, .report-table th { white-space: nowrap; }
@@ -967,6 +983,7 @@ function applyServerState(d) {
   state.rsError = d.rsError;
   state.rsUsers = d.rsUsers || [];
   state.money = d.money || null;
+  state.activeToday = d.activeToday || {};
   state.tickets = d.tickets.map(buildTicket);
 }
 
@@ -2121,19 +2138,71 @@ function pushManualTime(id) {
 
 /* ---------- Team tab ---------- */
 function activePeople() { return Object.values(PEOPLE).filter(p => p.active); }
+// Active people with a role, split into who's shown activity today and who hasn't (yet).
+function teamToday() {
+  const all = Object.values(PEOPLE).filter(p => p.active && (p.positions.length || state.attendance[p.id]))
+    .sort((a, b) => a.name.localeCompare(b.name)).map(p => p.id);
+  const isActive = id => id === state.me || !!state.attendance[id] || (state.activeToday[id] || []).length > 0;
+  return { active: all.filter(isActive), inactive: all.filter(id => !isActive(id)) };
+}
+// Where the day's pace is right now (0 → 1 across the 9a–6p workday).
+function paceFraction() {
+  const d = new Date(nowMs());
+  const hours = d.getHours() + d.getMinutes() / 60;
+  return Math.min(1, Math.max(0, (hours - WORKDAY_START) / (WORKDAY_END - WORKDAY_START)));
+}
+// Big team book-time bar: everyone active today with a goal, added together, vs where the team should be by now.
+function renderTeamBook() {
+  const pace = paceFraction();
+  const people = teamToday().active.map(id => ({ id, goal: GOALS[todaysPosition(id)] })).filter(x => x.goal && x.goal.book > 0)
+    .map(x => { const book = computeTotals(x.id).book, goal = x.goal.book, expected = goal * pace; return { id: x.id, book, goal, expected, diff: book - expected }; });
+  if (!people.length) return "";
+  const G = people.reduce((a, x) => a + x.goal, 0), B = people.reduce((a, x) => a + x.book, 0), E = G * pace, diff = B - E;
+  const showPct = E >= 15 * 60; // percentages vs pace only mean something once the day's underway
+  const pctOf = v => (showPct ? (v / E) * 100 : 0);
+  const fmtPct = v => (v >= 0 ? "+" : "−") + Math.abs(v).toFixed(Math.abs(v) < 10 ? 1 : 0) + "%";
+  const ahead = diff >= 0;
+  const chip = pace === 0
+    ? `<span class="status-chip">Pace starts at 9a</span>`
+    : `<span class="status-chip ${ahead ? "good" : "serious"}">${ahead ? "▲ Ahead" : "▼ Behind"} ${fmtHM(Math.abs(diff))}${showPct ? ` · ${fmtPct(pctOf(diff))}` : ""}</span>`;
+  const maxAbs = Math.max(1, ...people.map(x => Math.abs(pctOf(x.diff))));
+  const rows = people.slice().sort((a, b) => b.diff - a.diff).map(x => {
+    const p = PEOPLE[x.id], v = pctOf(x.diff), w = showPct ? Math.min(50, (Math.abs(v) / maxAbs) * 50) : 0;
+    return `<div class="tb-row" title="${esc(p.name)}: ${fmtHM(x.book)} of ${fmtHM(x.goal)} (on pace = ${fmtHM(x.expected)})">
+      <span class="tb-name"><span class="avatar" style="background:${esc(p.color)};width:18px;height:18px;font-size:8.5px;margin-right:6px">${esc(p.initials)}</span>${esc(p.name.split(" ")[0])}</span>
+      <div class="tb-bar"><div class="tb-mid"></div>${w ? `<div class="tb-fill ${v >= 0 ? "up" : "down"}" style="${v >= 0 ? "left:50%" : `right:50%`};width:${w}%"></div>` : ""}</div>
+      <span class="tb-pct ${v >= 0 ? "up" : "down"}">${showPct ? fmtPct(v) : "—"}</span>
+      <span class="tb-sub">${x.diff >= 0 ? "+" : "−"}${fmtHM(Math.abs(x.diff))}</span>
+    </div>`;
+  }).join("");
+  return `
+    <div class="panel team-book">
+      <div class="meter-top"><span class="meter-title">📖 Team book time</span>${chip}</div>
+      <div class="meter-value book-text">${fmtHM(B)} <span class="of">/ ${fmtHM(G)} team goal · ${Math.round((B / G) * 100)}% done</span></div>
+      <div class="meter-track tb-track">
+        <div class="meter-fill" style="width:${Math.min(100, (B / G) * 100)}%"></div>
+        <div class="meter-pace" style="left:${pace * 100}%" title="Where the team should be right now (${fmtHM(E)})"></div>
+      </div>
+      <div class="meter-note">${people.length} people with a book-time goal today · grey tick = on pace (${fmtHM(E)} by now, 9a–6p day)</div>
+      <div class="tb-head"><span>Pushing it ahead ▲ / dragging it down ▼</span><span class="meter-note">% = share of the team's pace</span></div>
+      <div class="tb-list">${rows}</div>
+    </div>`;
+}
 // Role someone is working today: what they picked when they logged in, else their default role.
 function todaysPosition(id) {
   if (id === state.me && state.position) return state.position;
   return state.attendance[id] || (PEOPLE[id] && PEOPLE[id].defaultPosition) || null;
 }
 function renderTeam() {
-  // Everyone active with a role shows up — logged in today or not (not logged in → their default role).
-  const loggedInToday = Object.values(PEOPLE).filter(p => p.active && (p.positions.length || state.attendance[p.id]))
-    .sort((a, b) => a.name.localeCompare(b.name)).map(p => p.id);
+  // Only people who've shown activity today (logged in, a note, a timer, credit, an invoice…).
+  // Not logged in → shown in their default role.
+  const team = teamToday();
+  const loggedInToday = team.active;
   const rows = loggedInToday.map(id => {
     const p = PEOPLE[id];
     const pos = todaysPosition(id);
     const picked = id === state.me || !!state.attendance[id];
+    const why = (state.activeToday[id] || []).join(", ");
     const goals = GOALS[pos];
     const totals = computeTotals(id);
     const tickets = ticketsFor(id).filter(t => isQueueStatus(t.status));
@@ -2142,7 +2211,7 @@ function renderTeam() {
     const credit = creditCounts(id);
     return `
       <tr>
-        <td><div class="person-cell"><div class="avatar" style="background:${esc(p.color)}">${esc(p.initials)}</div>${esc(p.name)}${anyRunning ? '<span class="live-dot" style="margin-left:8px" title="Timer running"></span>' : ''}</div></td>
+        <td><div class="person-cell" title="Active today: ${esc(why)}"><div class="avatar" style="background:${esc(p.color)}">${esc(p.initials)}</div>${esc(p.name)}${anyRunning ? '<span class="live-dot" style="margin-left:8px" title="Timer running"></span>' : ''}</div></td>
         <td>${esc(pos || "—")}${picked ? "" : ` <span class="default-tag" title="Hasn't logged in today — using their default role">default</span>`}</td>
         <td>${goals ? `<div class="mini-meter-track"><div class="mini-meter-fill book" style="width:${bookPct}%"></div></div>${fmtHM(totals.book)} / ${fmtHM(goals.book)}` : '—'}</td>
         <td class="num-cell">${credit.resolved}</td>
@@ -2156,13 +2225,15 @@ function renderTeam() {
   const people = activePeople().slice().sort((a, b) => a.name.localeCompare(b.name));
   return `
     ${state.showMoney ? renderMoney() : ""}
+    ${renderTeamBook()}
     <div class="panel">
       <h2>Today's team</h2>
       ${loggedInToday.length ? `
       <table>
         <thead><tr><th>Person</th><th>Position</th><th class="h-book">📖 Book time</th><th class="num-cell" title="Resolved today as the primary (got the credit)">✅ Resolved</th><th class="num-cell" title="Every ticket they got credit for today: resolved, partial credit, or diagnosis credit (even 0m)">Total tickets</th><th>In queue</th></tr></thead>
         <tbody>${rows}</tbody>
-      </table>` : `<div class="meter-note">No active people yet — add them in Admin Console → Users.</div>`}
+      </table>` : `<div class="meter-note">Nobody's shown any activity yet today.</div>`}
+      ${team.inactive.length ? `<div class="meter-note" style="margin-top:8px">Not active yet today: ${team.inactive.map(id => esc(PEOPLE[id].name.split(" ")[0])).join(", ")} — they show up once they log in, leave a note in RepairShopr, run a timer, get credit or create an invoice.</div>` : ""}
     </div>
     <div class="panel">
       <h2>All tickets in queue</h2>
