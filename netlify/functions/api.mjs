@@ -81,6 +81,7 @@ export default async (req, context) => {
           case "/admin/manual-time-note":   return json(await setSetting("manual_time_note", !!body.on));
           case "/admin/role-goal":          return json(await setRoleGoal(body));
           case "/admin/labor-category":     return json(await setLaborCategory(body));
+          case "/admin/show-team-book":     return json(await setSetting("show_team_book", !!body.on));
           case "/admin/show-money":         return json(await setSetting("show_money", !!body.on));
           case "/admin/diag-min-total":     return json(await setSetting("diag_min_repair_total", Math.max(0, Math.round(Number(body.value) || 0))));
           case "/admin/eligible-statuses":  return json(await setSetting("diagnosis_eligible_statuses", (body.statuses || []).map(String).slice(0, 50)));
@@ -166,6 +167,7 @@ async function loadSettings(sql) {
     diagMinRepairTotal: Number(s.diag_min_repair_total ?? 119),
     manualTimeNote: s.manual_time_note === true,
     showMoney: s.show_money !== false,
+    showTeamBook: s.show_team_book === true, // Team tab "Team book time" bar (off unless turned on)
     positions: POSITIONS,
     roleGoals: Object.fromEntries(POSITIONS.map(p => [p, s.role_goals && p in s.role_goals ? s.role_goals[p] : DEFAULT_GOALS[p]])), // Team tab "Today's money" panel (on by default)
     // Statuses that count as "in the queue" — only these show under "Your assigned tickets".

@@ -880,6 +880,7 @@ let state = {
   diagMinRepairTotal: 119,
   manualTimeNote: false,
   showMoney: true,
+  showTeamBook: false,
   refreshing: false,
   creditEditOpen: null,
   actualEditOpen: null,
@@ -978,6 +979,7 @@ function applyServerState(d) {
   state.diagMinRepairTotal = d.settings.diagMinRepairTotal ?? 119;
   state.manualTimeNote = !!d.settings.manualTimeNote;
   state.showMoney = d.settings.showMoney !== false;
+  state.showTeamBook = d.settings.showTeamBook === true;
   state.queueStatuses = d.settings.queueStatuses || [];
   state.personToday = d.personToday || {};
   state.rsError = d.rsError;
@@ -2225,7 +2227,7 @@ function renderTeam() {
   const people = activePeople().slice().sort((a, b) => a.name.localeCompare(b.name));
   return `
     ${state.showMoney ? renderMoney() : ""}
-    ${renderTeamBook()}
+    ${state.showTeamBook ? renderTeamBook() : ""}
     <div class="panel">
       <h2>Today's team</h2>
       ${loggedInToday.length ? `
@@ -2491,6 +2493,7 @@ async function clearDefaultKey() {
   const r = await mutate("/admin/default-key", { key: null });
   if (r) loadKeysInfo();
 }
+function setShowTeamBook(on) { mutate("/admin/show-team-book", { on }, () => { state.showTeamBook = on; }); }
 function setShowMoney(on) { mutate("/admin/show-money", { on }, () => { state.showMoney = on; }); }
 function setManualTimeNote(on) { mutate("/admin/manual-time-note", { on }, () => { state.manualTimeNote = on; }); }
 function renderTimerPanel() {
@@ -2643,8 +2646,9 @@ function renderAdminRs() {
     ${renderDefaultKeyPanel()}
     ${renderTimerPanel()}
     <div class="panel">
-      <h2>💰 Team tab</h2>
-      <label class="sort-option"><input type="checkbox" id="show-money" ${state.showMoney ? "checked" : ""} onchange="setShowMoney(this.checked)"> Show "Today's money" (payments + invoiced today) at the top of the Team tab — everyone who can open the Team tab sees it</label>
+      <h2>👥 Team tab</h2>
+      <label class="sort-option"><input type="checkbox" id="show-money" ${state.showMoney ? "checked" : ""} onchange="setShowMoney(this.checked)"> Show "💰 Today's money" (payments + invoiced today) at the top of the Team tab — everyone who can open the Team tab sees it</label>
+      <label class="sort-option"><input type="checkbox" id="show-team-book" ${state.showTeamBook ? "checked" : ""} onchange="setShowTeamBook(this.checked)"> Show "📖 Team book time" (the team bar + who's pushing it ahead / dragging it down)</label>
     </div>
     <div class="panel">
       <h2>RepairShopr connection</h2>
