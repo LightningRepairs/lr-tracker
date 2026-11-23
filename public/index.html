@@ -6,7 +6,11 @@
 <title>Lightning Repairs — Tech Tool</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=Pixelify+Sans:wght@400;600;700&display=swap" rel="stylesheet">
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 24 24%27%3E%3Crect width=%2724%27 height=%2724%27 rx=%275%27 fill=%27%231596d1%27/%3E%3Cpath d=%27M13 2 3 14h7l-1 8 11-14h-7l0-6z%27 fill=%27%23ffcc00%27/%3E%3C/svg%3E">
+<link rel="icon" href="/favicon.ico" sizes="48x48">
+<link rel="icon" type="image/png" sizes="32x32" href="/icons/favicon-32.png">
+<link rel="icon" type="image/png" sizes="16x16" href="/icons/favicon-16.png">
+<link rel="apple-touch-icon" sizes="180x180" href="/icons/apple-touch-icon.png">
+<link rel="manifest" href="/manifest.webmanifest">
 <style>
   /* Three themes: Light (default), Dark (logo navy), Retro (logo sky blue + yellow).
      Status colors (good/warning/serious/critical) are fixed in every theme. */
@@ -670,6 +674,18 @@
   .valor-test { margin-top: 10px; font-size: 11.5px; white-space: pre-wrap; background: var(--surface-2); border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; max-height: 320px; overflow: auto; }
   .reader-name-row { display: flex; gap: 10px; align-items: center; margin: 4px 0; }
   .reader-name-row > .meter-note { min-width: 60px; margin: 0; }
+  .app-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); gap: 18px 12px; padding: 6px 0 4px; }
+  .app-tile { display: flex; flex-direction: column; align-items: center; gap: 8px; background: none; border: none; padding: 8px 4px; border-radius: 14px; cursor: pointer; color: var(--text-primary); font: inherit; }
+  .app-tile:hover:not(.locked) { background: var(--surface-2); }
+  .app-tile:focus-visible { outline: 2px solid var(--brand-blue); outline-offset: 2px; }
+  .app-icon { position: relative; width: 64px; height: 64px; border-radius: 16px; display: grid; place-items: center; font-size: 32px; box-shadow: 0 3px 8px rgba(0,0,0,.18); }
+  .app-name { font-size: 12.5px; font-weight: 600; text-align: center; line-height: 1.25; max-width: 110px; }
+  .app-tile.locked { cursor: not-allowed; }
+  .app-tile.locked .app-icon { filter: grayscale(1); opacity: .45; box-shadow: none; }
+  .app-tile.locked .app-name { color: var(--text-muted); }
+  .app-icon-wrap { position: relative; display: inline-block; }
+  .app-lock { position: absolute; right: -7px; bottom: -7px; font-size: 15px; line-height: 1; background: var(--surface); border: 1px solid var(--border); border-radius: 999px; padding: 3px; }
+  :root[data-theme="8bit"] .app-icon { border-radius: 0; border: 3px solid #000; }
   .card-pickers { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
   .card-actions { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-top: 12px; }
   td.num-r, th.num-r { text-align: right; font-variant-numeric: tabular-nums; }
@@ -1300,14 +1316,17 @@ function routeFromState() {
     if (state.adminSection === "booktime" && state.adminCategory) return `#/admin/booktime/${state.adminCategory}`;
     return `#/admin/${state.adminSection}`;
   }
+  if (state.tab === "apps") return state.appOpen ? `#/apps/${state.appOpen}` : "#/apps";
   return "#/" + state.tab;
 }
 function applyRoute() {
   const parts = location.hash.replace(/^#\/?/, "").split("/").filter(Boolean);
+  if (parts[0] === "cards") { parts.splice(0, 1, "apps", "cards"); }   // old link → LR Apps › card report
   let tab = parts[0] || "day";
-  if (!["day", "team", "settings", "reports", "admin", "cards"].includes(tab)) tab = "day";
-  if (tab === "cards" && !canSeeCardSales()) tab = "day";
-  if (tab === "cards") setTimeout(loadCardInfo, 0);
+  if (!["day", "team", "apps", "settings", "reports", "admin"].includes(tab)) tab = "day";
+  const app = tab === "apps" && parts[1] ? LR_APPS.find(a => a.key === parts[1]) : null;
+  state.appOpen = app && app.can() ? app.key : null;
+  if (state.appOpen) setTimeout(app.open, 0);
   if ((tab === "admin" || tab === "reports") && !(state.currentUser && state.currentUser.admin)) tab = "day";
   if (tab === "reports") setTimeout(loadReportLive, 0);
   state.tab = tab;
@@ -1317,7 +1336,7 @@ function applyRoute() {
   state.positionMenuOpen = false;
   if (state.adminSection === "rs" && !state.rsCheck && !state.rsCheckLoading) setTimeout(runRsCheck, 0);
   if (state.adminSection === "rs") setTimeout(loadKeysInfo, 0);
-  if (!location.hash || (parts[0] && parts[0] !== tab)) history.replaceState(null, "", routeFromState()); // bounced → fix the address bar
+  if (!location.hash || location.hash !== routeFromState()) history.replaceState(null, "", routeFromState()); // bounced → fix the address bar
 }
 function navigate() {
   const h = routeFromState();
@@ -1341,8 +1360,8 @@ function renderApp() {
       <div class="tabs">
         <button class="tab ${state.tab==='day'?'active':''}" onclick="setTab('day')">My Day</button>
         <button class="tab ${state.tab==='team'?'active':''}" onclick="setTab('team')">Team</button>
+        <button class="tab ${state.tab==='apps'?'active':''}" onclick="setTab('apps')">LR Apps</button>
         <button class="tab ${state.tab==='settings'?'active':''}" onclick="setTab('settings')">Settings</button>
-        ${canSeeCardSales() ? `<button class="tab ${state.tab==='cards'?'active':''}" onclick="setTab('cards')">💳 Card sales</button>` : ""}
         ${isAdmin ? `<button class="tab ${state.tab==='reports'?'active':''}" onclick="setTab('reports')">Reports</button>` : ""}
         ${isAdmin ? `<button class="tab ${state.tab==='admin'?'active':''}" onclick="setTab('admin')">Admin Console</button>` : ""}
       </div>
@@ -1370,7 +1389,7 @@ function renderApp() {
     </div>
     <main class="content">
       ${state.rsError ? `<div class="rs-warning"><b>Can't reach RepairShopr right now</b> — showing what the app already knows. ${state.currentUser.admin ? `<br><span style="opacity:.8">${esc(state.rsError)}</span>` : ""}</div>` : ""}
-      ${state.tab === 'day' ? renderDay() : state.tab === 'team' ? renderTeam() : state.tab === 'admin' ? renderAdmin() : state.tab === 'reports' ? renderReports() : state.tab === 'cards' ? renderCardSalesTab() : renderSettings()}
+      ${state.tab === 'day' ? renderDay() : state.tab === 'team' ? renderTeam() : state.tab === 'admin' ? renderAdmin() : state.tab === 'reports' ? renderReports() : state.tab === 'apps' ? renderApps() : renderSettings()}
     </main>
   `;
 }
@@ -1378,12 +1397,13 @@ function setTab(t) {
   state.tab = t;
   state.positionMenuOpen = false;
   if (t !== "admin") { state.adminSection = null; state.adminCategory = null; state.adminView = "home"; }
+  if (t === "apps") state.appOpen = null;
   navigate();
 }
 function togglePositionMenu() { state.positionMenuOpen = !state.positionMenuOpen; render(); }
 function changePosition(pos) {
   state.positionMenuOpen = false;
-  mutate("/position", { position: pos }, () => { state.position = pos; state.attendance[state.me] = pos; if (state.tab === "cards" && !canSeeCardSales()) setTab("day"); });
+  mutate("/position", { position: pos }, () => { state.position = pos; state.attendance[state.me] = pos; });
 }
 
 /* ---------- My Day ---------- */
@@ -2526,7 +2546,7 @@ function renderReaderNamesPanel() {
   return `
     <div class="panel">
       <h2>💳 Card readers</h2>
-      ${rs.length ? `<div class="meter-note" style="margin-bottom:8px">Names shown on the Card sales tab and its PDFs. Leave a box blank to go back to the default name.</div>
+      ${rs.length ? `<div class="meter-note" style="margin-bottom:8px">Names shown in the Download CC Report app and its PDFs. Leave a box blank to go back to the default name.</div>
         ${rs.map(r => `<div class="reader-name-row"><span class="meter-note">Reader ${esc(r.id)}</span>
           <input id="reader-name-${esc(r.id)}" class="booktime-input" style="width:200px" type="text" maxlength="40" value="${esc(r.name)}" placeholder="${esc(r.defaultName)}"
             onchange="setReaderName('${esc(r.id)}', this.value)" onkeydown="if (event.key === 'Enter') this.blur()"></div>`).join("")}`
@@ -3189,13 +3209,36 @@ function renderRefurbSection() {
 const CARD_SALES_ROLES = ["Sales", "Float", "Assistant Manager", "Manager"];
 function canSeeCardSales() {
   const u = state.currentUser;
-  return !!u && (u.admin || CARD_SALES_ROLES.includes(state.position));
+  return !!u && (u.admin || (u.positions || []).some(p => CARD_SALES_ROLES.includes(p)));
+}
+/* ---------- LR Apps: a home screen of small tools. Everyone sees every app; locked ones are greyed out. ---------- */
+const LR_APPS = [
+  { key: "cards", name: "Download CC Report", icon: "💳", color: "#1f8f5f", can: () => canSeeCardSales(),
+    locked: "Needs the Sales, Float, Assistant Manager or Manager role", render: () => renderCardSalesTab(), open: () => loadCardInfo() },
+];
+function openApp(key) {
+  const app = LR_APPS.find(a => a.key === key);
+  if (!app || !app.can()) return;
+  state.tab = "apps"; state.appOpen = key; navigate();
+}
+function closeApp() { state.appOpen = null; navigate(); }
+function renderApps() {
+  const app = state.appOpen && LR_APPS.find(a => a.key === state.appOpen && a.can());
+  if (app) return `<div class="breadcrumb"><button class="btn ghost small" onclick="closeApp()">&larr; LR Apps</button></div>${app.render()}`;
+  const tiles = LR_APPS.map(a => {
+    const ok = a.can();
+    return `<button type="button" class="app-tile ${ok ? "" : "locked"}" ${ok ? `onclick="openApp('${a.key}')"` : "disabled"} title="${esc(ok ? a.name : a.locked)}">
+      <span class="app-icon-wrap"><span class="app-icon" style="background:${a.color}">${a.icon}</span>${ok ? "" : `<span class="app-lock">🔒</span>`}</span>
+      <span class="app-name">${esc(a.name)}</span>
+    </button>`;
+  }).join("");
+  return `<div class="panel apps-panel"><h2>LR Apps</h2><div class="app-grid">${tiles}</div></div>`;
 }
 const usd = c => "$" + ((Number(c) || 0) / 100).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 async function loadCardInfo() {
   try { state.cardInfo = await api("/card-sales/info"); state.cardError = null; }
   catch (e) { state.cardError = e.message; }
-  if (state.tab === "cards") render();
+  if (state.tab === "apps") render();
 }
 function pickCardReader(id) { state.cardReader = id; }
 function renderCardSalesTab() {
@@ -3208,7 +3251,7 @@ function renderCardSalesTab() {
   const btn = (day, label) => `<button class="btn ${day === info.today ? "primary" : ""}" onclick="downloadCardReport('${day}')" ${busy ? "disabled" : ""}>${busy === day ? "Pulling from Valor…" : `⬇ ${label}`}</button>`;
   return `
     <div class="panel">
-      <h2>💳 Card sales reports</h2>
+      <h2>💳 Download CC Report</h2>
       <div class="report-field" style="margin-bottom:12px"><span class="report-label" style="grid-row:auto">Reader</span>
         <select id="card-reader" class="setting-select" style="justify-self:start" onchange="pickCardReader(this.value)" ${busy ? "disabled" : ""}>
           ${readers.map(r => `<option value="${esc(r.id)}" ${state.cardReader === r.id ? "selected" : ""}>${esc(r.name)}</option>`).join("")}

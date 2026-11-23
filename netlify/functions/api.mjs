@@ -771,22 +771,21 @@ async function setLaborCategory({ name }) {
   catch (e) { return { ok: true, error: e.message }; }
 }
 /* ---------------- 💳 card sales (Valor) ---------------- */
-// Front-of-house roles (or admins) only, and only today + the previous business day.
+// Anyone who CAN work Sales / Float / Assistant Manager / Manager (whatever role they're in right now),
+// or an admin. Only today + the previous business day.
 const CARD_SALES_ROLES = ["Sales", "Float", "Assistant Manager", "Manager"];
 async function canSeeCardSales(me) {
-  if (me.is_admin) return true;
-  const [a] = await db()`select position from attendance where person_id = ${me.id} and work_date = ${today()}`;
-  return !!a && CARD_SALES_ROLES.includes(a.position);
+  return !!me.is_admin || (me.positions || []).some(p => CARD_SALES_ROLES.includes(p));
 }
 // What the Card sales tab needs to draw itself (no Valor call).
 async function cardSalesInfo(me) {
-  if (!(await canSeeCardSales(me))) throw new HttpError(403, "Card sales are only for Sales, Float, Assistant Manager and Manager (log in with one of those roles)");
+  if (!(await canSeeCardSales(me))) throw new HttpError(403, "Card sales reports need the Sales, Float, Assistant Manager or Manager role (ask an admin)");
   const t0 = today();
   return { configured: valorConfigured(), today: t0, previous: previousBusinessDay(t0), readers: (await namedReaders()).map(r => ({ id: r.id, name: r.name })) };
 }
 // One report, pulled from Valor right now. reader = a reader id, or "all".
 async function cardSales(me, params) {
-  if (!(await canSeeCardSales(me))) throw new HttpError(403, "Card sales are only for Sales, Float, Assistant Manager and Manager (log in with one of those roles)");
+  if (!(await canSeeCardSales(me))) throw new HttpError(403, "Card sales reports need the Sales, Float, Assistant Manager or Manager role (ask an admin)");
   const t0 = today(), prev = previousBusinessDay(t0);
   const day = params.get("day") || t0;
   if (day !== t0 && day !== prev) throw new HttpError(403, "Card sales can only be pulled for today and the previous business day");
