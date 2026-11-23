@@ -667,6 +667,7 @@
   .tb-pct { text-align: right; font-weight: 700; font-variant-numeric: tabular-nums; }
   .tb-pct.up { color: var(--good, #1f9d55); } .tb-pct.down { color: var(--critical); }
   .tb-sub { color: var(--text-muted); font-size: 11.5px; text-align: right; font-variant-numeric: tabular-nums; }
+  .valor-test { margin-top: 10px; font-size: 11.5px; white-space: pre-wrap; background: var(--surface-2); border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; max-height: 320px; overflow: auto; }
   .reader-name-row { display: flex; gap: 10px; align-items: center; margin: 4px 0; }
   .reader-name-row > .meter-note { min-width: 60px; margin: 0; }
   .card-pickers { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
@@ -2530,7 +2531,25 @@ function renderReaderNamesPanel() {
           <input id="reader-name-${esc(r.id)}" class="booktime-input" style="width:200px" type="text" maxlength="40" value="${esc(r.name)}" placeholder="${esc(r.defaultName)}"
             onchange="setReaderName('${esc(r.id)}', this.value)" onkeydown="if (event.key === 'Enter') this.blur()"></div>`).join("")}`
       : `<div class="meter-note">No card readers set up yet — add VALOR_APP_ID, VALOR_APP_KEY and VALOR_EPI (and _2 for a second reader) in Netlify, then redeploy.</div>`}
+      ${rs.length ? `<div style="margin-top:10px"><button class="btn small" onclick="runValorTest()" ${state.valorTesting ? "disabled" : ""}>${state.valorTesting ? "Testing…" : "🔌 Test Valor"}</button></div>` : ""}
+      ${state.valorTest ? renderValorTest(state.valorTest) : ""}
     </div>`;
+}
+async function runValorTest() {
+  state.valorTesting = true; state.valorTest = null; render();
+  try { state.valorTest = await api("/admin/valor-test"); }
+  catch (e) { state.valorTest = { error: e.message }; }
+  finally { state.valorTesting = false; render(); }
+}
+function renderValorTest(t) {
+  if (t.error) return `<div class="bad-text" style="margin-top:8px">${esc(t.error)}</div>`;
+  const txt = [`Server IP: ${t.serverIp || "unknown"}`];
+  for (const r of t.readers) {
+    txt.push(``, `${r.name} — EPI …${r.epiLast4} · APP ID ${r.appIdLength} chars · APP Key ${r.appKeyLength} chars`);
+    for (const x of r.results) txt.push(`  ${x.ok ? "✓" : "✗"} ${x.label}: HTTP ${x.status}${x.rows != null ? ` · ${x.rows} rows` : ""}${x.says ? ` · ${x.says}` : ""}`);
+  }
+  return `<pre class="valor-test" id="valor-test-out">${esc(txt.join("\n"))}</pre>
+    <div class="meter-note">Copy this and send it over — no keys are shown in it.</div>`;
 }
 function setReaderName(id, name) {
   mutate("/admin/reader-name", { id, name }, () => { const r = state.cardReaders.find(x => x.id === id); if (r) r.name = name.trim() || r.defaultName; state.cardInfo = null; });

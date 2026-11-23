@@ -19,7 +19,7 @@ import { syncTimers, syncTimersThrottled, rsTimerAction, rsTimerTotals } from ".
 import { ensureSchema } from "../../lib/migrate.mjs";
 import { RS_ISSUE_TYPES, ISSUE_TYPE_TO_DEVICE } from "../../lib/booktime.mjs";
 import { buildReport, syncInvoiceSnaps, laborProducts } from "../../lib/reports.mjs";
-import { syncCardSales, syncPastDay, cardSalesFor, previousBusinessDay, valorConfigured, valorReaders, namedReaders, ValorError } from "../../lib/valor.mjs";
+import { syncCardSales, syncPastDay, cardSalesFor, valorDiagnose, previousBusinessDay, valorConfigured, valorReaders, namedReaders, ValorError } from "../../lib/valor.mjs";
 
 // Time budgets so a page load always answers well inside Netlify's ~10s function limit.
 const TICKETS_WAIT_MS = 4500, USERS_WAIT_MS = 3000;
@@ -102,6 +102,10 @@ export default async (req, context) => {
     }
     if (req.method === "GET" && route === "/card-sales") return json(await cardSales(me, url.searchParams));
     if (req.method === "GET" && route === "/card-sales/info") return json(await cardSalesInfo(me));
+    if (req.method === "GET" && route === "/admin/valor-test") {
+      if (!me.is_admin) throw new HttpError(403, "Admins only");
+      return json(await valorDiagnose());
+    }
     if (req.method === "GET" && route === "/admin/report") {
       if (!me.is_admin) throw new HttpError(403, "Admins only");
       return json(await report(url.searchParams));
