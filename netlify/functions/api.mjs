@@ -7,7 +7,7 @@ import { today, shopDate, shopOffset, shopTimeOfDay } from "../../lib/time.mjs";
 import { effectiveDevice, creditedMinutes, repairMinutes } from "../../lib/booktime.mjs";
 import {
   getTickets, getUsers, assignTicket, setTicketIssueType, postComment, invalidate, patchCachedTicket, probeRs, RsError, RS_SUBDOMAIN,
-  whoIsKey, defaultKey, forgetDefaultKey, setTicketDueDate, getMoney,
+  whoIsKey, defaultKey, forgetDefaultKey, setTicketDueDate, getMoney, listTimers, timerOp,
 } from "../../lib/rs.mjs";
 import { encryptSecret, decryptSecret, last4 } from "../../lib/secrets.mjs";
 
@@ -17,8 +17,9 @@ const keyFor = me => decryptSecret(me.rs_api_key_enc) || undefined;
 import { syncFromRs, DEFAULT_QUEUE_STATUSES } from "../../lib/sync.mjs";
 import { syncTimers, syncTimersThrottled, rsTimerAction, rsTimerTotals } from "../../lib/timers.mjs";
 import { ensureSchema } from "../../lib/migrate.mjs";
-import { RS_ISSUE_TYPES } from "../../lib/booktime.mjs";
+import { RS_ISSUE_TYPES, ISSUE_TYPE_TO_DEVICE } from "../../lib/booktime.mjs";
 import { buildReport, syncInvoiceSnaps, laborProducts } from "../../lib/reports.mjs";
+import { syncCardSales, syncYesterday, cardSalesFor, previousBusinessDay, valorConfigured, ValorError } from "../../lib/valor.mjs";
 
 // Time budgets so a page load always answers well inside Netlify's ~10s function limit.
 const TICKETS_WAIT_MS = 4500, USERS_WAIT_MS = 3000;
@@ -62,6 +63,7 @@ export default async (req, context) => {
       switch (route) {
         case "/position":      return json(await setPosition(me, body));
         case "/timer":         return json(await timerAction(me, body));
+        case "/refurb":        return json(await refurbAction(me, body));
         case "/manual-time":   return json(await manualTime(me, body));
         case "/device":        return json(await setDevice(me, body));
         case "/outcome":       return json(await setOutcome(me, body));
@@ -97,6 +99,7 @@ export default async (req, context) => {
       if (!me.is_admin) throw new HttpError(403, "Admins only");
       return json(await keysInfo());
     }
+    if (req.method === "GET" && route === "/card-sales") return json(await cardSales(me, url.searchParams));
     if (req.method === "GET" && route === "/admin/report") {
       if (!me.is_admin) throw new HttpError(403, "Admins only");
       return json(await report(url.searchParams));
@@ -109,6 +112,7 @@ export default async (req, context) => {
   } catch (e) {
     if (e instanceof HttpError) return json({ error: e.message }, e.status);
     if (e instanceof RsError) return json({ error: e.message }, 502);
+    if (e instanceof ValorError) return json({ error: e.message }, 502);
     console.error(e);
     return json({ error: e.message || "Server error" }, 500);
   }
@@ -202,7 +206,7 @@ async function buildState(me, { force = false } = {}) {
     union select ticket_id from notes where work_date = ${t0}
     union select ticket_id from completions where work_date = ${t0}
     union select ticket_id from diag_prompts where state = 'pending'`;
-  const extraIds = extraIdRows.map(r => Number(r.ticket_id)).filter(id => !openIds.has(id));
+  const extraIds = extraIdRows.map(r => Number(r.ticket_id)).filter(id => id > 0 && !openIds.has(id));
   const ids = [...openIds, ...extraIds];
 
   const [stateRows, workRows, assignRows, noteRows, timerRows, totalRows, todayRows, bookTodayRows, spentTodayRows, runningRows, queueRows, promptRows, diagCreditRows, appNoteRows, moneyCache] = await Promise.all([
@@ -223,6 +227,14 @@ async function buildState(me, { force = false } = {}) {
     sql`select person_id, sum(credited_minutes)::int as m from work_log where work_date = ${t0} and outcome = 'diagnosis_completed' group by 1`,
     sql`select distinct person_id from notes where work_date = ${t0}`,
     sql`select value from rs_cache where key = 'money'`,
+  ]);
+  // Refurbs: mine (open + done today) with their timers; everyone's done-today minutes count as book time.
+  const [myRefurbRows, refurbDoneRows] = await Promise.all([
+    sql`select r.*, t.state as timer_state, t.running_since,
+           (select coalesce(sum(seconds),0)::int from time_entries e where e.ticket_id = -r.id and e.person_id = r.person_id) as spent
+        from refurbs r left join timers t on t.ticket_id = -r.id and t.person_id = r.person_id
+        where r.person_id = ${me.id} and (r.state = 'open' or r.done_date = ${t0}) order by r.created_at`,
+    sql`select person_id, count(*)::int as n, sum(book_minutes)::int as m from refurbs where state = 'done' and done_date = ${t0} group by 1`,
   ]);
 
   const stateById = new Map(stateRows.map(r => [Number(r.ticket_id), r]));
@@ -317,6 +329,7 @@ async function buildState(me, { force = false } = {}) {
   for (const c of completionBy.values()) {
     for (const sh of c.shares) if (personToday[sh.personId]) personToday[sh.personId].bookSec += Math.round((c.bookMinutes || 0) * 60 * sh.pct / 100);
   }
+  for (const r of refurbDoneRows) if (personToday[r.person_id]) personToday[r.person_id].bookSec += (r.m || 0) * 60;
   for (const r of spentTodayRows) if (personToday[r.person_id]) personToday[r.person_id].spentSec = r.s;
   for (const r of runningRows) if (personToday[r.person_id]) { personToday[r.person_id].runningSince = ms(r.running_since); personToday[r.person_id].runningTicketId = Number(r.ticket_id); }
   for (const r of rsTimerRows) {
@@ -335,6 +348,7 @@ async function buildState(me, { force = false } = {}) {
   for (const [pid, p] of Object.entries(personToday)) if (p.spentSec > 0 || p.runningSince) mark(pid, "timer");
   for (const c of completionBy.values()) for (const sh of c.shares) mark(sh.personId, "credit");
   for (const r of diagCreditRows) mark(r.person_id, "credit");
+  for (const r of refurbDoneRows) mark(r.person_id, "refurb");
   const mc = moneyCache[0]?.value;
   if (mc?.day === t0) for (const i of mc.invoices || []) mark(i.userId != null ? personByRsUser.get(String(i.userId)) : null, "invoice");
   mark(me.id, "logged in");
@@ -387,6 +401,11 @@ async function buildState(me, { force = false } = {}) {
     settings,
     tickets,
     personToday,
+    refurbs: myRefurbRows.map(r => ({
+      id: Number(r.id), label: r.label, issueType: r.issue_type, subtype: r.subtype, model: r.model, repairs: r.repairs || [],
+      state: r.state, bookMinutes: r.book_minutes, doneAt: ms(r.done_at), createdAt: ms(r.created_at),
+      timerState: r.timer_state || "idle", runningSince: ms(r.running_since), spentSec: r.spent || 0,
+    })),
     activeToday: Object.fromEntries(Object.entries(activeToday).map(([k, v]) => [k, [...v]])),
     rsUsers: me.is_admin ? rsUsers : [],
   };
@@ -425,8 +444,9 @@ async function settleLocalTimers(me, { exceptTicket, onlyTicket, to }) {
 }
 
 async function timerAction(me, { ticketId, action }) {
-  const id = ticketIdOf(ticketId);
   if (!["start", "pause", "stop"].includes(action)) throw new HttpError(400, "Bad timer action");
+  if (Number(ticketId) < 0) return refurbTimer(me, Number(ticketId), action);
+  const id = ticketIdOf(ticketId);
   const myKey = keyFor(me);
   if (myKey && me.rs_user_id != null) {
     // RepairShopr's timer is the real one: drive it with this person's key.
@@ -436,6 +456,10 @@ async function timerAction(me, { ticketId, action }) {
     if (action === "stop") await db()`update timers set state = 'logged' where ticket_id = ${id} and person_id = ${me.id} and state = 'paused'`;
     return { ok: true, rs: true };
   }
+  return localTimer(me, id, action);
+}
+// The app's own timer (people without a key, and every refurb). One running timer per person.
+async function localTimer(me, id, action) {
   const t0 = today();
   await db().begin(async tx => {
     await tx`insert into timers (ticket_id, person_id) values (${id}, ${me.id}) on conflict do nothing`;
@@ -461,14 +485,16 @@ async function timerAction(me, { ticketId, action }) {
 // SETS this person's total logged time on the ticket to exactly `minutes` (not additive), and stops the timer.
 // (Nothing is pushed to RepairShopr's timer. If the admin setting is on, a private note records it.)
 async function manualTime(me, { ticketId, minutes }) {
-  const id = ticketIdOf(ticketId);
+  const isRefurb = Number(ticketId) < 0;
+  const id = isRefurb ? Number(ticketId) : ticketIdOf(ticketId);
+  if (isRefurb) await myRefurb(me, -id);
   const target = Math.round(Number(minutes) * 60);
   if (!Number.isFinite(target) || target < 0 || target > 24 * 3600) throw new HttpError(400, "Enter minutes between 0 and 1440");
   const t0 = today();
-  const myKey = keyFor(me);
+  const myKey = isRefurb ? null : keyFor(me);
   // Stop my RepairShopr timer on this ticket first, so its time is final.
   if (myKey && me.rs_user_id != null) { try { await rsTimerAction(me, myKey, id, "stop"); } catch (e) { console.warn("rs stop", e.message); } }
-  const [{ rsSec }] = me.rs_user_id != null
+  const [{ rsSec }] = me.rs_user_id != null && !isRefurb
     ? await db()`select coalesce(sum(seconds),0)::int as "rsSec" from rs_timers where ticket_id = ${id} and rs_user_id = ${me.rs_user_id}`
     : [{ rsSec: 0 }];
   await db().begin(async tx => {
@@ -480,7 +506,7 @@ async function manualTime(me, { ticketId, minutes }) {
     await tx`update timers set state = 'logged', running_since = null where ticket_id = ${id} and person_id = ${me.id}`;
   });
   const [note] = await db()`select value from settings where key = 'manual_time_note'`;
-  if (note?.value === true) {
+  if (note?.value === true && !isRefurb) {
     try { await postComment(id, me.name, `${me.name} reports spending ${Math.round(target / 60)} minutes on this ticket (entered in the ticket tracker).`, myKey); }
     catch (e) { console.warn("manual-time note", e.message); }
   }
@@ -735,6 +761,119 @@ async function setLaborCategory({ name }) {
   try { const l = await laborProducts({ force: true }); return { ok: true, found: l.found, productCount: l.productIds.length, categories: l.categories }; }
   catch (e) { return { ok: true, error: e.message }; }
 }
+/* ---------------- 💳 card sales (Valor) ---------------- */
+// Front-of-house roles (or admins) only, and only today + the previous business day.
+const CARD_SALES_ROLES = ["Sales", "Float", "Assistant Manager", "Manager"];
+async function canSeeCardSales(me) {
+  if (me.is_admin) return true;
+  const [a] = await db()`select position from attendance where person_id = ${me.id} and work_date = ${today()}`;
+  return !!a && CARD_SALES_ROLES.includes(a.position);
+}
+async function cardSales(me, params) {
+  if (!(await canSeeCardSales(me))) throw new HttpError(403, "Card sales are only for Sales, Float, Assistant Manager and Manager (log in with one of those roles)");
+  const t0 = today(), prev = previousBusinessDay(t0);
+  const day = params.get("day") || t0;
+  if (day !== t0 && day !== prev) throw new HttpError(403, "Card sales can only be pulled for today and the previous business day");
+  if (!valorConfigured()) return { configured: false, today: t0, previous: prev };
+  let warning = null, batch = null, syncedAt = null;
+  if (day === t0) {
+    try {
+      const r = await syncCardSales({ maxAgeSec: params.get("refresh") === "1" ? 0 : 60, maxWaitMs: 8000 });
+      batch = r.value?.batch || null; syncedAt = r.value?.at || null;
+      if (r.error) warning = r.error;
+    } catch (e) { warning = e.message; }
+  } else {
+    // Previous business day: from what the app saved that day. If that was literally yesterday, top it up from Valor.
+    const yesterday = new Date(Date.parse(t0 + "T12:00:00Z") - 86400e3).toISOString().slice(0, 10);
+    const [{ n }] = await db()`select count(*)::int as n from card_txns where day = ${day}`;
+    if (day === yesterday && params.get("refresh") === "1" || (day === yesterday && n === 0)) {
+      try { await syncYesterday(); } catch (e) { warning = e.message; }
+    }
+  }
+  const r = await cardSalesFor(day);
+  return { configured: true, today: t0, previous: prev, ...r, batch: day === t0 ? batch : null, syncedAt, warning };
+}
+
+/* ---------------- refurbs (app-only) ---------------- */
+async function myRefurb(me, refurbId) {
+  const [r] = await db()`select * from refurbs where id = ${refurbId}`;
+  if (!r) throw new HttpError(404, "That refurb doesn't exist anymore");
+  if (r.person_id !== me.id && !me.is_admin) throw new HttpError(403, "That refurb belongs to someone else");
+  return r;
+}
+async function refurbMinutes(r) {
+  const bookTimes = (await db()`select value from settings where key = 'book_times'`)[0]?.value || {};
+  const mapped = ISSUE_TYPE_TO_DEVICE[r.issue_type];
+  if (!mapped || !r.model) return 0;
+  const subtype = r.subtype && (r.subtype === mapped.subtype || (mapped.alt || []).includes(r.subtype)) ? r.subtype : mapped.subtype;
+  const dev = { category: mapped.category, subtype, row: r.model };
+  return (r.repairs || []).reduce((a, rt) => a + (repairMinutes(bookTimes, dev, rt) || 0), 0);
+}
+async function refurbAction(me, b) {
+  const sql = db();
+  const text = (v, n) => String(v ?? "").trim().slice(0, n);
+  if (b.action === "create") {
+    const [{ n }] = await sql`select count(*)::int as n from refurbs where person_id = ${me.id} and state = 'open'`;
+    if (n >= 30) throw new HttpError(400, "You already have 30 open refurbs — finish or delete some first");
+    const [r] = await sql`insert into refurbs (person_id, label) values (${me.id}, ${text(b.label, 80)}) returning id`;
+    return { ok: true, id: Number(r.id) };
+  }
+  const r = await myRefurb(me, Number(b.id));
+  if (b.action === "update") {
+    if (r.state === "done") throw new HttpError(400, "Undo the completion before changing it");
+    const issueType = b.issueType !== undefined ? (RS_ISSUE_TYPES.includes(b.issueType) ? b.issueType : null) : r.issue_type;
+    const typeChanged = issueType !== r.issue_type;
+    const model = b.model !== undefined ? (text(b.model, 120) || null) : (typeChanged ? null : r.model);
+    const subtype = b.subtype !== undefined ? (text(b.subtype, 40) || null) : (typeChanged ? null : r.subtype);
+    const repairs = b.repairs !== undefined ? [...new Set((Array.isArray(b.repairs) ? b.repairs : []).map(x => text(x, 80)).filter(Boolean))].slice(0, 12)
+                                            : (typeChanged || model !== r.model ? [] : r.repairs);
+    const label = b.label !== undefined ? text(b.label, 80) : r.label;
+    await sql`update refurbs set label = ${label}, issue_type = ${issueType}, subtype = ${subtype}, model = ${model}, repairs = ${sql.json(repairs)} where id = ${r.id}`;
+    return { ok: true };
+  }
+  if (b.action === "complete") {
+    if (r.state === "done") return { ok: true };
+    const minutes = await refurbMinutes(r);
+    if (!r.model || !(r.repairs || []).length) throw new HttpError(400, "Pick the model and at least one repair first");
+    await localTimer({ id: r.person_id }, -Number(r.id), "stop").catch(() => {});
+    await sql`update refurbs set state = 'done', book_minutes = ${minutes}, done_at = now(), done_date = ${today()} where id = ${r.id}`;
+    return { ok: true, minutes };
+  }
+  if (b.action === "reopen") {
+    if (r.state !== "done") return { ok: true };
+    if (r.done_date && dstr(r.done_date) !== today()) throw new HttpError(400, "Only today's completed refurbs can be undone");
+    await sql`update refurbs set state = 'open', book_minutes = null, done_at = null, done_date = null where id = ${r.id}`;
+    return { ok: true };
+  }
+  if (b.action === "delete") {
+    if (r.state === "done") throw new HttpError(400, "Undo the completion before deleting it");
+    await sql.begin(async tx => {
+      await tx`delete from timers where ticket_id = ${-Number(r.id)}`;
+      await tx`delete from time_entries where ticket_id = ${-Number(r.id)}`;
+      await tx`delete from refurbs where id = ${r.id}`;
+    });
+    return { ok: true };
+  }
+  throw new HttpError(400, "Unknown refurb action");
+}
+async function refurbTimer(me, negId, action) {
+  const r = await myRefurb(me, -negId);
+  if (r.person_id !== me.id) throw new HttpError(403, "Only the person doing the refurb runs its timer");
+  if (r.state === "done" && action === "start") throw new HttpError(400, "Undo the completion to start its timer again");
+  if (action === "start") {
+    // Never two timers: pause my RepairShopr timer if one is running (the app's own ones are paused by localTimer).
+    const myKey = keyFor(me);
+    if (myKey && me.rs_user_id != null) {
+      try {
+        const running = await listTimers({ user_id: me.rs_user_id, status: "running" }, { maxPages: 2, key: myKey });
+        for (const t of running) await timerOp(t.id, "pause", myKey);
+        if (running.length) await syncTimers(await db()`select * from people`).catch(() => {});
+      } catch (e) { console.warn("refurb: pause RS timer", e.message); }
+    }
+  }
+  return localTimer(me, negId, action);
+}
+
 async function setRoleGoal({ position, book, actual }) {
   if (!POSITIONS.includes(position)) throw new HttpError(400, "Unknown position");
   const mins = v => { const n = Math.round(Number(v)); if (!Number.isFinite(n) || n < 0 || n > 1440) throw new HttpError(400, "Goals must be between 0 and 24 hours"); return n; };

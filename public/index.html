@@ -596,7 +596,22 @@
   @media (max-width: 1100px) { .trow.thead { display: none; } }
   .trow .icon-btn { width: 28px; height: 28px; }
   .icon-btn.on { border-color: var(--brand-blue); background: color-mix(in srgb, var(--brand-blue) 14%, var(--surface)); }
-  .tcell-outcome { min-width: 0; display: flex; justify-content: flex-end; }
+  .refurb-head { display: flex; justify-content: space-between; align-items: center; gap: 10px; margin-bottom: 8px; }
+  .refurb-head h2 { margin: 0; }
+  .refurb-head .btn { white-space: nowrap; flex: none; }
+  .refurb-label { min-width: 0; }
+  .refurb-label .ticket-num { font-size: 11px; color: var(--text-muted); }
+  .refurb-label .ticket-subject { font-size: 13px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .refurb-input { width: 100%; font: inherit; font-size: 12.5px; padding: 4px 7px; border: 1px solid var(--border); border-radius: 6px; background: var(--surface); color: var(--text-primary); }
+  .refurb-chips { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 4px; }
+  .refurb-chip { display: inline-flex; align-items: center; gap: 4px; font-size: 11.5px; border: 1px solid var(--border); border-radius: 999px; padding: 1px 4px 1px 9px; background: var(--surface-2); }
+  .refurb-chip b { color: var(--book); font-weight: 700; }
+  .refurb-chip button { border: none; background: transparent; color: var(--text-muted); cursor: pointer; font-size: 11px; padding: 0 3px; }
+  .refurb-chip button:hover { color: var(--critical); }
+  .refurb-row { padding-top: 6px; padding-bottom: 6px; }
+  .refurb-row.done { opacity: .85; }
+  .ticket-status.status-done { color: var(--good-text); font-weight: 700; font-size: 12px; }
+  .tcell-outcome { display: flex; justify-content: flex-end; }
   .tcell-outcome .outcome-select { width: 100%; min-width: 0; padding: 5px 7px; }
   .tcell-outcome .work-outcome-badge { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
   .diag-actions .tcell-device { width: 420px; }
@@ -652,6 +667,8 @@
   .tb-pct { text-align: right; font-weight: 700; font-variant-numeric: tabular-nums; }
   .tb-pct.up { color: var(--good, #1f9d55); } .tb-pct.down { color: var(--critical); }
   .tb-sub { color: var(--text-muted); font-size: 11.5px; text-align: right; font-variant-numeric: tabular-nums; }
+  .card-actions { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-top: 12px; }
+  td.num-r, th.num-r { text-align: right; font-variant-numeric: tabular-nums; }
   .default-tag { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; color: var(--text-muted); border: 1px dashed var(--border); border-radius: 999px; padding: 0 6px; margin-left: 4px; }
   td.num-cell, th.num-cell { text-align: center; font-variant-numeric: tabular-nums; }
   .report-table td, .report-table th { white-space: nowrap; }
@@ -986,6 +1003,7 @@ function applyServerState(d) {
   state.rsError = d.rsError;
   state.rsUsers = d.rsUsers || [];
   state.money = d.money || null;
+  state.refurbs = (d.refurbs || []).map(buildRefurb);
   state.activeToday = d.activeToday || {};
   state.tickets = d.tickets.map(buildTicket);
 }
@@ -1282,7 +1300,9 @@ function routeFromState() {
 function applyRoute() {
   const parts = location.hash.replace(/^#\/?/, "").split("/").filter(Boolean);
   let tab = parts[0] || "day";
-  if (!["day", "team", "settings", "reports", "admin"].includes(tab)) tab = "day";
+  if (!["day", "team", "settings", "reports", "admin", "cards"].includes(tab)) tab = "day";
+  if (tab === "cards" && !canSeeCardSales()) tab = "day";
+  if (tab === "cards") setTimeout(() => loadCardSales(state.cardDay), 0);
   if ((tab === "admin" || tab === "reports") && !(state.currentUser && state.currentUser.admin)) tab = "day";
   if (tab === "reports") setTimeout(loadReportLive, 0);
   state.tab = tab;
@@ -1292,7 +1312,7 @@ function applyRoute() {
   state.positionMenuOpen = false;
   if (state.adminSection === "rs" && !state.rsCheck && !state.rsCheckLoading) setTimeout(runRsCheck, 0);
   if (state.adminSection === "rs") setTimeout(loadKeysInfo, 0);
-  if (!location.hash) history.replaceState(null, "", routeFromState());
+  if (!location.hash || (parts[0] && parts[0] !== tab)) history.replaceState(null, "", routeFromState()); // bounced → fix the address bar
 }
 function navigate() {
   const h = routeFromState();
@@ -1317,6 +1337,7 @@ function renderApp() {
         <button class="tab ${state.tab==='day'?'active':''}" onclick="setTab('day')">My Day</button>
         <button class="tab ${state.tab==='team'?'active':''}" onclick="setTab('team')">Team</button>
         <button class="tab ${state.tab==='settings'?'active':''}" onclick="setTab('settings')">Settings</button>
+        ${canSeeCardSales() ? `<button class="tab ${state.tab==='cards'?'active':''}" onclick="setTab('cards')">💳 Card sales</button>` : ""}
         ${isAdmin ? `<button class="tab ${state.tab==='reports'?'active':''}" onclick="setTab('reports')">Reports</button>` : ""}
         ${isAdmin ? `<button class="tab ${state.tab==='admin'?'active':''}" onclick="setTab('admin')">Admin Console</button>` : ""}
       </div>
@@ -1344,7 +1365,7 @@ function renderApp() {
     </div>
     <main class="content">
       ${state.rsError ? `<div class="rs-warning"><b>Can't reach RepairShopr right now</b> — showing what the app already knows. ${state.currentUser.admin ? `<br><span style="opacity:.8">${esc(state.rsError)}</span>` : ""}</div>` : ""}
-      ${state.tab === 'day' ? renderDay() : state.tab === 'team' ? renderTeam() : state.tab === 'admin' ? renderAdmin() : state.tab === 'reports' ? renderReports() : renderSettings()}
+      ${state.tab === 'day' ? renderDay() : state.tab === 'team' ? renderTeam() : state.tab === 'admin' ? renderAdmin() : state.tab === 'reports' ? renderReports() : state.tab === 'cards' ? renderCardSalesTab() : renderSettings()}
     </main>
   `;
 }
@@ -1357,13 +1378,13 @@ function setTab(t) {
 function togglePositionMenu() { state.positionMenuOpen = !state.positionMenuOpen; render(); }
 function changePosition(pos) {
   state.positionMenuOpen = false;
-  mutate("/position", { position: pos }, () => { state.position = pos; state.attendance[state.me] = pos; });
+  mutate("/position", { position: pos }, () => { state.position = pos; state.attendance[state.me] = pos; if (state.tab === "cards" && !canSeeCardSales()) setTab("day"); });
 }
 
 /* ---------- My Day ---------- */
 // Open tickets assigned to someone (resolved ones live under "completed" instead).
 function ticketsFor(userId) { return state.tickets.filter(t => t.assignedTo === userId && !t.notOpen && t.status !== "Resolved"); }
-function findTicket(id) { return state.tickets.find(x => x.id === id); }
+function findTicket(id) { return id < 0 ? findRefurb(id) : state.tickets.find(x => x.id === id); }
 // "Your assigned tickets" on My Day: only tickets in an "in the queue" status. A ticket whose timer
 // you have running/paused stays visible even if its status moved on, so you can always stop it.
 const normStatus = s => String(s || "").trim().toLowerCase();
@@ -1776,6 +1797,7 @@ function renderDay() {
       ${ticketRows}
     </div>
     ${renderDiagnosisSection()}
+    ${renderRefurbSection()}
     <div class="panel">
       <h2>Your completed tickets <span class="meter-note" style="display:inline">&mdash; resolved today while assigned to you</span></h2>
       ${completed.length ? tableHead("Credit") : ""}
@@ -2086,7 +2108,7 @@ function toggleTimer(id, action) {
   mutate("/timer", { ticketId: id, action }, () => {
     if (action === 'start') {
       // one running timer per person — starting a new one PAUSES the other (never logs it)
-      state.tickets.forEach(other => {
+      [...state.tickets, ...(state.refurbs || [])].forEach(other => {
         if (other.id !== t.id && other.timerState === 'running') { finalizeElapsed(other); other.timerState = 'paused'; }
       });
       t.timerState = 'running';
@@ -3004,6 +3026,207 @@ function buildTimePdf(data, f) {
     }
   }
   return pdfFinish(doc, "Book time = credited minutes for resolved tickets (by credit share) + diagnosis credits. Actual time = app timer + RepairShopr timers + typed-in time. Resolved = primary on a resolved ticket. Total = every ticket with any credit, including diagnosis credit (even 0m).");
+}
+
+/* ---------- 🔧 Refurbs (app-only — RepairShopr's API has no refurbs) ----------
+   Refurb objects look enough like tickets (id = -refurb id) to reuse the timer + actual-time cells. */
+function buildRefurb(r) {
+  const mapped = ISSUE_TYPE_TO_DEVICE[r.issueType];
+  const x = { ...r, id: -r.id, refurbId: r.id, isRefurb: true, deviceCategory: mapped ? mapped.category : null,
+    deviceSubtype: mapped ? (r.subtype && (r.subtype === mapped.subtype || (mapped.alt || []).includes(r.subtype)) ? r.subtype : mapped.subtype) : null,
+    deviceRow: r.model || null };
+  x.bookedSec = r.state === "done" && r.bookMinutes != null ? r.bookMinutes * 60 : refurbRepairs(x).reduce((a, rt) => a + (repairMinutesFor(x, rt) || 0), 0) * 60;
+  return x;
+}
+const refurbRepairs = f => f.repairs || [];
+function findRefurb(negId) { return (state.refurbs || []).find(f => f.id === negId); }
+function addRefurb() {
+  mutate("/refurb", { action: "create" }).then(r => { if (r) setTimeout(() => document.getElementById(`refurb-label-${r.id}`)?.focus(), 50); });
+}
+function refurbUpdate(negId, patch, optimistic) {
+  const f = findRefurb(negId);
+  mutate("/refurb", { action: "update", id: -negId, ...patch }, () => { if (f && optimistic) { optimistic(f); Object.assign(f, buildRefurb({ ...f, id: f.refurbId })); } });
+}
+function setRefurbLabel(negId, v) { refurbUpdate(negId, { label: v }, f => { f.label = v; }); }
+function setRefurbType(negId, v) { refurbUpdate(negId, { issueType: v }, f => { f.issueType = v; f.model = null; f.subtype = null; f.repairs = []; }); }
+function setRefurbModel(negId, v) {
+  const [subtype, ...rest] = String(v).split("|"), model = rest.join("|");
+  refurbUpdate(negId, { subtype, model }, f => { f.subtype = subtype; f.model = model; f.repairs = []; });
+}
+function addRefurbRepair(negId, rt) {
+  const f = findRefurb(negId); if (!f || !rt) return;
+  const next = [...new Set([...refurbRepairs(f), rt])];
+  refurbUpdate(negId, { repairs: next }, x => { x.repairs = next; });
+}
+function removeRefurbRepair(negId, rt) {
+  const f = findRefurb(negId); if (!f) return;
+  const next = refurbRepairs(f).filter(x => x !== rt);
+  refurbUpdate(negId, { repairs: next }, x => { x.repairs = next; });
+}
+function completeRefurb(negId) {
+  const f = findRefurb(negId);
+  if (!f.model || !refurbRepairs(f).length) { showToast("Pick the model and at least one repair first", "error"); return; }
+  mutate("/refurb", { action: "complete", id: -negId }, () => { f.state = "done"; f.doneAt = nowMs(); finalizeElapsed(f); f.timerState = "logged"; })
+    .then(r => { if (r) showToast(`Refurb complete — ${r.minutes}m book time`); });
+}
+function reopenRefurb(negId) { mutate("/refurb", { action: "reopen", id: -negId }, () => { findRefurb(negId).state = "open"; }); }
+function deleteRefurb(negId) {
+  const f = findRefurb(negId);
+  if (!confirm(`Delete this refurb${f.label ? ` (${f.label})` : ""}? Its timer time is deleted too.`)) return;
+  mutate("/refurb", { action: "delete", id: -negId }, () => { state.refurbs = state.refurbs.filter(x => x.id !== negId); });
+}
+function renderRefurbDevice(f) {
+  const done = f.state === "done";
+  const typeOpts = RS_ISSUE_TYPES.map(it => `<option value="${esc(it)}" ${f.issueType === it ? "selected" : ""}>${ISSUE_TYPE_ICONS[it] || ""} ${esc(it)}</option>`).join("");
+  const mapped = ISSUE_TYPE_TO_DEVICE[f.issueType];
+  const cat = mapped && state.bookTimeCategories[mapped.category];
+  const subKeys = mapped && cat ? [mapped.subtype, ...(mapped.alt || [])].filter(k => cat.subtypes[k]) : [];
+  const opt = (k, r) => `<option value="${esc(k + "|" + r)}" ${f.deviceSubtype === k && f.deviceRow === r ? "selected" : ""}>${esc(r)}</option>`;
+  const modelOpts = subKeys.length === 1 ? cat.subtypes[subKeys[0]].rows.map(r => opt(subKeys[0], r)).join("")
+    : subKeys.map(k => `<optgroup label="${esc(cat.subtypes[k].label)}">${cat.subtypes[k].rows.map(r => opt(k, r)).join("")}</optgroup>`).join("");
+  const have = new Set(refurbRepairs(f));
+  const repairOpts = repairColumnsFor(f).filter(c => !have.has(c)).map(c => `<option value="${esc(c)}">${esc(c)}${repairMinutesFor(f, c) ? ` (${repairMinutesFor(f, c)}m)` : ""}</option>`).join("");
+  const chips = refurbRepairs(f).map(rt => `<span class="refurb-chip">${esc(rt)} <b>${repairMinutesFor(f, rt) ?? 0}m</b>${done ? "" : `<button type="button" onclick="removeRefurbRepair(${f.id}, ${jsArg(rt)})" title="Remove">✕</button>`}</span>`).join("");
+  return `
+    <div class="tcell-device refurb-device">
+      <select class="device-select" onchange="setRefurbType(${f.id}, this.value)" ${done ? "disabled" : ""}>
+        <option value="" ${!f.issueType ? "selected" : ""} disabled>Device type…</option>${typeOpts}
+      </select>
+      <select class="device-select" onchange="setRefurbModel(${f.id}, this.value)" ${subKeys.length && !done ? "" : "disabled"}>
+        <option value="" ${!f.deviceRow ? "selected" : ""} disabled>Model…</option>${modelOpts}
+      </select>
+      <select class="device-select" onchange="addRefurbRepair(${f.id}, this.value)" ${f.deviceRow && !done ? "" : "disabled"}>
+        <option value="" selected disabled>${refurbRepairs(f).length ? "+ Add repair…" : "Repair…"}</option>${repairOpts}
+      </select>
+      ${chips ? `<div class="refurb-chips">${chips}</div>` : ""}
+    </div>`;
+}
+function renderRefurbRow(f) {
+  const done = f.state === "done";
+  const running = f.timerState === "running", paused = f.timerState === "paused", logged = f.timerState === "logged";
+  const controls = done ? "" : running
+    ? `<button class="icon-btn stop" onclick="toggleTimer(${f.id},'pause')" title="Pause">❚❚</button>
+       <button class="icon-btn stop" onclick="toggleTimer(${f.id},'stop')" title="Stop &amp; log time">■</button>`
+    : `<button class="icon-btn play" onclick="toggleTimer(${f.id},'start')" title="${logged ? "Start a new timer segment" : paused ? "Resume" : "Start"}">▶</button>
+       ${paused ? `<button class="icon-btn stop" onclick="toggleTimer(${f.id},'stop')" title="Stop &amp; log time">■</button>` : ""}`;
+  const labelCell = done
+    ? `<div class="refurb-label"><div class="ticket-num">🔧 Refurb</div><div class="ticket-subject">${esc(f.label || "(no refurb # / serial)")}</div></div>`
+    : `<div class="refurb-label"><div class="ticket-num">🔧 Refurb</div>
+        <input id="refurb-label-${-f.id}" class="refurb-input" type="text" maxlength="80" placeholder="Refurb # / IMEI / serial" value="${esc(f.label || "")}" onchange="setRefurbLabel(${f.id}, this.value)" onkeydown="if (event.key === 'Enter') this.blur()"></div>`;
+  const doneTime = f.doneAt ? new Date(f.doneAt).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" }) : "";
+  return `
+    <div class="trow refurb-row ${done ? "done" : ""}" data-id="${f.id}">
+      ${labelCell}
+      <div></div>
+      <span class="ticket-status ${done ? "status-done" : ""}">${done ? `✓ ${esc(doneTime)}` : "In progress"}</span>
+      ${renderRefurbDevice(f)}
+      <div class="tcell-book" title="Sum of the picked repairs from the Book Time Database${done ? " (locked in when completed)" : ""}">${f.bookedSec ? fmtHM(f.bookedSec) : "—"}</div>
+      ${renderActualCell(f, controls)}
+      <div class="ticket-actions">${done ? "" : `<button class="icon-btn" onclick="deleteRefurb(${f.id})" title="Delete this refurb">🗑</button>`}</div>
+      <div class="tcell-outcome">${done
+        ? `<button class="btn ghost small" onclick="reopenRefurb(${f.id})" title="Take the credit back off so it can be changed">Undo</button>`
+        : `<button class="btn small primary" onclick="completeRefurb(${f.id})" ${f.deviceRow && refurbRepairs(f).length ? "" : `disabled title="Pick the model and at least one repair first"`}>✓ Complete refurb</button>`}</div>
+    </div>`;
+}
+function renderRefurbSection() {
+  const list = state.refurbs || [];
+  const open = list.filter(f => f.state !== "done"), done = list.filter(f => f.state === "done");
+  const doneMin = done.reduce((a, f) => a + (f.bookMinutes || 0), 0);
+  return `
+    <div class="panel refurb-panel">
+      <div class="refurb-head">
+        <h2>🔧 Refurbs ${done.length ? `<span class="meter-note" style="display:inline">&mdash; ${done.length} completed today · ${fmtHM(doneMin * 60)} book time</span>` : ""}</h2>
+        <button class="btn small primary" onclick="addRefurb()">+ Add refurb</button>
+      </div>
+      ${list.length ? `<div class="trow thead"><div>Refurb</div><div></div><div>Status</div><div>Type · Model · Repairs</div><div class="h-book">📖 Book</div><div class="h-actual">⏱ Actual</div><div></div><div></div></div>` : ""}
+      ${open.map(renderRefurbRow).join("")}
+      ${done.map(renderRefurbRow).join("")}
+      ${list.length ? "" : `<div class="meter-note">Working a refurb? Add it here, run the timer, and complete it to get its book time.</div>`}
+    </div>`;
+}
+
+/* ---------- 💳 Card sales (Valor) — Sales / Float / Assistant Manager / Manager, or admins ---------- */
+const CARD_SALES_ROLES = ["Sales", "Float", "Assistant Manager", "Manager"];
+function canSeeCardSales() {
+  const u = state.currentUser;
+  return !!u && (u.admin || CARD_SALES_ROLES.includes(state.position));
+}
+const usd = c => "$" + ((Number(c) || 0) / 100).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+let cardBusy = false;
+async function loadCardSales(day, refresh) {
+  if (cardBusy) return;
+  cardBusy = true; state.cardLoading = true; if (state.tab === "cards") render();
+  try {
+    const d = await api(`/card-sales?day=${encodeURIComponent(day || state.cardDay || "")}${refresh ? "&refresh=1" : ""}`);
+    state.cardSales = d; state.cardDay = d.day || d.today; state.cardError = null;
+  } catch (e) { state.cardError = e.message; }
+  finally { cardBusy = false; state.cardLoading = false; if (state.tab === "cards") render(); }
+}
+function pickCardDay(day) { state.cardDay = day; state.cardSales = null; loadCardSales(day); }
+function renderCardSalesTab() {
+  const d = state.cardSales;
+  if (state.cardError && !d) return `<div class="panel"><h2>💳 Card sales</h2><div class="bad-text">${esc(state.cardError)}</div></div>`;
+  if (!d) { if (!cardBusy) setTimeout(() => loadCardSales(state.cardDay), 0); return `<div class="panel"><h2>💳 Card sales</h2><div class="meter-note">Loading from Valor…</div></div>`; }
+  if (d.configured === false) return `<div class="panel"><h2>💳 Card sales</h2><div class="meter-note">Valor isn't connected yet. Add <b>VALOR_APP_ID</b>, <b>VALOR_APP_KEY</b> and <b>VALOR_EPI</b> in Netlify → Site configuration → Environment variables, then redeploy.</div></div>`;
+  const isToday = d.day === d.today;
+  const dayBtn = (day, label) => `<button class="theme-toggle-btn ${d.day === day ? "active" : ""}" onclick="pickCardDay('${day}')">${label}</button>`;
+  const rows = d.txns.map(t => `<tr class="${t.type === "void" ? "quiet-row" : ""}">
+      <td>${esc(t.time || "—")}</td>
+      <td>${t.type === "sale" ? "Sale" : t.type === "refund" ? `<span class="bad-text">Refund</span>` : `<span class="meter-note">Voided</span>`}</td>
+      <td>${esc(t.scheme || "—")}</td><td>${esc(t.cardType || "")}</td>
+      <td class="num-r">${t.type === "refund" ? "−" : ""}${t.type === "void" ? `<s>${usd(Math.abs(t.amount))}</s>` : usd(Math.abs(t.amount))}</td></tr>`).join("");
+  const batchNote = isToday && d.batch ? `<div class="meter-note">Valor's open batch: ${usd(d.batch.totalCents)} · ${d.batch.count} transactions${d.batch.totalCents !== d.netCents ? " (can differ if the batch hasn't settled since an earlier day, or includes voids)" : ""}</div>` : "";
+  return `
+    <div class="panel">
+      <div class="refurb-head">
+        <h2>💳 Card sales <span class="meter-note" style="display:inline">&mdash; from the Valor card terminal</span></h2>
+        <div class="theme-toggle">${dayBtn(d.today, "Today")}${dayBtn(d.previous, shortDay(d.previous))}</div>
+      </div>
+      <div class="money-grid">
+        <div class="money-card"><div class="money-label">Net card sales · ${esc(shortDay(d.day))}</div><div class="money-big">${usd(d.netCents)}</div>
+          <div class="money-sub">${d.salesCount} sale${d.salesCount === 1 ? "" : "s"} ${usd(d.salesCents)}${d.refundCount ? ` − ${d.refundCount} refund${d.refundCount === 1 ? "" : "s"} ${usd(d.refundCents)}` : ""}${d.voidCount ? ` · ${d.voidCount} voided (not counted)` : ""}</div>
+          ${d.byBrand.length ? `<div class="money-chips">${d.byBrand.map(b => `<span class="money-chip">${esc(b.brand)} ${usd(b.cents)}</span>`).join("")}</div>` : ""}
+        </div>
+      </div>
+      <div class="card-actions">
+        <button class="btn primary" onclick="downloadCardPdf()" ${d.txns.length ? "" : "disabled"}>⬇ Download PDF</button>
+        ${isToday || d.day === addDays(d.today, -1) ? `<button class="btn ghost" onclick="loadCardSales('${d.day}', true)" ${state.cardLoading ? "disabled" : ""}>${state.cardLoading ? "Getting…" : "⟳ Get latest from Valor"}</button>` : ""}
+        ${isToday && d.syncedAt ? `<span class="meter-note">Updated ${esc(new Date(d.syncedAt).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" }))}</span>` : ""}
+      </div>
+      ${batchNote}
+      ${d.warning ? `<div class="bad-text" style="font-size:12px;margin-top:6px">${esc(d.warning)}</div>` : ""}
+    </div>
+    <div class="panel">
+      <h2>Transactions <span class="meter-note" style="display:inline">&mdash; ${d.txns.length}</span></h2>
+      ${d.txns.length ? `<div class="table-scroll"><table><thead><tr><th>Time</th><th>Type</th><th>Card</th><th>Card type</th><th class="num-r">Amount</th></tr></thead><tbody>${rows}</tbody></table></div>`
+        : `<div class="meter-note">${isToday ? "No card sales yet today." : `No card sales saved for ${esc(shortDay(d.day))}. The app saves sales as they happen, so days before this was set up are empty.`}</div>`}
+      <div class="meter-note" style="margin-top:8px">Voids are left out of the total; refunds are subtracted. Card numbers and transaction ids are never shown. Only today and the previous business day can be pulled.</div>
+    </div>`;
+}
+async function downloadCardPdf() {
+  const d = state.cardSales; if (!d) return;
+  try {
+    await loadScriptOnce("/vendor/jspdf.umd.min.js");
+    await loadScriptOnce("/vendor/jspdf.plugin.autotable.min.js");
+    const { jsPDF } = window.jspdf;
+    const doc = new jsPDF({ unit: "pt", format: "letter" });
+    doc.setFont("helvetica", "bold"); doc.setFontSize(16); doc.text("Lightning Repairs - Card sales", 40, 48);
+    doc.setFont("helvetica", "normal"); doc.setFontSize(10); doc.setTextColor(90);
+    doc.text(`${shortDay(d.day)} · Valor card terminal · generated ${new Date().toLocaleString("en-US")} by ${state.currentUser.name}`, 40, 64);
+    doc.setTextColor(0);
+    const summary = [["Sales", String(d.salesCount), usd(d.salesCents)], ["Refunds", String(d.refundCount), d.refundCount ? "-" + usd(d.refundCents) : usd(0)], ["Voided (not counted)", String(d.voidCount), ""]];
+    doc.autoTable({ ...PDF_TABLE, startY: 80, head: [["", "Count", "Amount"]], body: summary, foot: [["Net card sales", "", usd(d.netCents)]], tableWidth: 300 });
+    if (d.byBrand.length) {
+      doc.autoTable({ ...PDF_TABLE, startY: doc.lastAutoTable.finalY + 14, head: [["Card", "Net"]], body: d.byBrand.map(b => [b.brand, usd(b.cents)]), tableWidth: 300 });
+    }
+    doc.setFontSize(11); doc.setFont("helvetica", "bold"); doc.text("Transactions", 40, doc.lastAutoTable.finalY + 24); doc.setFont("helvetica", "normal");
+    doc.autoTable({ ...PDF_TABLE, startY: doc.lastAutoTable.finalY + 30, head: [["Time", "Type", "Card", "Card type", "Amount"]],
+      body: d.txns.map(t => [t.time || "", t.type === "sale" ? "Sale" : t.type === "refund" ? "Refund" : "Voided", t.scheme || "", t.cardType || "", (t.type === "refund" ? "-" : "") + usd(Math.abs(t.amount)) + (t.type === "void" ? " (void)" : "")]),
+      columnStyles: { 4: { halign: "right" } } });
+    pdfFinish(doc, "From the Valor card terminal. Voids are left out of the total; refunds are subtracted. Card numbers and transaction ids are not included.");
+    doc.save(`LR-card-sales-${d.day}.pdf`);
+    showToast("Card sales PDF downloaded");
+  } catch (e) { showToast(e.message, "error"); }
 }
 
 function renderSettings() {

@@ -5,6 +5,7 @@ import { syncFromRs } from "../../lib/sync.mjs";
 import { syncTimersThrottled } from "../../lib/timers.mjs";
 import { getMoney } from "../../lib/rs.mjs";
 import { syncInvoiceSnaps } from "../../lib/reports.mjs";
+import { syncCardSales, valorConfigured } from "../../lib/valor.mjs";
 
 export default async () => {
   const r = await syncFromRs({ force: true });
@@ -13,7 +14,12 @@ export default async () => {
   catch (e) { timers = ` · timers failed: ${e.message}`; }
   try { const m = (await getMoney({ force: true })).value; const s = await syncInvoiceSnaps(m.invoices); money = ` · today: ${m.paymentsError ? `payments blocked (${m.paymentsError})` : `${m.payments.length} payments`}, ${m.invoices.length} invoices (${s.fetched} line-item pulls)`; }
   catch (e) { money = ` · money failed: ${e.message}`; }
-  console.log(`refresh-rs: ${r.list.length} tickets in ${r.fetchMs ?? "?"}ms${timers}${money}${r.rsError ? ` — ${r.rsError}` : ""}`);
+  let cards = "";
+  if (valorConfigured()) {
+    try { const c = await syncCardSales({ maxAgeSec: 300 }); if (c.fresh) cards = ` · card sales: ${c.value.count} today`; }
+    catch (e) { cards = ` · card sales failed: ${e.message}`; }
+  }
+  console.log(`refresh-rs: ${r.list.length} tickets in ${r.fetchMs ?? "?"}ms${timers}${money}${cards}${r.rsError ? ` — ${r.rsError}` : ""}`);
   return new Response("ok");
 };
 
