@@ -690,6 +690,8 @@
   .card-actions { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-top: 12px; }
   td.num-r, th.num-r { text-align: right; font-variant-numeric: tabular-nums; }
   .default-tag { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; color: var(--text-muted); border: 1px dashed var(--border); border-radius: 999px; padding: 0 6px; margin-left: 4px; }
+  .link-num { background: none; border: none; padding: 0 4px; font: inherit; font-weight: 700; color: var(--brand-blue); text-decoration: underline; cursor: pointer; }
+  .done-body { overflow-x: auto; }
   td.num-cell, th.num-cell { text-align: center; font-variant-numeric: tabular-nums; }
   .report-table td, .report-table th { white-space: nowrap; }
   .report-table tfoot td { border-top: 2px solid var(--border); padding-top: 8px; }
@@ -2278,7 +2280,7 @@ function renderTeam() {
         <td><div class="person-cell" title="Active today: ${esc(why)}"><div class="avatar" style="background:${esc(p.color)}">${esc(p.initials)}</div>${esc(p.name)}${anyRunning ? '<span class="live-dot" style="margin-left:8px" title="Timer running"></span>' : ''}</div></td>
         <td>${esc(pos || "—")}${picked ? "" : ` <span class="default-tag" title="Hasn't logged in today — using their default role">default</span>`}</td>
         <td>${goals ? `<div class="mini-meter-track"><div class="mini-meter-fill book" style="width:${bookPct}%"></div></div>${fmtHM(totals.book)} / ${fmtHM(goals.book)}` : '—'}</td>
-        <td class="num-cell">${credit.resolved}</td>
+        <td class="num-cell">${credit.resolved ? `<button type="button" class="link-num" onclick="showResolved(${jsArg(id)})" title="See ${esc(p.name.split(" ")[0])}'s resolved tickets">${credit.resolved}</button>` : 0}</td>
         <td class="num-cell">${credit.total}</td>
         <td><span class="ticket-count">${tickets.length}</span>${dueBadges(tickets)}</td>
       </tr>
@@ -2356,16 +2358,45 @@ function creditCounts(pid) {
   }
   return { resolved, total: all.size };
 }
+// Who a resolved ticket counts for in the ✅ Resolved column: its primary (null = no one credited).
+function resolvedOwner(t) { const c = t.completion; return c && c.shares.length ? (c.primaryPerson || creditOwner(t)) : null; }
 function renderTeamCompleted() {
   const done = state.tickets.filter(t => t.completion).sort((a, b) => (b.completion.resolvedAt || 0) - (a.completion.resolvedAt || 0));
   if (!done.length) return "";
-  const uncredited = done.filter(t => !t.completion.shares.length).length;
+  const uncredited = done.filter(t => !resolvedOwner(t));
+  const byOwner = {};
+  for (const t of done) { const o = resolvedOwner(t); if (o) (byOwner[o] ||= []).push(t); }
+  const people = Object.keys(byOwner).sort((a, b) => (PEOPLE[a]?.name || a).localeCompare(PEOPLE[b]?.name || b));
   return `
-    <div class="panel">
-      <h2>Completed today <span class="meter-note" style="display:inline">&mdash; ${done.length} resolved${uncredited ? `, <span class="bad-text">${uncredited} with no one credited</span>` : ""}</span></h2>
-      ${tableHead("Credit").replace('<div class="h-actual">⏱ Actual</div>', '<div></div>')}
-      ${done.map(t => renderCompletedRow(t, null)).join("")}
+    <div class="panel" id="completed-today">
+      <h2>Completed today <span class="meter-note" style="display:inline">&mdash; ${done.length} resolved${uncredited.length ? `, <span class="bad-text">${uncredited.length} with no one credited</span>` : ""}</span></h2>
+      ${uncredited.length ? renderDoneGroup("done:none", "⚠ No one credited", null, uncredited) : ""}
+      ${people.map(pid => renderDoneGroup("done:" + pid, PEOPLE[pid]?.name || pid, PEOPLE[pid]?.color, byOwner[pid])).join("")}
     </div>`;
+}
+function renderDoneGroup(groupKey, label, color, tickets) {
+  const collapsed = !state.expandedGroups.has(groupKey);
+  const swatch = color ? `<span class="avatar" style="background:${esc(color)};width:20px;height:20px;font-size:9px;margin-right:8px">${esc((label.match(/\b\w/g)||[]).join('').slice(0,2))}</span>` : "";
+  return `
+    <div class="queue-group${collapsed ? "" : " open"}" id="group-${esc(groupKey.replace(/[^a-z0-9]/gi, "-"))}">
+      <button class="queue-group-header" onclick="toggleGroup(${jsArg(groupKey)})">
+        <span class="queue-caret">${collapsed ? '▶' : '▼'}</span>
+        ${swatch}
+        <span class="queue-group-label">${esc(label)}</span>
+        <span class="queue-group-count">${tickets.length}</span><span class="due-badges"></span>
+      </button>
+      ${collapsed ? "" : `<div class="queue-group-body done-body">
+        ${tableHead("Credit").replace('<div class="h-actual">⏱ Actual</div>', '<div></div>')}
+        ${tickets.map(t => renderCompletedRow(t, null)).join("")}
+      </div>`}
+    </div>`;
+}
+// ✅ Resolved number on Today's team → open that person's list and scroll to it.
+function showResolved(pid) {
+  const key = "done:" + pid;
+  state.expandedGroups.add(key);
+  render();
+  document.getElementById("group-" + key.replace(/[^a-z0-9]/gi, "-"))?.scrollIntoView({ behavior: "smooth", block: "start" });
 }
 // Red = due today or overdue, yellow = due tomorrow (counts only; nothing shown when zero).
 function dueBadges(tickets) {
