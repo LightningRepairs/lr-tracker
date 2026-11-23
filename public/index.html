@@ -2546,7 +2546,7 @@ function renderValorTest(t) {
   const txt = [`Server IP: ${t.serverIp || "unknown"}`];
   for (const r of t.readers) {
     txt.push(``, `${r.name} — EPI …${r.epiLast4} · APP ID ${r.appIdLength} chars · APP Key ${r.appKeyLength} chars`);
-    for (const x of r.results) txt.push(`  ${x.ok ? "✓" : "✗"} ${x.label}: HTTP ${x.status}${x.rows != null ? ` · ${x.rows} rows` : ""}${x.says ? ` · ${x.says}` : ""}`);
+    for (const x of r.results) txt.push(`  ${x.ok ? "✓" : "✗"} ${x.label}: HTTP ${x.status}${x.rows != null ? ` · ${x.rows} rows` : ""}${x.says ? ` · ${x.says}` : ""}${x.epis ? `\n      ↳ ${x.epis}` : ""}`);
   }
   return `<pre class="valor-test" id="valor-test-out">${esc(txt.join("\n"))}</pre>
     <div class="meter-note">Copy this and send it over — no keys are shown in it.</div>`;
