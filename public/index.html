@@ -690,6 +690,9 @@
   .card-actions { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-top: 12px; }
   td.num-r, th.num-r { text-align: right; font-variant-numeric: tabular-nums; }
   .default-tag { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; color: var(--text-muted); border: 1px dashed var(--border); border-radius: 999px; padding: 0 6px; margin-left: 4px; }
+  .note-chip { font-size: 11.5px; font-weight: 600; border: 1px solid var(--border); border-radius: 999px; padding: 2px 9px; white-space: nowrap; background: var(--surface-2); }
+  .note-chip.solo { border-color: color-mix(in srgb, var(--brand-blue) 55%, transparent); color: var(--brand-blue); }
+  .note-assignee { min-width: 110px; white-space: nowrap; margin: 0; }
   .link-num { background: none; border: none; padding: 0 4px; font: inherit; font-weight: 700; color: var(--brand-blue); text-decoration: underline; cursor: pointer; }
   .done-body { overflow-x: auto; }
   td.num-cell, th.num-cell { text-align: center; font-variant-numeric: tabular-nums; }
@@ -1036,6 +1039,7 @@ function applyServerState(d) {
   state.rsError = d.rsError;
   state.rsUsers = d.rsUsers || [];
   state.money = d.money || null;
+  state.notedToday = d.notedToday || [];
   state.notifications = d.notifications || null;
   state.cardReaders = d.cardReaders || [];
   state.refurbs = (d.refurbs || []).map(buildRefurb);
@@ -2282,6 +2286,7 @@ function renderTeam() {
         <td>${goals ? `<div class="mini-meter-track"><div class="mini-meter-fill book" style="width:${bookPct}%"></div></div>${fmtHM(totals.book)} / ${fmtHM(goals.book)}` : '—'}</td>
         <td class="num-cell">${credit.resolved ? `<button type="button" class="link-num" onclick="showResolved(${jsArg(id)})" title="See ${esc(p.name.split(" ")[0])}'s resolved tickets">${credit.resolved}</button>` : 0}</td>
         <td class="num-cell">${credit.total}</td>
+        <td class="num-cell">${(() => { const n = notesCount(id); return n ? `<button type="button" class="link-num" onclick="showNotes(${jsArg(id)})" title="See the tickets ${esc(p.name.split(" ")[0])} left a note on today">${n}</button>` : 0; })()}</td>
         <td><span class="ticket-count">${tickets.length}</span>${dueBadges(tickets)}</td>
       </tr>
     `;
@@ -2296,7 +2301,7 @@ function renderTeam() {
       <h2>Today's team</h2>
       ${loggedInToday.length ? `
       <table>
-        <thead><tr><th>Person</th><th>Position</th><th class="h-book">📖 Book time</th><th class="num-cell" title="Resolved today as the primary (got the credit)">✅ Resolved</th><th class="num-cell" title="Every ticket they got credit for today: resolved, partial credit, or diagnosis credit (even 0m)">Total tickets</th><th>In queue</th></tr></thead>
+        <thead><tr><th>Person</th><th>Position</th><th class="h-book">📖 Book time</th><th class="num-cell" title="Resolved today as the primary (got the credit)">✅ Resolved</th><th class="num-cell" title="Every ticket they got credit for today: resolved, partial credit, or diagnosis credit (even 0m)">Total tickets</th><th class="num-cell" title="Tickets they left a note on today (in RepairShopr or the app)">📝 Notes</th><th>In queue</th></tr></thead>
         <tbody>${rows}</tbody>
       </table>` : `<div class="meter-note">Nobody's shown any activity yet today.</div>`}
       ${team.inactive.length ? `<div class="meter-note" style="margin-top:8px">Not active yet today: ${team.inactive.map(id => esc(PEOPLE[id].name.split(" ")[0])).join(", ")} — they show up once they log in, leave a note in RepairShopr, run a timer, get credit or create an invoice.</div>` : ""}
@@ -2308,6 +2313,7 @@ function renderTeam() {
       ${otherAssigned.length ? renderQueueGroup("other", "Assigned in RepairShopr to someone not in this app", null, otherAssigned) : ""}
     </div>
     ${renderTeamCompleted()}
+    ${renderNotesToday()}
   `;
 }
 const fmtMoney = n => "$" + (Number(n) || 0).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -2390,6 +2396,56 @@ function renderDoneGroup(groupKey, label, color, tickets) {
         ${tickets.map(t => renderCompletedRow(t, null)).join("")}
       </div>`}
     </div>`;
+}
+/* ---------- 📝 Notes left today: one group per person; each row says who else noted that ticket ---------- */
+function notesCount(pid) { return (state.notedToday || []).filter(n => n.people.includes(pid)).length; }
+function notedTicket(n) {
+  const t = state.tickets.find(x => x.id === n.ticketId);
+  if (t) return t;
+  const x = n.ticket || {};
+  return { id: n.ticketId, num: x.num ?? null, subject: x.subject || `Ticket ${n.ticketId}`, customer: x.customer || "", status: x.status || "", assignedTo: x.assignedTo || null };
+}
+function noteChip(n) {
+  const names = [...n.people.map(pid => firstName(pid)), ...n.others];
+  if (names.length === 1) return `<span class="note-chip solo" title="Nobody else left a note on this ticket today">✍ Only ${esc(names[0])}</span>`;
+  return `<span class="note-chip" title="Everyone who left a note on this ticket today">✍ ${names.length} people: ${esc(names.join(", "))}</span>`;
+}
+function renderNotesToday() {
+  const list = state.notedToday || [];
+  if (!list.length) return "";
+  const byPerson = {};
+  for (const n of list) for (const pid of n.people) (byPerson[pid] ||= []).push(n);
+  const people = Object.keys(byPerson).filter(pid => PEOPLE[pid]).sort((a, b) => PEOPLE[a].name.localeCompare(PEOPLE[b].name));
+  const group = pid => {
+    const key = "notes:" + pid, collapsed = !state.expandedGroups.has(key), p = PEOPLE[pid], items = byPerson[pid];
+    return `
+    <div class="queue-group${collapsed ? "" : " open"}" id="group-${esc(key.replace(/[^a-z0-9]/gi, "-"))}">
+      <button class="queue-group-header" onclick="toggleGroup(${jsArg(key)})">
+        <span class="queue-caret">${collapsed ? '▶' : '▼'}</span>
+        <span class="avatar" style="background:${esc(p.color)};width:20px;height:20px;font-size:9px;margin-right:8px">${esc(p.initials)}</span>
+        <span class="queue-group-label">${esc(p.name)}</span>
+        <span class="queue-group-count">${items.length}</span><span class="due-badges"></span>
+      </button>
+      ${collapsed ? "" : `<div class="queue-group-body">${items.map(n => { const t = notedTicket(n); return `
+        <div class="ticket-row">
+          ${ticketLink(t)}
+          ${statusPill(t)}
+          <span class="meter-note note-assignee">${t.assignedTo ? `Assigned: ${esc(firstName(t.assignedTo))}` : "Unassigned"}</span>
+          ${noteChip(n)}
+        </div>`; }).join("")}</div>`}
+    </div>`;
+  };
+  return `
+    <div class="panel" id="notes-today">
+      <h2>📝 Notes left today <span class="meter-note" style="display:inline">&mdash; ${list.length} ticket${list.length === 1 ? "" : "s"}</span></h2>
+      ${people.map(group).join("")}
+    </div>`;
+}
+function showNotes(pid) {
+  const key = "notes:" + pid;
+  state.expandedGroups.add(key);
+  render();
+  document.getElementById("group-" + key.replace(/[^a-z0-9]/gi, "-"))?.scrollIntoView({ behavior: "smooth", block: "start" });
 }
 // ✅ Resolved number on Today's team → open that person's list and scroll to it.
 function showResolved(pid) {

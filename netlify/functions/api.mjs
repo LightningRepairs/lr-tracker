@@ -7,7 +7,7 @@ import { today, shopDate, shopOffset, shopTimeOfDay } from "../../lib/time.mjs";
 import { effectiveDevice, creditedMinutes, repairMinutes } from "../../lib/booktime.mjs";
 import {
   getTickets, getUsers, assignTicket, setTicketIssueType, postComment, invalidate, patchCachedTicket, probeRs, RsError, RS_SUBDOMAIN,
-  whoIsKey, defaultKey, forgetDefaultKey, setTicketDueDate, getMoney, listTimers, timerOp,
+  whoIsKey, defaultKey, forgetDefaultKey, setTicketDueDate, getMoney, listTimers, timerOp, getNotesToday,
 } from "../../lib/rs.mjs";
 import { encryptSecret, decryptSecret, last4 } from "../../lib/secrets.mjs";
 
@@ -351,6 +351,32 @@ async function buildState(me, { force = false } = {}) {
   const mark = (pid, why) => { if (pid && personToday[pid]) (activeToday[pid] ||= new Set()).add(why); };
   for (const a of attendanceRows) mark(a.person_id, "logged in");
   for (const t of rsList) for (const uid of t.noteByToday || []) mark(personByRsUser.get(uid), "RepairShopr note");
+  // 📝 Every ticket someone left a note on today (RepairShopr comment feed + notes made in the app).
+  const notedToday = [];
+  try {
+    const nt = (await getNotesToday({ force, maxWaitMs: force ? 6000 : 2000 })).value;
+    const byTicket = {};
+    if (nt?.day === t0) for (const [tid, uids] of Object.entries(nt.notes)) {
+      const set = (byTicket[tid] ||= { people: new Set(), others: new Set() });
+      for (const uid of uids) { const pid = personByRsUser.get(String(uid)); if (pid) set.people.add(pid); else set.others.add(String(uid)); }
+    }
+    for (const t of rsList) for (const uid of t.noteByToday || []) {   // belt and braces: comments embedded in the ticket list
+      const pid = personByRsUser.get(uid); const set = (byTicket[t.id] ||= { people: new Set(), others: new Set() });
+      if (pid) set.people.add(pid); else set.others.add(uid);
+    }
+    for (const r of await sql`select distinct ticket_id, person_id from notes where work_date = ${t0}`) {
+      (byTicket[r.ticket_id] ||= { people: new Set(), others: new Set() }).people.add(r.person_id);
+    }
+    const rsName = uid => rsUsers.find(u => String(u.id) === String(uid))?.name || `RS user ${uid}`;
+    for (const [tid, v] of Object.entries(byTicket)) {
+      if (!v.people.size) continue;
+      for (const pid of v.people) mark(pid, "RepairShopr note");
+      const ex = nt?.extra?.[tid];
+      notedToday.push({ ticketId: Number(tid), people: [...v.people], others: [...v.others].map(rsName),
+        ticket: ex ? { num: ex.num, subject: ex.subject, customer: ex.customer, status: ex.status,
+                       assignedTo: ex.rsUserId != null ? (personByRsUser.get(String(ex.rsUserId)) || null) : null } : null });
+    }
+  } catch (e) { console.warn("notes today", e.message); }
   for (const r of appNoteRows) mark(r.person_id, "note");
   for (const [pid, p] of Object.entries(personToday)) if (p.spentSec > 0 || p.runningSince) mark(pid, "timer");
   for (const c of completionBy.values()) for (const sh of c.shares) mark(sh.personId, "credit");
@@ -415,6 +441,7 @@ async function buildState(me, { force = false } = {}) {
     settings,
     tickets,
     personToday,
+    notedToday,
     refurbs: myRefurbRows.map(r => ({
       id: Number(r.id), label: r.label, issueType: r.issue_type, subtype: r.subtype, model: r.model, repairs: r.repairs || [],
       state: r.state, bookMinutes: r.book_minutes, doneAt: ms(r.done_at), createdAt: ms(r.created_at),
