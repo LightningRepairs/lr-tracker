@@ -19,7 +19,7 @@ import { syncTimers, syncTimersThrottled, rsTimerAction, rsTimerTotals } from ".
 import { ensureSchema } from "../../lib/migrate.mjs";
 import { RS_ISSUE_TYPES, ISSUE_TYPE_TO_DEVICE } from "../../lib/booktime.mjs";
 import { buildReport, syncInvoiceSnaps, laborProducts } from "../../lib/reports.mjs";
-import { syncCardSales, syncYesterday, cardSalesFor, previousBusinessDay, valorConfigured, valorReaders, namedReaders, ValorError } from "../../lib/valor.mjs";
+import { syncCardSales, syncPastDay, cardSalesFor, previousBusinessDay, valorConfigured, valorReaders, namedReaders, ValorError } from "../../lib/valor.mjs";
 
 // Time budgets so a page load always answers well inside Netlify's ~10s function limit.
 const TICKETS_WAIT_MS = 4500, USERS_WAIT_MS = 3000;
@@ -101,6 +101,7 @@ export default async (req, context) => {
       return json(await keysInfo());
     }
     if (req.method === "GET" && route === "/card-sales") return json(await cardSales(me, url.searchParams));
+    if (req.method === "GET" && route === "/card-sales/info") return json(await cardSalesInfo(me));
     if (req.method === "GET" && route === "/admin/report") {
       if (!me.is_admin) throw new HttpError(403, "Admins only");
       return json(await report(url.searchParams));
@@ -773,32 +774,32 @@ async function canSeeCardSales(me) {
   const [a] = await db()`select position from attendance where person_id = ${me.id} and work_date = ${today()}`;
   return !!a && CARD_SALES_ROLES.includes(a.position);
 }
+// What the Card sales tab needs to draw itself (no Valor call).
+async function cardSalesInfo(me) {
+  if (!(await canSeeCardSales(me))) throw new HttpError(403, "Card sales are only for Sales, Float, Assistant Manager and Manager (log in with one of those roles)");
+  const t0 = today();
+  return { configured: valorConfigured(), today: t0, previous: previousBusinessDay(t0), readers: (await namedReaders()).map(r => ({ id: r.id, name: r.name })) };
+}
+// One report, pulled from Valor right now. reader = a reader id, or "all".
 async function cardSales(me, params) {
   if (!(await canSeeCardSales(me))) throw new HttpError(403, "Card sales are only for Sales, Float, Assistant Manager and Manager (log in with one of those roles)");
   const t0 = today(), prev = previousBusinessDay(t0);
   const day = params.get("day") || t0;
   if (day !== t0 && day !== prev) throw new HttpError(403, "Card sales can only be pulled for today and the previous business day");
-  if (!valorConfigured()) return { configured: false, today: t0, previous: prev };
+  if (!valorConfigured()) throw new HttpError(400, "Valor isn't set up yet — add the VALOR_ keys in Netlify and redeploy");
   const readers = (await namedReaders()).map(r => ({ id: r.id, name: r.name }));
-  const reader = readers.some(r => r.id === params.get("reader")) ? params.get("reader") : null; // null = all readers
-  let warning = null, batches = [], syncedAt = null;
+  const reader = params.get("reader") === "all" ? null : (readers.some(r => r.id === params.get("reader")) ? params.get("reader") : readers[0].id);
+  let errors = [];
   if (day === t0) {
-    try {
-      const r = await syncCardSales({ maxAgeSec: params.get("refresh") === "1" ? 0 : 60, maxWaitMs: 8000, reader });
-      batches = r.batches; syncedAt = r.at;
-      if (r.errors.length) warning = r.errors.join(" · ");
-    } catch (e) { warning = e.message; }
+    const r = await syncCardSales({ maxAgeSec: 0, reader });
+    errors = r.errors;
   } else {
-    // Previous business day: from what the app saved that day. If that was literally yesterday, top it up from Valor.
-    const yesterday = new Date(Date.parse(t0 + "T12:00:00Z") - 86400e3).toISOString().slice(0, 10);
-    const [{ n }] = await db()`select count(*)::int as n from card_txns where day = ${day}`;
-    if (day === yesterday && params.get("refresh") === "1" || (day === yesterday && n === 0)) {
-      try { await syncYesterday(reader); } catch (e) { warning = e.message; }
-    }
+    errors = await syncPastDay(day, reader);
   }
   const r = await cardSalesFor(day, reader);
-  const batch = day === t0 && batches.length ? { totalCents: batches.reduce((a, b) => a + b.totalCents, 0), count: batches.reduce((a, b) => a + b.count, 0) } : null;
-  return { configured: true, today: t0, previous: prev, readers, reader, ...r, batch, syncedAt, warning };
+  // Valor failed and the app has nothing saved for that day → say so instead of handing back an empty "$0.00" report.
+  if (errors.length && !r.txns.length) throw new HttpError(502, errors.join(" · "));
+  return { today: t0, previous: prev, readers, reader, ...r, warning: errors.length ? errors.join(" · ") : null };
 }
 
 async function setReaderName({ id, name }) {

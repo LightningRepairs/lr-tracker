@@ -1306,7 +1306,7 @@ function applyRoute() {
   let tab = parts[0] || "day";
   if (!["day", "team", "settings", "reports", "admin", "cards"].includes(tab)) tab = "day";
   if (tab === "cards" && !canSeeCardSales()) tab = "day";
-  if (tab === "cards") setTimeout(() => loadCardSales(state.cardDay), 0);
+  if (tab === "cards") setTimeout(loadCardInfo, 0);
   if ((tab === "admin" || tab === "reports") && !(state.currentUser && state.currentUser.admin)) tab = "day";
   if (tab === "reports") setTimeout(loadReportLive, 0);
   state.tab = tab;
@@ -2533,7 +2533,7 @@ function renderReaderNamesPanel() {
     </div>`;
 }
 function setReaderName(id, name) {
-  mutate("/admin/reader-name", { id, name }, () => { const r = state.cardReaders.find(x => x.id === id); if (r) r.name = name.trim() || r.defaultName; state.cardSales = null; });
+  mutate("/admin/reader-name", { id, name }, () => { const r = state.cardReaders.find(x => x.id === id); if (r) r.name = name.trim() || r.defaultName; state.cardInfo = null; });
 }
 function setShowTeamBook(on) { mutate("/admin/show-team-book", { on }, () => { state.showTeamBook = on; }); }
 function setShowMoney(on) { mutate("/admin/show-money", { on }, () => { state.showMoney = on; }); }
@@ -3165,99 +3165,78 @@ function renderRefurbSection() {
     </div>`;
 }
 
-/* ---------- 💳 Card sales (Valor) — Sales / Float / Assistant Manager / Manager, or admins ---------- */
+/* ---------- 💳 Card sales reports (Valor) — Sales / Float / Assistant Manager / Manager, or admins ----------
+   No live numbers: pick a reader, click a button, get a PDF pulled from Valor at that moment. */
 const CARD_SALES_ROLES = ["Sales", "Float", "Assistant Manager", "Manager"];
 function canSeeCardSales() {
   const u = state.currentUser;
   return !!u && (u.admin || CARD_SALES_ROLES.includes(state.position));
 }
 const usd = c => "$" + ((Number(c) || 0) / 100).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-let cardBusy = false;
-async function loadCardSales(day, refresh) {
-  if (cardBusy) return;
-  cardBusy = true; state.cardLoading = true; if (state.tab === "cards") render();
-  try {
-    const d = await api(`/card-sales?day=${encodeURIComponent(day || state.cardDay || "")}${state.cardReader ? `&reader=${encodeURIComponent(state.cardReader)}` : ""}${refresh ? "&refresh=1" : ""}`);
-    state.cardSales = d; state.cardDay = d.day || d.today; state.cardError = null;
-  } catch (e) { state.cardError = e.message; }
-  finally { cardBusy = false; state.cardLoading = false; if (state.tab === "cards") render(); }
+async function loadCardInfo() {
+  try { state.cardInfo = await api("/card-sales/info"); state.cardError = null; }
+  catch (e) { state.cardError = e.message; }
+  if (state.tab === "cards") render();
 }
-function pickCardDay(day) { state.cardDay = day; state.cardSales = null; loadCardSales(day); }
-function pickCardReader(id) { state.cardReader = id; state.cardSales = null; loadCardSales(state.cardDay); }
-const cardReaderLabel = d => (d.reader ? (d.readers.find(r => r.id === d.reader) || {}).name || "Reader" : (d.readers.length > 1 ? "All readers" : (d.readers[0] || {}).name || ""));
+function pickCardReader(id) { state.cardReader = id; }
 function renderCardSalesTab() {
-  const d = state.cardSales;
-  if (state.cardError && !d) return `<div class="panel"><h2>💳 Card sales</h2><div class="bad-text">${esc(state.cardError)}</div></div>`;
-  if (!d) { if (!cardBusy) setTimeout(() => loadCardSales(state.cardDay), 0); return `<div class="panel"><h2>💳 Card sales</h2><div class="meter-note">Loading from Valor…</div></div>`; }
-  if (d.configured === false) return `<div class="panel"><h2>💳 Card sales</h2><div class="meter-note">Valor isn't connected yet. Add <b>VALOR_APP_ID</b>, <b>VALOR_APP_KEY</b> and <b>VALOR_EPI</b> in Netlify → Site configuration → Environment variables, then redeploy.</div></div>`;
-  const isToday = d.day === d.today;
-  const dayBtn = (day, label) => `<button class="theme-toggle-btn ${d.day === day ? "active" : ""}" onclick="pickCardDay('${day}')">${label}</button>`;
-  const showReader = d.readers.length > 1 && !d.reader;
-  const rows = d.txns.map(t => `<tr class="${t.type === "void" ? "quiet-row" : ""}">
-      <td>${esc(t.time || "—")}</td>${showReader ? `<td>${esc(t.reader)}</td>` : ""}
-      <td>${t.type === "sale" ? "Sale" : t.type === "refund" ? `<span class="bad-text">Refund</span>` : `<span class="meter-note">Voided</span>`}</td>
-      <td>${esc(t.scheme || "—")}</td><td>${esc(t.cardType || "")}</td>
-      <td class="num-r">${t.type === "refund" ? "−" : ""}${t.type === "void" ? `<s>${usd(Math.abs(t.amount))}</s>` : usd(Math.abs(t.amount))}</td></tr>`).join("");
-  const batchNote = isToday && d.batch ? `<div class="meter-note">Valor's open batch: ${usd(d.batch.totalCents)} · ${d.batch.count} transactions${d.batch.totalCents !== d.netCents ? " (can differ if the batch hasn't settled since an earlier day, or includes voids)" : ""}</div>` : "";
+  const info = state.cardInfo;
+  if (!info) { if (!state.cardError) setTimeout(loadCardInfo, 0); return `<div class="panel"><h2>💳 Card sales reports</h2><div class="meter-note">${state.cardError ? `<span class="bad-text">${esc(state.cardError)}</span>` : "Loading…"}</div></div>`; }
+  if (!info.configured) return `<div class="panel"><h2>💳 Card sales reports</h2><div class="meter-note">Valor isn't connected yet. Add <b>VALOR_APP_ID</b>, <b>VALOR_APP_KEY</b> and <b>VALOR_EPI</b> in Netlify → Environment variables, then redeploy.</div></div>`;
+  const readers = info.readers;
+  if (!state.cardReader || (state.cardReader !== "all" && !readers.some(r => r.id === state.cardReader))) state.cardReader = readers[0].id; // default: Reader 1
+  const busy = state.cardBusy;
+  const btn = (day, label) => `<button class="btn ${day === info.today ? "primary" : ""}" onclick="downloadCardReport('${day}')" ${busy ? "disabled" : ""}>${busy === day ? "Pulling from Valor…" : `⬇ ${label}`}</button>`;
   return `
     <div class="panel">
-      <div class="refurb-head">
-        <h2>💳 Card sales <span class="meter-note" style="display:inline">&mdash; from the Valor card terminal</span></h2>
-        <div class="card-pickers">
-          ${d.readers.length > 1 ? `<select class="setting-select" id="card-reader" onchange="pickCardReader(this.value)">
-            <option value="" ${!d.reader ? "selected" : ""}>All readers</option>
-            ${d.readers.map(r => `<option value="${esc(r.id)}" ${d.reader === r.id ? "selected" : ""}>${esc(r.name)}</option>`).join("")}
-          </select>` : ""}
-          <div class="theme-toggle">${dayBtn(d.today, "Today")}${dayBtn(d.previous, shortDay(d.previous))}</div>
-        </div>
-      </div>
-      <div class="money-grid">
-        <div class="money-card"><div class="money-label">Net card sales · ${esc(shortDay(d.day))}${d.readers.length > 1 ? ` · ${esc(cardReaderLabel(d))}` : ""}</div><div class="money-big">${usd(d.netCents)}</div>
-          <div class="money-sub">${d.salesCount} sale${d.salesCount === 1 ? "" : "s"} ${usd(d.salesCents)}${d.refundCount ? ` − ${d.refundCount} refund${d.refundCount === 1 ? "" : "s"} ${usd(d.refundCents)}` : ""}${d.voidCount ? ` · ${d.voidCount} voided (not counted)` : ""}</div>
-          ${d.byBrand.length ? `<div class="money-chips">${d.byBrand.map(b => `<span class="money-chip">${esc(b.brand)} ${usd(b.cents)}</span>`).join("")}</div>` : ""}
-        </div>
+      <h2>💳 Card sales reports</h2>
+      <div class="report-field" style="margin-bottom:12px"><span class="report-label" style="grid-row:auto">Reader</span>
+        <select id="card-reader" class="setting-select" style="justify-self:start" onchange="pickCardReader(this.value)" ${busy ? "disabled" : ""}>
+          ${readers.map(r => `<option value="${esc(r.id)}" ${state.cardReader === r.id ? "selected" : ""}>${esc(r.name)}</option>`).join("")}
+          ${readers.length > 1 ? `<option value="all" ${state.cardReader === "all" ? "selected" : ""}>All readers</option>` : ""}
+        </select>
       </div>
       <div class="card-actions">
-        <button class="btn primary" onclick="downloadCardPdf()" ${d.txns.length ? "" : "disabled"}>⬇ Download PDF</button>
-        ${isToday || d.day === addDays(d.today, -1) ? `<button class="btn ghost" onclick="loadCardSales('${d.day}', true)" ${state.cardLoading ? "disabled" : ""}>${state.cardLoading ? "Getting…" : "⟳ Get latest from Valor"}</button>` : ""}
-        ${isToday && d.syncedAt ? `<span class="meter-note">Updated ${esc(new Date(d.syncedAt).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" }))}</span>` : ""}
+        ${btn(info.today, "Download today's report")}
+        ${btn(info.previous, `Download previous day's report (${shortDay(info.previous)})`)}
       </div>
-      ${batchNote}
-      ${d.warning ? `<div class="bad-text" style="font-size:12px;margin-top:6px">${esc(d.warning)}</div>` : ""}
-    </div>
-    <div class="panel">
-      <h2>Transactions <span class="meter-note" style="display:inline">&mdash; ${d.txns.length}</span></h2>
-      ${d.txns.length ? `<div class="table-scroll"><table><thead><tr><th>Time</th>${showReader ? "<th>Reader</th>" : ""}<th>Type</th><th>Card</th><th>Card type</th><th class="num-r">Amount</th></tr></thead><tbody>${rows}</tbody></table></div>`
-        : `<div class="meter-note">${isToday ? "No card sales yet today." : `No card sales saved for ${esc(shortDay(d.day))}. The app saves sales as they happen, so days before this was set up are empty.`}</div>`}
-      <div class="meter-note" style="margin-top:8px">Voids are left out of the total; refunds are subtracted. Card numbers and transaction ids are never shown. Only today and the previous business day can be pulled.</div>
+      ${state.cardError ? `<div class="bad-text" style="font-size:12.5px;margin-top:10px">${esc(state.cardError)}</div>` : ""}
+      <div class="meter-note" style="margin-top:10px">Pulled from Valor when you click. Voids are left out of the total; refunds are subtracted. No card numbers or transaction ids are included. Only today and the previous business day are available.</div>
     </div>`;
 }
-async function downloadCardPdf() {
-  const d = state.cardSales; if (!d) return;
+async function downloadCardReport(day) {
+  if (state.cardBusy) return;
+  const reader = state.cardReader || "1";
+  state.cardBusy = day; state.cardError = null; render();
   try {
+    const d = await api(`/card-sales?day=${encodeURIComponent(day)}&reader=${encodeURIComponent(reader)}`);
     await loadScriptOnce("/vendor/jspdf.umd.min.js");
     await loadScriptOnce("/vendor/jspdf.plugin.autotable.min.js");
-    const { jsPDF } = window.jspdf;
-    const doc = new jsPDF({ unit: "pt", format: "letter" });
-    doc.setFont("helvetica", "bold"); doc.setFontSize(16); doc.text("Lightning Repairs - Card sales", 40, 48);
-    doc.setFont("helvetica", "normal"); doc.setFontSize(10); doc.setTextColor(90);
-    doc.text(`${shortDay(d.day)} · ${cardReaderLabel(d) || "Valor card terminal"} · generated ${new Date().toLocaleString("en-US")} by ${state.currentUser.name}`, 40, 64);
-    doc.setTextColor(0);
-    const summary = [["Sales", String(d.salesCount), usd(d.salesCents)], ["Refunds", String(d.refundCount), d.refundCount ? "-" + usd(d.refundCents) : usd(0)], ["Voided (not counted)", String(d.voidCount), ""]];
-    doc.autoTable({ ...PDF_TABLE, startY: 80, head: [["", "Count", "Amount"]], body: summary, foot: [["Net card sales", "", usd(d.netCents)]], tableWidth: 300 });
-    if (d.byBrand.length) {
-      doc.autoTable({ ...PDF_TABLE, startY: doc.lastAutoTable.finalY + 14, head: [["Card", "Net"]], body: d.byBrand.map(b => [b.brand, usd(b.cents)]), tableWidth: 300 });
-    }
-    doc.setFontSize(11); doc.setFont("helvetica", "bold"); doc.text("Transactions", 40, doc.lastAutoTable.finalY + 24); doc.setFont("helvetica", "normal");
-    const multi = d.readers.length > 1 && !d.reader;
-    doc.autoTable({ ...PDF_TABLE, startY: doc.lastAutoTable.finalY + 30, head: [["Time", ...(multi ? ["Reader"] : []), "Type", "Card", "Card type", "Amount"]],
-      body: d.txns.map(t => [t.time || "", ...(multi ? [t.reader] : []), t.type === "sale" ? "Sale" : t.type === "refund" ? "Refund" : "Voided", t.scheme || "", t.cardType || "", (t.type === "refund" ? "-" : "") + usd(Math.abs(t.amount)) + (t.type === "void" ? " (void)" : "")]),
-      columnStyles: { [multi ? 5 : 4]: { halign: "right" } } });
-    pdfFinish(doc, "From the Valor card terminal. Voids are left out of the total; refunds are subtracted. Card numbers and transaction ids are not included.");
-    const rslug = d.reader ? "-" + (cardReaderLabel(d) || "reader").toLowerCase().replace(/[^a-z0-9]+/g, "-") : "";
-    doc.save(`LR-card-sales-${d.day}${rslug}.pdf`);
-    showToast("Card sales PDF downloaded");
-  } catch (e) { showToast(e.message, "error"); }
+    cardPdf(d).save(`LR-card-sales-${d.day}-${cardReaderSlug(d)}.pdf`);
+    showToast(`Downloaded — ${d.salesCount} sale${d.salesCount === 1 ? "" : "s"}, net ${usd(d.netCents)}`);
+    if (d.warning) state.cardError = d.warning;
+  } catch (e) { state.cardError = e.message; }
+  finally { state.cardBusy = null; render(); }
+}
+const cardReaderLabel = d => (d.reader ? (d.readers.find(r => r.id === d.reader) || {}).name || "Reader" : "All readers");
+const cardReaderSlug = d => cardReaderLabel(d).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "reader";
+function cardPdf(d) {
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF({ unit: "pt", format: "letter" });
+  doc.setFont("helvetica", "bold"); doc.setFontSize(16); doc.text("Lightning Repairs - Card sales", 40, 48);
+  doc.setFont("helvetica", "normal"); doc.setFontSize(10); doc.setTextColor(90);
+  doc.text(`${shortDay(d.day)} · ${cardReaderLabel(d)} · generated ${new Date().toLocaleString("en-US")} by ${state.currentUser.name}`, 40, 64);
+  doc.setTextColor(0);
+  const summary = [["Sales", String(d.salesCount), usd(d.salesCents)], ["Refunds", String(d.refundCount), d.refundCount ? "-" + usd(d.refundCents) : usd(0)], ["Voided (not counted)", String(d.voidCount), ""]];
+  doc.autoTable({ ...PDF_TABLE, startY: 80, head: [["", "Count", "Amount"]], body: summary, foot: [["Net card sales", "", usd(d.netCents)]], tableWidth: 300 });
+  if (d.byBrand.length) doc.autoTable({ ...PDF_TABLE, startY: doc.lastAutoTable.finalY + 14, head: [["Card", "Net"]], body: d.byBrand.map(b => [b.brand, usd(b.cents)]), tableWidth: 300 });
+  doc.setFontSize(11); doc.setFont("helvetica", "bold"); doc.text("Transactions", 40, doc.lastAutoTable.finalY + 24); doc.setFont("helvetica", "normal");
+  const multi = !d.reader;
+  doc.autoTable({ ...PDF_TABLE, startY: doc.lastAutoTable.finalY + 30, head: [["Time", ...(multi ? ["Reader"] : []), "Type", "Card", "Card type", "Amount"]],
+    body: d.txns.length ? d.txns.map(t => [t.time || "", ...(multi ? [t.reader] : []), t.type === "sale" ? "Sale" : t.type === "refund" ? "Refund" : "Voided", t.scheme || "", t.cardType || "", (t.type === "refund" ? "-" : "") + usd(Math.abs(t.amount)) + (t.type === "void" ? " (void)" : "")])
+      : [["No card transactions", ...(multi ? [""] : []), "", "", "", ""]],
+    columnStyles: { [multi ? 5 : 4]: { halign: "right" } } });
+  return pdfFinish(doc, `From the Valor card terminal${d.warning ? " (partial: " + d.warning + ")" : ""}. Voids are left out of the total; refunds are subtracted. Card numbers and transaction ids are not included.`);
 }
 
 function renderSettings() {
