@@ -667,6 +667,8 @@
   .tb-pct { text-align: right; font-weight: 700; font-variant-numeric: tabular-nums; }
   .tb-pct.up { color: var(--good, #1f9d55); } .tb-pct.down { color: var(--critical); }
   .tb-sub { color: var(--text-muted); font-size: 11.5px; text-align: right; font-variant-numeric: tabular-nums; }
+  .reader-name-row { display: flex; gap: 10px; align-items: center; margin: 4px 0; }
+  .reader-name-row > .meter-note { min-width: 60px; margin: 0; }
   .card-pickers { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
   .card-actions { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-top: 12px; }
   td.num-r, th.num-r { text-align: right; font-variant-numeric: tabular-nums; }
@@ -1004,6 +1006,7 @@ function applyServerState(d) {
   state.rsError = d.rsError;
   state.rsUsers = d.rsUsers || [];
   state.money = d.money || null;
+  state.cardReaders = d.cardReaders || [];
   state.refurbs = (d.refurbs || []).map(buildRefurb);
   state.activeToday = d.activeToday || {};
   state.tickets = d.tickets.map(buildTicket);
@@ -2517,6 +2520,21 @@ async function clearDefaultKey() {
   const r = await mutate("/admin/default-key", { key: null });
   if (r) loadKeysInfo();
 }
+function renderReaderNamesPanel() {
+  const rs = state.cardReaders || [];
+  return `
+    <div class="panel">
+      <h2>💳 Card readers</h2>
+      ${rs.length ? `<div class="meter-note" style="margin-bottom:8px">Names shown on the Card sales tab and its PDFs. Leave a box blank to go back to the default name.</div>
+        ${rs.map(r => `<div class="reader-name-row"><span class="meter-note">Reader ${esc(r.id)}</span>
+          <input id="reader-name-${esc(r.id)}" class="booktime-input" style="width:200px" type="text" maxlength="40" value="${esc(r.name)}" placeholder="${esc(r.defaultName)}"
+            onchange="setReaderName('${esc(r.id)}', this.value)" onkeydown="if (event.key === 'Enter') this.blur()"></div>`).join("")}`
+      : `<div class="meter-note">No card readers set up yet — add VALOR_APP_ID, VALOR_APP_KEY and VALOR_EPI (and _2 for a second reader) in Netlify, then redeploy.</div>`}
+    </div>`;
+}
+function setReaderName(id, name) {
+  mutate("/admin/reader-name", { id, name }, () => { const r = state.cardReaders.find(x => x.id === id); if (r) r.name = name.trim() || r.defaultName; state.cardSales = null; });
+}
 function setShowTeamBook(on) { mutate("/admin/show-team-book", { on }, () => { state.showTeamBook = on; }); }
 function setShowMoney(on) { mutate("/admin/show-money", { on }, () => { state.showMoney = on; }); }
 function setManualTimeNote(on) { mutate("/admin/manual-time-note", { on }, () => { state.manualTimeNote = on; }); }
@@ -2674,6 +2692,7 @@ function renderAdminRs() {
       <label class="sort-option"><input type="checkbox" id="show-money" ${state.showMoney ? "checked" : ""} onchange="setShowMoney(this.checked)"> Show "💰 Today's money" (payments + invoiced today) at the top of the Team tab — everyone who can open the Team tab sees it</label>
       <label class="sort-option"><input type="checkbox" id="show-team-book" ${state.showTeamBook ? "checked" : ""} onchange="setShowTeamBook(this.checked)"> Show "📖 Team book time" (the team bar + who's pushing it ahead / dragging it down)</label>
     </div>
+    ${renderReaderNamesPanel()}
     <div class="panel">
       <h2>RepairShopr connection</h2>
       <div style="margin-bottom:12px"><button class="btn primary small" onclick="runRsCheck()" ${state.rsCheckLoading ? "disabled" : ""}>${state.rsCheckLoading ? "Checking…" : "Run check"}</button></div>

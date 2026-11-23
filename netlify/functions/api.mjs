@@ -19,7 +19,7 @@ import { syncTimers, syncTimersThrottled, rsTimerAction, rsTimerTotals } from ".
 import { ensureSchema } from "../../lib/migrate.mjs";
 import { RS_ISSUE_TYPES, ISSUE_TYPE_TO_DEVICE } from "../../lib/booktime.mjs";
 import { buildReport, syncInvoiceSnaps, laborProducts } from "../../lib/reports.mjs";
-import { syncCardSales, syncYesterday, cardSalesFor, previousBusinessDay, valorConfigured, valorReaders, ValorError } from "../../lib/valor.mjs";
+import { syncCardSales, syncYesterday, cardSalesFor, previousBusinessDay, valorConfigured, valorReaders, namedReaders, ValorError } from "../../lib/valor.mjs";
 
 // Time budgets so a page load always answers well inside Netlify's ~10s function limit.
 const TICKETS_WAIT_MS = 4500, USERS_WAIT_MS = 3000;
@@ -84,6 +84,7 @@ export default async (req, context) => {
           case "/admin/role-goal":          return json(await setRoleGoal(body));
           case "/admin/labor-category":     return json(await setLaborCategory(body));
           case "/admin/show-team-book":     return json(await setSetting("show_team_book", !!body.on));
+          case "/admin/reader-name":        return json(await setReaderName(body));
           case "/admin/show-money":         return json(await setSetting("show_money", !!body.on));
           case "/admin/diag-min-total":     return json(await setSetting("diag_min_repair_total", Math.max(0, Math.round(Number(body.value) || 0))));
           case "/admin/eligible-statuses":  return json(await setSetting("diagnosis_eligible_statuses", (body.statuses || []).map(String).slice(0, 50)));
@@ -382,8 +383,11 @@ async function buildState(me, { force = false } = {}) {
     }
   } catch (e) { console.warn("money", e.message); }
 
+  let cardReaders = [];
+  if (me.is_admin) { try { cardReaders = await namedReaders(); } catch {} }
   return {
     money,
+    cardReaders,
     me: me.id,
     today: t0,
     serverNow: Date.now(),
@@ -775,7 +779,7 @@ async function cardSales(me, params) {
   const day = params.get("day") || t0;
   if (day !== t0 && day !== prev) throw new HttpError(403, "Card sales can only be pulled for today and the previous business day");
   if (!valorConfigured()) return { configured: false, today: t0, previous: prev };
-  const readers = valorReaders().map(r => ({ id: r.id, name: r.name }));
+  const readers = (await namedReaders()).map(r => ({ id: r.id, name: r.name }));
   const reader = readers.some(r => r.id === params.get("reader")) ? params.get("reader") : null; // null = all readers
   let warning = null, batches = [], syncedAt = null;
   if (day === t0) {
@@ -795,6 +799,17 @@ async function cardSales(me, params) {
   const r = await cardSalesFor(day, reader);
   const batch = day === t0 && batches.length ? { totalCents: batches.reduce((a, b) => a + b.totalCents, 0), count: batches.reduce((a, b) => a + b.count, 0) } : null;
   return { configured: true, today: t0, previous: prev, readers, reader, ...r, batch, syncedAt, warning };
+}
+
+async function setReaderName({ id, name }) {
+  if (!valorReaders().some(r => r.id === String(id))) throw new HttpError(400, "That card reader isn't set up in Netlify");
+  const sql = db();
+  const [row] = await sql`select value from settings where key = 'card_reader_names'`;
+  const names = { ...(row?.value || {}) };
+  const n = String(name || "").trim().slice(0, 40);
+  if (n) names[String(id)] = n; else delete names[String(id)];   // blank = back to the default name
+  await setSetting("card_reader_names", names);
+  return { ok: true, readers: await namedReaders() };
 }
 
 /* ---------------- refurbs (app-only) ---------------- */
