@@ -6,11 +6,11 @@
 <title>Lightning Repairs — Tech Tool</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=Pixelify+Sans:wght@400;600;700&display=swap" rel="stylesheet">
-<link rel="icon" href="/favicon.ico" sizes="48x48">
-<link rel="icon" type="image/png" sizes="32x32" href="/icons/favicon-32.png">
-<link rel="icon" type="image/png" sizes="16x16" href="/icons/favicon-16.png">
-<link rel="apple-touch-icon" sizes="180x180" href="/icons/apple-touch-icon.png">
-<link rel="manifest" href="/manifest.webmanifest">
+<link rel="icon" href="/favicon.ico?v=2" sizes="48x48">
+<link rel="icon" type="image/png" sizes="32x32" href="/icons/favicon-32.png?v=2">
+<link rel="icon" type="image/png" sizes="16x16" href="/icons/favicon-16.png?v=2">
+<link rel="apple-touch-icon" sizes="180x180" href="/icons/apple-touch-icon.png?v=2">
+<link rel="manifest" href="/manifest.webmanifest?v=2">
 <style>
   /* Three themes: Light (default), Dark (logo navy), Retro (logo sky blue + yellow).
      Status colors (good/warning/serious/critical) are fixed in every theme. */
@@ -727,6 +727,17 @@
   .sort-options { display: flex; flex-direction: column; gap: 6px; font-size: 13px; }
   .sort-option { display: flex; align-items: center; gap: 8px; cursor: pointer; }
   .sort-option input { accent-color: var(--accent); }
+  .bell-wrap { position: relative; }
+  .bell-btn { position: relative; background: var(--badge-bg); border: none; border-radius: 999px; width: 30px; height: 26px; font-size: 14px; cursor: pointer; display: grid; place-items: center; padding: 0; }
+  .bell-badge { position: absolute; top: -6px; right: -7px; min-width: 17px; height: 17px; padding: 0 4px; border-radius: 999px; background: var(--critical); color: #fff; font-size: 10.5px; font-weight: 800; line-height: 17px; text-align: center; box-shadow: 0 0 0 2px var(--topbar-bg, #1596d1); }
+  .bell-menu { position: absolute; right: 0; top: calc(100% + 8px); z-index: 60; width: 340px; max-height: 420px; overflow: auto; background: var(--surface); color: var(--text-primary); border: var(--panel-border); border-radius: 10px; box-shadow: 0 12px 32px rgba(0,0,0,.28); text-align: left; }
+  .bell-head { font-weight: 700; font-size: 13px; padding: 10px 12px; border-bottom: 1px solid var(--grid); position: sticky; top: 0; background: var(--surface); }
+  .bell-item { padding: 9px 12px; border-bottom: 1px solid var(--grid); font-size: 12.5px; line-height: 1.35; }
+  .bell-item:last-child { border-bottom: none; }
+  .bell-item.new { background: color-mix(in srgb, var(--brand-blue) 10%, var(--surface)); }
+  .bell-time { font-size: 11px; color: var(--text-muted); margin-top: 2px; }
+  .bell-flag { display: inline-block; margin-top: 4px; font-size: 11px; font-weight: 700; padding: 1px 8px; border-radius: 999px; background: color-mix(in srgb, var(--warning) 30%, var(--surface)); color: var(--text-primary); }
+  .bell-flag.hot { background: var(--critical); color: #fff; }
   .refresh-btn { background: var(--badge-bg); color: var(--topbar-text); border: none; border-radius: 999px; padding: 4px 10px; font: inherit; font-size: 11.5px; font-weight: 600; cursor: pointer; }
   :root[data-theme="retro"] .refresh-btn { color: #fff; }
   .refresh-btn:hover { filter: brightness(1.15); }
@@ -1023,6 +1034,7 @@ function applyServerState(d) {
   state.rsError = d.rsError;
   state.rsUsers = d.rsUsers || [];
   state.money = d.money || null;
+  state.notifications = d.notifications || null;
   state.cardReaders = d.cardReaders || [];
   state.refurbs = (d.refurbs || []).map(buildRefurb);
   state.activeToday = d.activeToday || {};
@@ -1366,6 +1378,7 @@ function renderApp() {
         ${isAdmin ? `<button class="tab ${state.tab==='admin'?'active':''}" onclick="setTab('admin')">Admin Console</button>` : ""}
       </div>
       <div class="who">
+        ${isAdmin ? renderBell() : ""}
         <button type="button" class="refresh-btn ${state.refreshing ? "spinning" : ""}" onclick="refreshNow()" title="Pull the latest from RepairShopr right now">⟳ Refresh</button>
         <div class="pos-switcher">
           ${canSwitch
@@ -1508,6 +1521,7 @@ function setDue(ticketId, day) {
 // Clicking anywhere else (or Esc) closes the due-date popup.
 document.addEventListener("click", e => {
   if (state.dueEditOpen != null && !e.target.closest(".due-pop, .due-btn")) { state.dueEditOpen = null; render(); }
+  if (state.bellOpen && !e.target.closest(".bell-wrap")) { state.bellOpen = false; render(); }
 });
 document.addEventListener("keydown", e => {
   if (e.key === "Escape" && state.dueEditOpen != null) { state.dueEditOpen = null; render(); }
@@ -3210,6 +3224,42 @@ const CARD_SALES_ROLES = ["Sales", "Float", "Assistant Manager", "Manager"];
 function canSeeCardSales() {
   const u = state.currentUser;
   return !!u && (u.admin || (u.positions || []).some(p => CARD_SALES_ROLES.includes(p)));
+}
+/* ---------- 🔔 Notifications (admins) ---------- */
+function renderBell() {
+  const n = state.notifications;
+  const unread = n ? n.unread : 0;
+  return `<div class="bell-wrap">
+    <button type="button" class="bell-btn" onclick="toggleBell()" title="${unread ? `${unread} new notification${unread === 1 ? "" : "s"}` : "Notifications"}" aria-label="Notifications">🔔${unread ? `<span class="bell-badge">${unread > 99 ? "99+" : unread}</span>` : ""}</button>
+    ${state.bellOpen ? renderBellMenu() : ""}
+  </div>`;
+}
+function renderBellMenu() {
+  const n = state.notifications || { items: [] };
+  const seen = state.bellSeenBefore ?? 0;
+  const when = ms => { const d = new Date(ms); const today = new Date(nowMs()).toDateString() === d.toDateString();
+    return (today ? "" : d.toLocaleDateString("en-US", { weekday: "short", month: "numeric", day: "numeric" }) + " ") + d.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" }); };
+  const items = n.items.filter(i => !i.mine).map(i => {
+    let text = esc(i.kind), flag = "";
+    if (i.kind === "cc_report") {
+      const dayLbl = i.data.day ? shortDay(i.data.day) : "";
+      text = `<b>${esc(i.name)}</b> downloaded the CC report for ${esc(dayLbl)}${i.data.reader ? ` · ${esc(i.data.reader)}` : ""}${i.data.position ? ` <span class="meter-note" style="display:inline">(as ${esc(i.data.position)})</span>` : ""}`;
+      if (i.streak >= 2) flag = `<div class="bell-flag ${i.streak >= 3 ? "hot" : ""}">🔁 ${i.streak} business days in a row</div>`;
+      else if (i.last7 >= 3) flag = `<div class="bell-flag ${i.last7 >= 4 ? "hot" : ""}">📅 ${i.last7} of the last 7 days</div>`;
+    }
+    return `<div class="bell-item ${i.id > seen ? "new" : ""}"><div>${text}</div>${flag}<div class="bell-time">${esc(when(i.at))}</div></div>`;
+  }).join("");
+  return `<div class="bell-menu"><div class="bell-head">Notifications</div>${items || `<div class="meter-note" style="padding:10px 12px">Nothing yet. You'll see it here when someone downloads a CC report.</div>`}</div>`;
+}
+function toggleBell() {
+  state.bellOpen = !state.bellOpen;
+  const n = state.notifications;
+  if (state.bellOpen && n) {
+    state.bellSeenBefore = n.items.length && n.unread ? Math.min(...n.items.filter(i => !i.mine).slice(0, n.unread).map(i => i.id)) - 1 : Infinity;
+    const top = n.items.length ? n.items[0].id : 0;
+    if (n.unread) { n.unread = 0; api("/admin/notifications-seen", { upTo: top }).catch(() => {}); }
+  }
+  render();
 }
 /* ---------- LR Apps: a home screen of small tools. Everyone sees every app; locked ones are greyed out. ---------- */
 const LR_APPS = [

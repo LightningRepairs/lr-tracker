@@ -85,6 +85,7 @@ export default async (req, context) => {
           case "/admin/labor-category":     return json(await setLaborCategory(body));
           case "/admin/show-team-book":     return json(await setSetting("show_team_book", !!body.on));
           case "/admin/reader-name":        return json(await setReaderName(body));
+          case "/admin/notifications-seen": return json(await markNotificationsSeen(me, body));
           case "/admin/show-money":         return json(await setSetting("show_money", !!body.on));
           case "/admin/diag-min-total":     return json(await setSetting("diag_min_repair_total", Math.max(0, Math.round(Number(body.value) || 0))));
           case "/admin/eligible-statuses":  return json(await setSetting("diagnosis_eligible_statuses", (body.statuses || []).map(String).slice(0, 50)));
@@ -388,11 +389,15 @@ async function buildState(me, { force = false } = {}) {
     }
   } catch (e) { console.warn("money", e.message); }
 
-  let cardReaders = [];
-  if (me.is_admin) { try { cardReaders = await namedReaders(); } catch {} }
+  let cardReaders = [], notifications = null;
+  if (me.is_admin) {
+    try { cardReaders = await namedReaders(); } catch {}
+    try { notifications = await notificationsFor(me); } catch (e) { console.warn("notifications", e.message); }
+  }
   return {
     money,
     cardReaders,
+    notifications,
     me: me.id,
     today: t0,
     serverNow: Date.now(),
@@ -802,7 +807,50 @@ async function cardSales(me, params) {
   const r = await cardSalesFor(day, reader);
   // Valor failed and the app has nothing saved for that day → say so instead of handing back an empty "$0.00" report.
   if (errors.length && !r.txns.length) throw new HttpError(502, errors.join(" · "));
+  // 🔔 Let the admins know who pulled a report (and how often they've been doing it).
+  try {
+    const readerName = reader ? (readers.find(x => x.id === reader) || {}).name : "All readers";
+    await db()`insert into notifications (kind, person_id, data) values ('cc_report', ${me.id}, ${db().json({ day, reader: readerName, position: (await db()`select position from attendance where person_id = ${me.id} and work_date = ${t0}`)[0]?.position || null })})`;
+  } catch (e) { console.warn("notify", e.message); }
   return { today: t0, previous: prev, readers, reader, ...r, warning: errors.length ? errors.join(" · ") : null };
+}
+
+/* ---------------- 🔔 notifications (admins) ---------------- */
+// Business days back from `day` (Sundays skipped) on which this person pulled a CC report, counting `day`.
+function ccStreak(daysSet, day) {
+  let n = 0, d = new Date(day + "T12:00:00Z");
+  for (let i = 0; i < 60; i++) {
+    if (d.getUTCDay() !== 0) { if (daysSet.has(d.toISOString().slice(0, 10))) n++; else break; }
+    d.setUTCDate(d.getUTCDate() - 1);
+  }
+  return n;
+}
+async function notificationsFor(me) {
+  const sql = db();
+  const rows = await sql`select n.*, p.name from notifications n left join people p on p.id = n.person_id order by n.id desc limit 40`;
+  if (!rows.length) return { items: [], unread: 0 };
+  // For CC report pulls: on how many days (shop time) has each person pulled one recently?
+  const ccPeople = [...new Set(rows.filter(r => r.kind === "cc_report").map(r => r.person_id))];
+  const hist = ccPeople.length ? await sql`select person_id, created_at from notifications where kind = 'cc_report' and person_id = any(${ccPeople})
+                                           and created_at > now() - interval '45 days'` : [];
+  const daysBy = {};
+  for (const h of hist) (daysBy[h.person_id] ||= []).push({ day: shopDate(h.created_at), at: +new Date(h.created_at) });
+  const items = rows.map(r => {
+    const x = { id: Number(r.id), kind: r.kind, personId: r.person_id, name: r.name || r.person_id, at: ms(r.created_at), data: r.data || {}, mine: r.person_id === me.id };
+    if (r.kind === "cc_report") {
+      const upTo = (daysBy[r.person_id] || []).filter(h => h.at <= x.at);
+      const days = new Set(upTo.map(h => h.day));
+      x.streak = ccStreak(days, shopDate(r.created_at));                              // business days in a row
+      x.last7 = [...days].filter(d => d > shopDate(new Date(x.at - 7 * 86400e3))).length; // distinct days in the last week
+    }
+    return x;
+  });
+  return { items, unread: items.filter(i => i.id > Number(me.notif_seen_id || 0) && !i.mine).length };
+}
+async function markNotificationsSeen(me, { upTo }) {
+  const id = Math.max(0, Math.floor(Number(upTo) || 0));
+  await db()`update people set notif_seen_id = greatest(notif_seen_id, ${id}) where id = ${me.id}`;
+  return { ok: true };
 }
 
 async function setReaderName({ id, name }) {
