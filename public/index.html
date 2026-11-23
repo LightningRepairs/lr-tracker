@@ -667,6 +667,7 @@
   .tb-pct { text-align: right; font-weight: 700; font-variant-numeric: tabular-nums; }
   .tb-pct.up { color: var(--good, #1f9d55); } .tb-pct.down { color: var(--critical); }
   .tb-sub { color: var(--text-muted); font-size: 11.5px; text-align: right; font-variant-numeric: tabular-nums; }
+  .card-pickers { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
   .card-actions { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-top: 12px; }
   td.num-r, th.num-r { text-align: right; font-variant-numeric: tabular-nums; }
   .default-tag { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; color: var(--text-muted); border: 1px dashed var(--border); border-radius: 999px; padding: 0 6px; margin-left: 4px; }
@@ -3157,12 +3158,14 @@ async function loadCardSales(day, refresh) {
   if (cardBusy) return;
   cardBusy = true; state.cardLoading = true; if (state.tab === "cards") render();
   try {
-    const d = await api(`/card-sales?day=${encodeURIComponent(day || state.cardDay || "")}${refresh ? "&refresh=1" : ""}`);
+    const d = await api(`/card-sales?day=${encodeURIComponent(day || state.cardDay || "")}${state.cardReader ? `&reader=${encodeURIComponent(state.cardReader)}` : ""}${refresh ? "&refresh=1" : ""}`);
     state.cardSales = d; state.cardDay = d.day || d.today; state.cardError = null;
   } catch (e) { state.cardError = e.message; }
   finally { cardBusy = false; state.cardLoading = false; if (state.tab === "cards") render(); }
 }
 function pickCardDay(day) { state.cardDay = day; state.cardSales = null; loadCardSales(day); }
+function pickCardReader(id) { state.cardReader = id; state.cardSales = null; loadCardSales(state.cardDay); }
+const cardReaderLabel = d => (d.reader ? (d.readers.find(r => r.id === d.reader) || {}).name || "Reader" : (d.readers.length > 1 ? "All readers" : (d.readers[0] || {}).name || ""));
 function renderCardSalesTab() {
   const d = state.cardSales;
   if (state.cardError && !d) return `<div class="panel"><h2>💳 Card sales</h2><div class="bad-text">${esc(state.cardError)}</div></div>`;
@@ -3170,8 +3173,9 @@ function renderCardSalesTab() {
   if (d.configured === false) return `<div class="panel"><h2>💳 Card sales</h2><div class="meter-note">Valor isn't connected yet. Add <b>VALOR_APP_ID</b>, <b>VALOR_APP_KEY</b> and <b>VALOR_EPI</b> in Netlify → Site configuration → Environment variables, then redeploy.</div></div>`;
   const isToday = d.day === d.today;
   const dayBtn = (day, label) => `<button class="theme-toggle-btn ${d.day === day ? "active" : ""}" onclick="pickCardDay('${day}')">${label}</button>`;
+  const showReader = d.readers.length > 1 && !d.reader;
   const rows = d.txns.map(t => `<tr class="${t.type === "void" ? "quiet-row" : ""}">
-      <td>${esc(t.time || "—")}</td>
+      <td>${esc(t.time || "—")}</td>${showReader ? `<td>${esc(t.reader)}</td>` : ""}
       <td>${t.type === "sale" ? "Sale" : t.type === "refund" ? `<span class="bad-text">Refund</span>` : `<span class="meter-note">Voided</span>`}</td>
       <td>${esc(t.scheme || "—")}</td><td>${esc(t.cardType || "")}</td>
       <td class="num-r">${t.type === "refund" ? "−" : ""}${t.type === "void" ? `<s>${usd(Math.abs(t.amount))}</s>` : usd(Math.abs(t.amount))}</td></tr>`).join("");
@@ -3180,10 +3184,16 @@ function renderCardSalesTab() {
     <div class="panel">
       <div class="refurb-head">
         <h2>💳 Card sales <span class="meter-note" style="display:inline">&mdash; from the Valor card terminal</span></h2>
-        <div class="theme-toggle">${dayBtn(d.today, "Today")}${dayBtn(d.previous, shortDay(d.previous))}</div>
+        <div class="card-pickers">
+          ${d.readers.length > 1 ? `<select class="setting-select" id="card-reader" onchange="pickCardReader(this.value)">
+            <option value="" ${!d.reader ? "selected" : ""}>All readers</option>
+            ${d.readers.map(r => `<option value="${esc(r.id)}" ${d.reader === r.id ? "selected" : ""}>${esc(r.name)}</option>`).join("")}
+          </select>` : ""}
+          <div class="theme-toggle">${dayBtn(d.today, "Today")}${dayBtn(d.previous, shortDay(d.previous))}</div>
+        </div>
       </div>
       <div class="money-grid">
-        <div class="money-card"><div class="money-label">Net card sales · ${esc(shortDay(d.day))}</div><div class="money-big">${usd(d.netCents)}</div>
+        <div class="money-card"><div class="money-label">Net card sales · ${esc(shortDay(d.day))}${d.readers.length > 1 ? ` · ${esc(cardReaderLabel(d))}` : ""}</div><div class="money-big">${usd(d.netCents)}</div>
           <div class="money-sub">${d.salesCount} sale${d.salesCount === 1 ? "" : "s"} ${usd(d.salesCents)}${d.refundCount ? ` − ${d.refundCount} refund${d.refundCount === 1 ? "" : "s"} ${usd(d.refundCents)}` : ""}${d.voidCount ? ` · ${d.voidCount} voided (not counted)` : ""}</div>
           ${d.byBrand.length ? `<div class="money-chips">${d.byBrand.map(b => `<span class="money-chip">${esc(b.brand)} ${usd(b.cents)}</span>`).join("")}</div>` : ""}
         </div>
@@ -3198,7 +3208,7 @@ function renderCardSalesTab() {
     </div>
     <div class="panel">
       <h2>Transactions <span class="meter-note" style="display:inline">&mdash; ${d.txns.length}</span></h2>
-      ${d.txns.length ? `<div class="table-scroll"><table><thead><tr><th>Time</th><th>Type</th><th>Card</th><th>Card type</th><th class="num-r">Amount</th></tr></thead><tbody>${rows}</tbody></table></div>`
+      ${d.txns.length ? `<div class="table-scroll"><table><thead><tr><th>Time</th>${showReader ? "<th>Reader</th>" : ""}<th>Type</th><th>Card</th><th>Card type</th><th class="num-r">Amount</th></tr></thead><tbody>${rows}</tbody></table></div>`
         : `<div class="meter-note">${isToday ? "No card sales yet today." : `No card sales saved for ${esc(shortDay(d.day))}. The app saves sales as they happen, so days before this was set up are empty.`}</div>`}
       <div class="meter-note" style="margin-top:8px">Voids are left out of the total; refunds are subtracted. Card numbers and transaction ids are never shown. Only today and the previous business day can be pulled.</div>
     </div>`;
@@ -3212,7 +3222,7 @@ async function downloadCardPdf() {
     const doc = new jsPDF({ unit: "pt", format: "letter" });
     doc.setFont("helvetica", "bold"); doc.setFontSize(16); doc.text("Lightning Repairs - Card sales", 40, 48);
     doc.setFont("helvetica", "normal"); doc.setFontSize(10); doc.setTextColor(90);
-    doc.text(`${shortDay(d.day)} · Valor card terminal · generated ${new Date().toLocaleString("en-US")} by ${state.currentUser.name}`, 40, 64);
+    doc.text(`${shortDay(d.day)} · ${cardReaderLabel(d) || "Valor card terminal"} · generated ${new Date().toLocaleString("en-US")} by ${state.currentUser.name}`, 40, 64);
     doc.setTextColor(0);
     const summary = [["Sales", String(d.salesCount), usd(d.salesCents)], ["Refunds", String(d.refundCount), d.refundCount ? "-" + usd(d.refundCents) : usd(0)], ["Voided (not counted)", String(d.voidCount), ""]];
     doc.autoTable({ ...PDF_TABLE, startY: 80, head: [["", "Count", "Amount"]], body: summary, foot: [["Net card sales", "", usd(d.netCents)]], tableWidth: 300 });
@@ -3220,11 +3230,13 @@ async function downloadCardPdf() {
       doc.autoTable({ ...PDF_TABLE, startY: doc.lastAutoTable.finalY + 14, head: [["Card", "Net"]], body: d.byBrand.map(b => [b.brand, usd(b.cents)]), tableWidth: 300 });
     }
     doc.setFontSize(11); doc.setFont("helvetica", "bold"); doc.text("Transactions", 40, doc.lastAutoTable.finalY + 24); doc.setFont("helvetica", "normal");
-    doc.autoTable({ ...PDF_TABLE, startY: doc.lastAutoTable.finalY + 30, head: [["Time", "Type", "Card", "Card type", "Amount"]],
-      body: d.txns.map(t => [t.time || "", t.type === "sale" ? "Sale" : t.type === "refund" ? "Refund" : "Voided", t.scheme || "", t.cardType || "", (t.type === "refund" ? "-" : "") + usd(Math.abs(t.amount)) + (t.type === "void" ? " (void)" : "")]),
-      columnStyles: { 4: { halign: "right" } } });
+    const multi = d.readers.length > 1 && !d.reader;
+    doc.autoTable({ ...PDF_TABLE, startY: doc.lastAutoTable.finalY + 30, head: [["Time", ...(multi ? ["Reader"] : []), "Type", "Card", "Card type", "Amount"]],
+      body: d.txns.map(t => [t.time || "", ...(multi ? [t.reader] : []), t.type === "sale" ? "Sale" : t.type === "refund" ? "Refund" : "Voided", t.scheme || "", t.cardType || "", (t.type === "refund" ? "-" : "") + usd(Math.abs(t.amount)) + (t.type === "void" ? " (void)" : "")]),
+      columnStyles: { [multi ? 5 : 4]: { halign: "right" } } });
     pdfFinish(doc, "From the Valor card terminal. Voids are left out of the total; refunds are subtracted. Card numbers and transaction ids are not included.");
-    doc.save(`LR-card-sales-${d.day}.pdf`);
+    const rslug = d.reader ? "-" + (cardReaderLabel(d) || "reader").toLowerCase().replace(/[^a-z0-9]+/g, "-") : "";
+    doc.save(`LR-card-sales-${d.day}${rslug}.pdf`);
     showToast("Card sales PDF downloaded");
   } catch (e) { showToast(e.message, "error"); }
 }

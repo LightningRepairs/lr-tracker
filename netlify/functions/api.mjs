@@ -19,7 +19,7 @@ import { syncTimers, syncTimersThrottled, rsTimerAction, rsTimerTotals } from ".
 import { ensureSchema } from "../../lib/migrate.mjs";
 import { RS_ISSUE_TYPES, ISSUE_TYPE_TO_DEVICE } from "../../lib/booktime.mjs";
 import { buildReport, syncInvoiceSnaps, laborProducts } from "../../lib/reports.mjs";
-import { syncCardSales, syncYesterday, cardSalesFor, previousBusinessDay, valorConfigured, ValorError } from "../../lib/valor.mjs";
+import { syncCardSales, syncYesterday, cardSalesFor, previousBusinessDay, valorConfigured, valorReaders, ValorError } from "../../lib/valor.mjs";
 
 // Time budgets so a page load always answers well inside Netlify's ~10s function limit.
 const TICKETS_WAIT_MS = 4500, USERS_WAIT_MS = 3000;
@@ -775,23 +775,26 @@ async function cardSales(me, params) {
   const day = params.get("day") || t0;
   if (day !== t0 && day !== prev) throw new HttpError(403, "Card sales can only be pulled for today and the previous business day");
   if (!valorConfigured()) return { configured: false, today: t0, previous: prev };
-  let warning = null, batch = null, syncedAt = null;
+  const readers = valorReaders().map(r => ({ id: r.id, name: r.name }));
+  const reader = readers.some(r => r.id === params.get("reader")) ? params.get("reader") : null; // null = all readers
+  let warning = null, batches = [], syncedAt = null;
   if (day === t0) {
     try {
-      const r = await syncCardSales({ maxAgeSec: params.get("refresh") === "1" ? 0 : 60, maxWaitMs: 8000 });
-      batch = r.value?.batch || null; syncedAt = r.value?.at || null;
-      if (r.error) warning = r.error;
+      const r = await syncCardSales({ maxAgeSec: params.get("refresh") === "1" ? 0 : 60, maxWaitMs: 8000, reader });
+      batches = r.batches; syncedAt = r.at;
+      if (r.errors.length) warning = r.errors.join(" · ");
     } catch (e) { warning = e.message; }
   } else {
     // Previous business day: from what the app saved that day. If that was literally yesterday, top it up from Valor.
     const yesterday = new Date(Date.parse(t0 + "T12:00:00Z") - 86400e3).toISOString().slice(0, 10);
     const [{ n }] = await db()`select count(*)::int as n from card_txns where day = ${day}`;
     if (day === yesterday && params.get("refresh") === "1" || (day === yesterday && n === 0)) {
-      try { await syncYesterday(); } catch (e) { warning = e.message; }
+      try { await syncYesterday(reader); } catch (e) { warning = e.message; }
     }
   }
-  const r = await cardSalesFor(day);
-  return { configured: true, today: t0, previous: prev, ...r, batch: day === t0 ? batch : null, syncedAt, warning };
+  const r = await cardSalesFor(day, reader);
+  const batch = day === t0 && batches.length ? { totalCents: batches.reduce((a, b) => a + b.totalCents, 0), count: batches.reduce((a, b) => a + b.count, 0) } : null;
+  return { configured: true, today: t0, previous: prev, readers, reader, ...r, batch, syncedAt, warning };
 }
 
 /* ---------------- refurbs (app-only) ---------------- */

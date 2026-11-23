@@ -16,7 +16,7 @@ export default async () => {
   catch (e) { money = ` · money failed: ${e.message}`; }
   let cards = "";
   if (valorConfigured()) {
-    try { const c = await syncCardSales({ maxAgeSec: 300 }); if (c.fresh) cards = ` · card sales: ${c.value.count} today`; }
+    try { const c = await syncCardSales({ maxAgeSec: 300 }); if (c.fresh) cards = ` · card sales: ${c.count} today`; if (c.errors.length) cards += ` (${c.errors.join("; ")})`; }
     catch (e) { cards = ` · card sales failed: ${e.message}`; }
   }
   console.log(`refresh-rs: ${r.list.length} tickets in ${r.fetchMs ?? "?"}ms${timers}${money}${cards}${r.rsError ? ` — ${r.rsError}` : ""}`);
