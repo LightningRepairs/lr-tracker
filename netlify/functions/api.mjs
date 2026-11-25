@@ -856,7 +856,8 @@ async function cardSales(me, params, { via = "download" } = {}) {
   // 🔔 Let the admins know who pulled a report (and how often they've been doing it).
   try {
     const readerName = reader ? (readers.find(x => x.id === reader) || {}).name : "All readers";
-    await db()`insert into notifications (kind, person_id, data) values ('cc_report', ${me.id}, ${db().json({ day, reader: readerName, via, position: (await db()`select position from attendance where person_id = ${me.id} and work_date = ${t0}`)[0]?.position || null })})`;
+    // Only downloads notify the admins — Discord sends don't.
+    if (via === "download") await db()`insert into notifications (kind, person_id, data) values ('cc_report', ${me.id}, ${db().json({ day, reader: readerName, via, position: (await db()`select position from attendance where person_id = ${me.id} and work_date = ${t0}`)[0]?.position || null })})`;
   } catch (e) { console.warn("notify", e.message); }
   return { today: t0, previous: prev, readers, reader, ...r, warning: errors.length ? errors.join(" · ") : null };
 }
@@ -873,11 +874,12 @@ function ccStreak(daysSet, day) {
 }
 async function notificationsFor(me) {
   const sql = db();
-  const rows = await sql`select n.*, p.name from notifications n left join people p on p.id = n.person_id order by n.id desc limit 40`;
+  const rows = await sql`select n.*, p.name from notifications n left join people p on p.id = n.person_id
+                         where not (n.kind = 'cc_report' and coalesce(n.data->>'via', 'download') = 'discord') order by n.id desc limit 40`;
   if (!rows.length) return { items: [], unread: 0 };
   // For CC report pulls: on how many days (shop time) has each person pulled one recently?
   const ccPeople = [...new Set(rows.filter(r => r.kind === "cc_report").map(r => r.person_id))];
-  const hist = ccPeople.length ? await sql`select person_id, created_at from notifications where kind = 'cc_report' and person_id = any(${ccPeople})
+  const hist = ccPeople.length ? await sql`select person_id, created_at from notifications where kind = 'cc_report' and coalesce(data->>'via', 'download') <> 'discord' and person_id = any(${ccPeople})
                                            and created_at > now() - interval '45 days'` : [];
   const daysBy = {};
   for (const h of hist) (daysBy[h.person_id] ||= []).push({ day: shopDate(h.created_at), at: +new Date(h.created_at) });

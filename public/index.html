@@ -2663,7 +2663,7 @@ function renderReaderNamesPanel() {
   return `
     <div class="panel">
       <h2>💳 Card readers</h2>
-      ${rs.length ? `<div class="meter-note" style="margin-bottom:8px">Names shown in the Download CC Report app and its PDFs. Leave a box blank to go back to the default name.</div>
+      ${rs.length ? `<div class="meter-note" style="margin-bottom:8px">Names shown in the CC Report app and its PDFs. Leave a box blank to go back to the default name.</div>
         ${rs.map(r => `<div class="reader-name-row"><span class="meter-note">Reader ${esc(r.id)}</span>
           <input id="reader-name-${esc(r.id)}" class="booktime-input" style="width:200px" type="text" maxlength="40" value="${esc(r.name)}" placeholder="${esc(r.defaultName)}"
             onchange="setReaderName('${esc(r.id)}', this.value)" onkeydown="if (event.key === 'Enter') this.blur()"></div>`).join("")}`
@@ -3435,7 +3435,7 @@ function renderAdminAuto() {
       ${last && last.slot ? `<div class="meter-note" style="margin-top:8px">Last automatic send: ${esc(last.slot.replace("T", " "))} — ${last.ok === false ? `<span class="bad-text">failed: ${esc(last.error || "")}</span>` : last.ok ? "✓ sent" : "sending…"}</div>` : ""}
     </div>
     <div class="panel">
-      <h2>📨 Send buttons (LR Apps → Download CC Report)</h2>
+      <h2>📨 Send buttons (LR Apps → CC Report)</h2>
       <div class="meter-note" style="margin-bottom:6px">Where "Send today's report" / "Send previous day's report" post to. Separate from the automatic reports — can be a different channel. Until one is saved, those buttons are greyed out.</div>
       ${renderWebhookRow("send", "Webhook — Send buttons", a.sendWebhook)}
       <div class="auto-row" style="align-items:start"><span class="auto-label" style="padding-top:6px">Message</span>
@@ -3486,7 +3486,7 @@ function toggleBell() {
 }
 /* ---------- LR Apps: a home screen of small tools. Everyone sees every app; locked ones are greyed out. ---------- */
 const LR_APPS = [
-  { key: "cards", name: "Download CC Report", icon: "💳", color: "#1f8f5f", can: () => canSeeCardSales(),
+  { key: "cards", name: "CC Report", icon: "💳", color: "#1f8f5f", can: () => canSeeCardSales(),
     locked: "Needs the Sales, Float, Assistant Manager or Manager role", render: () => renderCardSalesTab(), open: () => loadCardInfo() },
 ];
 function openApp(key) {
@@ -3525,7 +3525,7 @@ function renderCardSalesTab() {
   const sendBtn = (day, label) => `<button class="btn send-btn" onclick="sendCardReport('${day}')" ${busy || !info.discord ? "disabled" : ""} title="${info.discord ? "Post this report straight to the shop's Discord channel" : "No Discord webhook set up yet"}">${busy === "send:" + day ? "Sending to Discord…" : `📨 ${label}`}</button>`;
   return `
     <div class="panel">
-      <h2>💳 Download CC Report</h2>
+      <h2>💳 CC Report</h2>
       <div class="report-field" style="margin-bottom:12px"><span class="report-label" style="grid-row:auto">Reader</span>
         <select id="card-reader" class="setting-select" style="justify-self:start" onchange="pickCardReader(this.value)" ${busy ? "disabled" : ""}>
           ${readers.map(r => `<option value="${esc(r.id)}" ${state.cardReader === r.id ? "selected" : ""}>${esc(r.name)}</option>`).join("")}
