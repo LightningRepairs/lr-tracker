@@ -5,6 +5,8 @@
   "type": "module",
   "description": "Lightning Repairs tech tool — RepairShopr-connected productivity tracker",
   "dependencies": {
+    "jspdf": "2.5.1",
+    "jspdf-autotable": "3.8.2",
     "postgres": "^3.4.5"
   }
 }

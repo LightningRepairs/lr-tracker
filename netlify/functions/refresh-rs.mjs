@@ -6,6 +6,7 @@ import { syncTimersThrottled } from "../../lib/timers.mjs";
 import { getMoney, getNotesToday } from "../../lib/rs.mjs";
 import { syncInvoiceSnaps } from "../../lib/reports.mjs";
 import { syncCardSales, valorConfigured } from "../../lib/valor.mjs";
+import { runScheduledCardReport } from "../../lib/ccauto.mjs";
 
 export default async () => {
   const r = await syncFromRs({ force: true });
@@ -21,6 +22,8 @@ export default async () => {
     try { const c = await syncCardSales({ maxAgeSec: 300 }); if (c.fresh) cards = ` · card sales: ${c.count} today`; if (c.errors.length) cards += ` (${c.errors.join("; ")})`; }
     catch (e) { cards = ` · card sales failed: ${e.message}`; }
   }
+  try { const a = await runScheduledCardReport(); if (a) cards += ` · auto CC report ${a}`; }
+  catch (e) { cards += ` · auto CC report error: ${e.message}`; }
   console.log(`refresh-rs: ${r.list.length} tickets in ${r.fetchMs ?? "?"}ms${timers}${money}${cards}${r.rsError ? ` — ${r.rsError}` : ""}`);
   return new Response("ok");
 };

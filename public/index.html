@@ -732,6 +732,14 @@
   .sort-options { display: flex; flex-direction: column; gap: 6px; font-size: 13px; }
   .sort-option { display: flex; align-items: center; gap: 8px; cursor: pointer; }
   .sort-option input { accent-color: var(--accent); }
+  .auto-row { display: grid; grid-template-columns: 150px 1fr; gap: 6px 12px; align-items: center; padding: 8px 0; border-top: 1px solid var(--grid); }
+  .auto-label { font-weight: 600; font-size: 12.5px; color: var(--text-secondary); }
+  .auto-days, .auto-times { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+  .day-chip { font: inherit; font-size: 12px; font-weight: 700; padding: 4px 10px; border-radius: 999px; border: 1px solid var(--border); background: var(--surface); color: var(--text-muted); cursor: pointer; }
+  .day-chip.on { background: var(--brand-blue); border-color: var(--brand-blue); color: #fff; }
+  .auto-time { display: inline-flex; align-items: center; gap: 2px; }
+  .auto-row input[type=time] { font: inherit; font-size: 13px; padding: 4px 6px; border: 1px solid var(--border); border-radius: 6px; background: var(--surface); color: var(--text-primary); }
+  @media (max-width: 640px) { .auto-row { grid-template-columns: 1fr; } }
   .bell-wrap { position: relative; }
   .bell-btn { position: relative; background: var(--badge-bg); border: none; border-radius: 999px; width: 30px; height: 26px; font-size: 14px; cursor: pointer; display: grid; place-items: center; padding: 0; }
   .bell-badge { position: absolute; top: -6px; right: -7px; min-width: 17px; height: 17px; padding: 0 4px; border-radius: 999px; background: var(--critical); color: #fff; font-size: 10.5px; font-weight: 800; line-height: 17px; text-align: center; box-shadow: 0 0 0 2px var(--topbar-bg, #1596d1); }
@@ -1039,6 +1047,7 @@ function applyServerState(d) {
   state.rsError = d.rsError;
   state.rsUsers = d.rsUsers || [];
   state.money = d.money || null;
+  state.ccAuto = d.ccAuto || null;
   state.notedToday = d.notedToday || [];
   state.notifications = d.notifications || null;
   state.cardReaders = d.cardReaders || [];
@@ -2527,12 +2536,14 @@ const ADMIN_MENU = [
   { key: "users",    icon: "👤", label: "Users",                  desc: "Positions, PINs & RepairShopr links per person" },
   { key: "booktime", icon: "📊", label: "Book Time Database",     desc: "Standard repair times by device type" },
   { key: "goals",    icon: "🎯", label: "Daily goals",            desc: "Book & actual time goals for each role" },
+  { key: "auto",     icon: "📤", label: "Automatic reports",      desc: "Send the CC report to Discord on a schedule" },
   { key: "rs",       icon: "🔌", label: "RepairShopr connection", desc: "Check the API link, statuses & Issue Types" },
 ];
 function renderAdmin() {
   if (!state.adminSection) return renderAdminMenu();
   if (state.adminSection === "users") return renderAdminUsers();
   if (state.adminSection === "goals") return renderAdminGoals();
+  if (state.adminSection === "auto") return renderAdminAuto();
   if (state.adminSection === "rs") return renderAdminRs();
   if (state.adminSection === "reports") return renderAdminReports();
   if (state.adminView === "category" && state.bookTimeCategories[state.adminCategory]) return renderBookTimeCategory();
@@ -3312,6 +3323,92 @@ function canSeeCardSales() {
   const u = state.currentUser;
   return !!u && (u.admin || (u.positions || []).some(p => CARD_SALES_ROLES.includes(p)));
 }
+/* ---------- 📤 Admin: automatic CC report to Discord ---------- */
+const DOW = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+function autoDraft() {
+  if (!state.autoDraft && state.ccAuto) state.autoDraft = JSON.parse(JSON.stringify(state.ccAuto.settings));
+  return state.autoDraft;
+}
+function setAuto(k, v) { const d = autoDraft(); d[k] = v; state.autoDirty = true; render(); }
+function toggleAutoDay(i) { const d = autoDraft(); d.days = d.days.includes(i) ? d.days.filter(x => x !== i) : [...d.days, i].sort(); state.autoDirty = true; render(); }
+function setAutoTime(i, v) { const d = autoDraft(); d.times[i] = v; state.autoDirty = true; }
+function addAutoTime() { const d = autoDraft(); d.times.push("12:00"); state.autoDirty = true; render(); }
+function removeAutoTime(i) { const d = autoDraft(); d.times.splice(i, 1); if (!d.times.length) d.times.push("18:05"); state.autoDirty = true; render(); }
+async function saveAuto() {
+  const r = await mutate("/admin/cc-auto", autoDraft());
+  if (r) { state.autoDraft = JSON.parse(JSON.stringify(r.settings)); state.autoDirty = false; showToast("Schedule saved"); render(); }
+}
+async function saveWebhook(clear) {
+  if (clear && !confirm("Remove the saved Discord webhook? Automatic reports stop until a new one is saved.")) return;
+  const url = clear ? null : (state.webhookDraft || "").trim();
+  if (!clear && !url) { showToast("Paste the Discord webhook URL first", "error"); return; }
+  const r = await mutate("/admin/cc-auto-webhook", { url });
+  if (r) { state.webhookDraft = ""; render(); showToast(clear ? "Webhook removed" : "Webhook saved"); }
+}
+async function testAuto() {
+  state.autoTesting = true; render();
+  try { await api("/admin/cc-auto-test", {}); showToast("Sent — check Discord"); }
+  catch (e) { showToast(e.message, "error"); }
+  finally { state.autoTesting = false; render(); }
+}
+const fmt12 = t => { const [h, m] = t.split(":").map(Number); return `${((h + 11) % 12) + 1}:${String(m).padStart(2, "0")} ${h < 12 ? "AM" : "PM"}`; };
+function autoSummary(d) {
+  if (!d.enabled) return "Off";
+  const days = d.days.length === 7 ? "every day" : d.days.length === 6 && !d.days.includes(0) ? "Mon–Sat" : d.days.map(i => DOW[i]).join(", ") || "no days";
+  return d.mode === "hourly" ? `Every hour from ${fmt12(d.hourlyFrom)} to ${fmt12(d.hourlyTo)}, ${days}` : `At ${d.times.map(fmt12).join(", ")}, ${days}`;
+}
+function renderAdminAuto() {
+  const a = state.ccAuto;
+  if (!a) return `${backCrumb()}<div class="panel"><div class="meter-note">Loading…</div></div>`;
+  const d = autoDraft(), w = a.webhook, last = a.last;
+  const readers = state.cardReaders || [];
+  return `
+    ${backCrumb()}
+    <div class="panel">
+      <h2>📤 Automatic CC report → Discord</h2>
+      <div class="meter-note" style="margin-bottom:12px">Posts the "so far today" card sales report (summary + PDF) to a Discord channel on your schedule. Use a private channel — everyone in it can see the totals.</div>
+      <div class="auto-row"><span class="auto-label">Discord webhook</span>
+        <div>
+          ${w ? `<div class="key-state"><span class="pin-state ok">✓ saved ••••${esc(w.last4)}</span> <span class="meter-note">${w.source === "netlify" ? "(from Netlify)" : ""}</span>${w.source === "admin" ? ` <button class="bt-del" onclick="saveWebhook(true)" title="Remove">✕</button>` : ""}</div>` : `<div class="key-state"><span class="pin-state">none yet</span></div>`}
+          <input id="webhook-input" data-draft="1" class="admin-input" style="width:min(460px,100%)" type="password" autocomplete="off" placeholder="${w ? "Paste a new webhook URL to replace it" : "https://discord.com/api/webhooks/…"}" value="${esc(state.webhookDraft || "")}" oninput="state.webhookDraft = this.value">
+          <button class="btn small" onclick="saveWebhook(false)">Save</button>
+          <div class="meter-note">Discord: channel ⚙ Edit Channel → Integrations → Webhooks → New Webhook → Copy Webhook URL.</div>
+        </div>
+      </div>
+      <div class="auto-row"><span class="auto-label">Send automatically</span>
+        <label class="sort-option" style="margin:0"><input type="checkbox" id="auto-enabled" ${d.enabled ? "checked" : ""} onchange="setAuto('enabled', this.checked)"> On</label>
+      </div>
+      <div class="auto-row"><span class="auto-label">Days</span>
+        <div class="auto-days">${DOW.map((n, i) => `<button type="button" class="day-chip ${d.days.includes(i) ? "on" : ""}" onclick="toggleAutoDay(${i})">${n}</button>`).join("")}</div>
+      </div>
+      <div class="auto-row"><span class="auto-label">How often</span>
+        <select id="auto-mode" class="setting-select" style="justify-self:start" onchange="setAuto('mode', this.value)">
+          <option value="times" ${d.mode === "times" ? "selected" : ""}>At set times</option>
+          <option value="hourly" ${d.mode === "hourly" ? "selected" : ""}>Every hour</option>
+        </select>
+      </div>
+      ${d.mode === "times" ? `<div class="auto-row"><span class="auto-label">Times</span>
+        <div class="auto-times">${d.times.map((t, i) => `<span class="auto-time"><input type="time" data-draft="1" value="${esc(t)}" onchange="setAutoTime(${i}, this.value)">${d.times.length > 1 ? `<button class="bt-del" onclick="removeAutoTime(${i})" title="Remove">✕</button>` : ""}</span>`).join("")}
+          <button class="btn ghost small" onclick="addAutoTime()">+ Add a time</button></div>
+      </div>` : `<div class="auto-row"><span class="auto-label">Between</span>
+        <div class="auto-times"><input type="time" data-draft="1" value="${esc(d.hourlyFrom)}" onchange="setAuto('hourlyFrom', this.value)"> and <input type="time" data-draft="1" value="${esc(d.hourlyTo)}" onchange="setAuto('hourlyTo', this.value)">
+          <span class="meter-note">— on the same minute each hour as the start time</span></div>
+      </div>`}
+      <div class="auto-row"><span class="auto-label">Readers</span>
+        <select id="auto-readers" class="setting-select" style="justify-self:start" onchange="setAuto('readers', this.value)">
+          <option value="all" ${d.readers === "all" ? "selected" : ""}>All readers combined (one PDF)</option>
+          ${readers.length > 1 ? `<option value="each" ${d.readers === "each" ? "selected" : ""}>Each reader separately (one PDF each)</option>` : ""}
+          ${readers.map(r => `<option value="${esc(r.id)}" ${d.readers === r.id ? "selected" : ""}>Only ${esc(r.name)}</option>`).join("")}
+        </select>
+      </div>
+      <div class="card-actions">
+        <button class="btn primary" onclick="saveAuto()" ${state.autoDirty ? "" : "disabled"}>Save schedule</button>
+        <button class="btn" onclick="testAuto()" ${w && !state.autoTesting ? "" : "disabled"} title="${w ? "Post today's report to Discord right now" : "Save a webhook first"}">${state.autoTesting ? "Sending…" : "📨 Send a test now"}</button>
+        <span class="meter-note">${state.autoDirty ? "Unsaved changes" : `Now: ${esc(autoSummary(a.settings))} (shop time)`}</span>
+      </div>
+      ${last && last.slot ? `<div class="meter-note" style="margin-top:8px">Last automatic send: ${esc(last.slot.replace("T", " "))} — ${last.ok === false ? `<span class="bad-text">failed: ${esc(last.error || "")}</span>` : last.ok ? "✓ sent" : "sending…"}</div>` : ""}
+    </div>`;
+}
 /* ---------- 🔔 Notifications (admins) ---------- */
 function renderBell() {
   const n = state.notifications;
@@ -3334,6 +3431,7 @@ function renderBellMenu() {
       if (i.streak >= 2) flag = `<div class="bell-flag ${i.streak >= 3 ? "hot" : ""}">🔁 ${i.streak} business days in a row</div>`;
       else if (i.last7 >= 3) flag = `<div class="bell-flag ${i.last7 >= 4 ? "hot" : ""}">📅 ${i.last7} of the last 7 days</div>`;
     }
+    if (i.kind === "cc_auto_failed") text = `<span class="bad-text">⚠ Automatic CC report to Discord failed</span> (${esc((i.data.slot || "").slice(11))}): ${esc(i.data.error || "")}`;
     return `<div class="bell-item ${i.id > seen ? "new" : ""}"><div>${text}</div>${flag}<div class="bell-time">${esc(when(i.at))}</div></div>`;
   }).join("");
   return `<div class="bell-menu"><div class="bell-head">Notifications</div>${items || `<div class="meter-note" style="padding:10px 12px">Nothing yet. You'll see it here when someone downloads a CC report.</div>`}</div>`;
