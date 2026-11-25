@@ -738,6 +738,8 @@
   .day-chip { font: inherit; font-size: 12px; font-weight: 700; padding: 4px 10px; border-radius: 999px; border: 1px solid var(--border); background: var(--surface); color: var(--text-muted); cursor: pointer; }
   .day-chip.on { background: var(--brand-blue); border-color: var(--brand-blue); color: #fff; }
   .auto-time { display: inline-flex; align-items: center; gap: 2px; }
+  .auto-message { width: 100%; max-width: 560px; font: inherit; font-size: 13px; padding: 6px 8px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); color: var(--text-primary); resize: vertical; }
+  .auto-row .time-select { padding: 5px 8px; min-width: 110px; }
   .auto-row input[type=time] { font: inherit; font-size: 13px; padding: 4px 6px; border: 1px solid var(--border); border-radius: 6px; background: var(--surface); color: var(--text-primary); }
   @media (max-width: 640px) { .auto-row { grid-template-columns: 1fr; } }
   .bell-wrap { position: relative; }
@@ -3331,12 +3333,13 @@ function autoDraft() {
 }
 function setAuto(k, v) { const d = autoDraft(); d[k] = v; state.autoDirty = true; render(); }
 function toggleAutoDay(i) { const d = autoDraft(); d.days = d.days.includes(i) ? d.days.filter(x => x !== i) : [...d.days, i].sort(); state.autoDirty = true; render(); }
-function setAutoTime(i, v) { const d = autoDraft(); d.times[i] = v; state.autoDirty = true; }
-function addAutoTime() { const d = autoDraft(); d.times.push("12:00"); state.autoDirty = true; render(); }
-function removeAutoTime(i) { const d = autoDraft(); d.times.splice(i, 1); if (!d.times.length) d.times.push("18:05"); state.autoDirty = true; render(); }
+function setAutoTime(i, v) { const d = autoDraft(); d.times[i] = v; state.autoDirty = true; render(); }
+function addAutoTime() { const d = autoDraft(); const free = ["12:00", "14:00", "16:00", "10:00", "17:00"].find(t => !d.times.includes(t)) || "12:00"; d.times.push(free); state.autoDirty = true; render(); }
+function removeAutoTime(i) { const d = autoDraft(); d.times.splice(i, 1); if (!d.times.length) d.times.push("18:00"); state.autoDirty = true; render(); }
+function setAutoMessage(v) { const d = autoDraft(); d.message = v; if (!state.autoDirty) { state.autoDirty = true; const b = document.getElementById("auto-save"); if (b) b.disabled = false; const n = document.getElementById("auto-status"); if (n) n.textContent = "Unsaved changes"; } }
 async function saveAuto() {
   const r = await mutate("/admin/cc-auto", autoDraft());
-  if (r) { state.autoDraft = JSON.parse(JSON.stringify(r.settings)); state.autoDirty = false; showToast("Schedule saved"); render(); }
+  if (r) { state.autoDraft = JSON.parse(JSON.stringify(r.settings)); state.autoDirty = false; showToast("Settings saved"); render(); }
 }
 async function saveWebhook(clear) {
   if (clear && !confirm("Remove the saved Discord webhook? Automatic reports stop until a new one is saved.")) return;
@@ -3347,9 +3350,16 @@ async function saveWebhook(clear) {
 }
 async function testAuto() {
   state.autoTesting = true; render();
-  try { await api("/admin/cc-auto-test", {}); showToast("Sent — check Discord"); }
+  try { await api("/admin/cc-auto-test", { settings: autoDraft() }); showToast("Sent — check Discord"); }   // uses what's on screen, saved or not
   catch (e) { showToast(e.message, "error"); }
   finally { state.autoTesting = false; render(); }
+}
+// One-click time picker: every 15 minutes, 6:00 AM – 10:00 PM (plus whatever is already saved).
+function timeOptions(selected) {
+  const opts = [];
+  for (let m = 6 * 60; m <= 22 * 60; m += 15) opts.push(`${String(Math.floor(m / 60)).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`);
+  if (selected && !opts.includes(selected)) { opts.push(selected); opts.sort(); }
+  return opts.map(t => `<option value="${t}" ${t === selected ? "selected" : ""}>${fmt12(t)}</option>`).join("");
 }
 const fmt12 = t => { const [h, m] = t.split(":").map(Number); return `${((h + 11) % 12) + 1}:${String(m).padStart(2, "0")} ${h < 12 ? "AM" : "PM"}`; };
 function autoSummary(d) {
@@ -3388,10 +3398,10 @@ function renderAdminAuto() {
         </select>
       </div>
       ${d.mode === "times" ? `<div class="auto-row"><span class="auto-label">Times</span>
-        <div class="auto-times">${d.times.map((t, i) => `<span class="auto-time"><input type="time" data-draft="1" value="${esc(t)}" onchange="setAutoTime(${i}, this.value)">${d.times.length > 1 ? `<button class="bt-del" onclick="removeAutoTime(${i})" title="Remove">✕</button>` : ""}</span>`).join("")}
+        <div class="auto-times">${d.times.map((t, i) => `<span class="auto-time"><select class="setting-select time-select" onchange="setAutoTime(${i}, this.value); this.blur()">${timeOptions(t)}</select>${d.times.length > 1 ? `<button class="bt-del" onclick="removeAutoTime(${i})" title="Remove">✕</button>` : ""}</span>`).join("")}
           <button class="btn ghost small" onclick="addAutoTime()">+ Add a time</button></div>
       </div>` : `<div class="auto-row"><span class="auto-label">Between</span>
-        <div class="auto-times"><input type="time" data-draft="1" value="${esc(d.hourlyFrom)}" onchange="setAuto('hourlyFrom', this.value)"> and <input type="time" data-draft="1" value="${esc(d.hourlyTo)}" onchange="setAuto('hourlyTo', this.value)">
+        <div class="auto-times"><select class="setting-select time-select" onchange="setAuto('hourlyFrom', this.value)">${timeOptions(d.hourlyFrom)}</select> and <select class="setting-select time-select" onchange="setAuto('hourlyTo', this.value)">${timeOptions(d.hourlyTo)}</select>
           <span class="meter-note">— on the same minute each hour as the start time</span></div>
       </div>`}
       <div class="auto-row"><span class="auto-label">Readers</span>
@@ -3401,10 +3411,16 @@ function renderAdminAuto() {
           ${readers.map(r => `<option value="${esc(r.id)}" ${d.readers === r.id ? "selected" : ""}>Only ${esc(r.name)}</option>`).join("")}
         </select>
       </div>
+      <div class="auto-row" style="align-items:start"><span class="auto-label" style="padding-top:6px">Message</span>
+        <div>
+          <textarea id="auto-message" data-draft="1" rows="3" maxlength="1500" class="auto-message" placeholder="Written message posted with the report (optional)" oninput="setAutoMessage(this.value)">${esc(d.message ?? "")}</textarea>
+          <div class="meter-note">Posted above the report. Fill-ins: <code>{net}</code> <code>{sales}</code> <code>{refunds}</code> <code>{date}</code> <code>{time}</code> <code>{readers}</code> · **bold** works · to ping someone use <code>&lt;@their Discord user ID&gt;</code> (@everyone is blocked). Leave it blank for just the report.</div>
+        </div>
+      </div>
       <div class="card-actions">
-        <button class="btn primary" onclick="saveAuto()" ${state.autoDirty ? "" : "disabled"}>Save schedule</button>
+        <button class="btn primary" id="auto-save" onclick="saveAuto()" ${state.autoDirty ? "" : "disabled"}>Save settings</button>
         <button class="btn" onclick="testAuto()" ${w && !state.autoTesting ? "" : "disabled"} title="${w ? "Post today's report to Discord right now" : "Save a webhook first"}">${state.autoTesting ? "Sending…" : "📨 Send a test now"}</button>
-        <span class="meter-note">${state.autoDirty ? "Unsaved changes" : `Now: ${esc(autoSummary(a.settings))} (shop time)`}</span>
+        <span class="meter-note" id="auto-status">${state.autoDirty ? "Unsaved changes" : `Now: ${esc(autoSummary(a.settings))} (shop time)`}</span>
       </div>
       ${last && last.slot ? `<div class="meter-note" style="margin-top:8px">Last automatic send: ${esc(last.slot.replace("T", " "))} — ${last.ok === false ? `<span class="bad-text">failed: ${esc(last.error || "")}</span>` : last.ok ? "✓ sent" : "sending…"}</div>` : ""}
     </div>`;

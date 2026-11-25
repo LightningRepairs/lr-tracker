@@ -89,7 +89,7 @@ export default async (req, context) => {
           case "/admin/notifications-seen": return json(await markNotificationsSeen(me, body));
           case "/admin/cc-auto":            await setSetting("cc_auto", cleanAutoSettings(body || {})); return json({ ok: true, settings: await getAutoSettings() });
           case "/admin/cc-auto-webhook":    try { return json({ ok: true, webhook: await setWebhook(body.url) }); } catch (e) { throw new HttpError(400, e.message); }
-          case "/admin/cc-auto-test":       try { return json(await sendCardReport({ reason: "test" })); } catch (e) { throw new HttpError(400, e.message); }
+          case "/admin/cc-auto-test":       try { return json(await sendCardReport({ reason: "test", settings: body && body.settings ? cleanAutoSettings(body.settings) : undefined })); } catch (e) { throw new HttpError(400, e.message); }
           case "/admin/show-money":         return json(await setSetting("show_money", !!body.on));
           case "/admin/diag-min-total":     return json(await setSetting("diag_min_repair_total", Math.max(0, Math.round(Number(body.value) || 0))));
           case "/admin/eligible-statuses":  return json(await setSetting("diagnosis_eligible_statuses", (body.statuses || []).map(String).slice(0, 50)));
