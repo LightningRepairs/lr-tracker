@@ -19,7 +19,7 @@ import { syncTimers, syncTimersThrottled, rsTimerAction, rsTimerTotals } from ".
 import { ensureSchema } from "../../lib/migrate.mjs";
 import { RS_ISSUE_TYPES, ISSUE_TYPE_TO_DEVICE } from "../../lib/booktime.mjs";
 import { buildReport, syncInvoiceSnaps, laborProducts } from "../../lib/reports.mjs";
-import { getAutoSettings, cleanAutoSettings, webhookInfo, setWebhook, sendCardReport, lastAutoRun, sendReportNow, discordReady } from "../../lib/ccauto.mjs";
+import { getAutoSettings, cleanAutoSettings, webhookInfo, setWebhook, sendCardReport, lastAutoRun, sendReportNow, discordReady, pingWebhook } from "../../lib/ccauto.mjs";
 import { syncCardSales, syncPastDay, cardSalesFor, valorDiagnose, previousBusinessDay, valorConfigured, valorReaders, namedReaders, ValorError } from "../../lib/valor.mjs";
 
 // Time budgets so a page load always answers well inside Netlify's ~10s function limit.
@@ -88,7 +88,8 @@ export default async (req, context) => {
           case "/admin/reader-name":        return json(await setReaderName(body));
           case "/admin/notifications-seen": return json(await markNotificationsSeen(me, body));
           case "/admin/cc-auto":            await setSetting("cc_auto", cleanAutoSettings(body || {})); return json({ ok: true, settings: await getAutoSettings() });
-          case "/admin/cc-auto-webhook":    try { return json({ ok: true, webhook: await setWebhook(body.url) }); } catch (e) { throw new HttpError(400, e.message); }
+          case "/admin/cc-auto-webhook":    try { return json({ ok: true, webhook: await setWebhook(body.url, body.which === "send" ? "send" : "auto") }); } catch (e) { throw new HttpError(400, e.message); }
+          case "/admin/webhook-ping":       try { await pingWebhook(body.which === "send" ? "send" : "auto", me.name); return json({ ok: true }); } catch (e) { throw new HttpError(400, e.message); }
           case "/admin/cc-auto-test":       try { return json(await sendCardReport({ reason: "test", settings: body && body.settings ? cleanAutoSettings(body.settings) : undefined })); } catch (e) { throw new HttpError(400, e.message); }
           case "/admin/show-money":         return json(await setSetting("show_money", !!body.on));
           case "/admin/diag-min-total":     return json(await setSetting("diag_min_repair_total", Math.max(0, Math.round(Number(body.value) || 0))));
@@ -423,7 +424,7 @@ async function buildState(me, { force = false } = {}) {
   let cardReaders = [], notifications = null, ccAuto = null;
   if (me.is_admin) {
     try { cardReaders = await namedReaders(); } catch {}
-    try { ccAuto = { settings: await getAutoSettings(), webhook: await webhookInfo(), last: await lastAutoRun() }; } catch (e) { console.warn("cc auto", e.message); }
+    try { ccAuto = { settings: await getAutoSettings(), webhook: await webhookInfo("auto"), sendWebhook: await webhookInfo("send"), last: await lastAutoRun() }; } catch (e) { console.warn("cc auto", e.message); }
     try { notifications = await notificationsFor(me); } catch (e) { console.warn("notifications", e.message); }
   }
   return {

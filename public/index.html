@@ -3344,12 +3344,28 @@ async function saveAuto() {
   const r = await mutate("/admin/cc-auto", autoDraft());
   if (r) { state.autoDraft = JSON.parse(JSON.stringify(r.settings)); state.autoDirty = false; showToast("Settings saved"); render(); }
 }
-async function saveWebhook(clear) {
-  if (clear && !confirm("Remove the saved Discord webhook? Automatic reports stop until a new one is saved.")) return;
-  const url = clear ? null : (state.webhookDraft || "").trim();
+state.webhookDrafts = {};
+function renderWebhookRow(which, label, w) {
+  return `<div class="auto-row"><span class="auto-label">${esc(label)}</span>
+    <div>
+      ${w ? `<div class="key-state"><span class="pin-state ok">✓ saved ••••${esc(w.last4)}</span> <span class="meter-note">${w.source === "netlify" ? "(from Netlify)" : ""}</span>${w.source === "admin" ? ` <button class="bt-del" onclick="saveWebhook('${which}', true)" title="Remove">✕</button>` : ""}
+        <button class="btn ghost small" onclick="pingWebhook('${which}')" title="Post a plain test message (no sales numbers) to check this webhook">Test</button></div>`
+          : `<div class="key-state"><span class="pin-state">none yet</span></div>`}
+      <input id="webhook-input-${which}" data-draft="1" class="admin-input" style="width:min(460px,100%)" type="password" autocomplete="off" placeholder="${w ? "Paste a new webhook URL to replace it" : "https://discord.com/api/webhooks/…"}" value="${esc(state.webhookDrafts[which] || "")}" oninput="state.webhookDrafts['${which}'] = this.value">
+      <button class="btn small" onclick="saveWebhook('${which}', false)">Save</button>
+    </div>
+  </div>`;
+}
+async function saveWebhook(which, clear) {
+  if (clear && !confirm(which === "send" ? "Remove this webhook? The Send buttons in LR Apps stop working until a new one is saved." : "Remove this webhook? Automatic reports stop until a new one is saved.")) return;
+  const url = clear ? null : (state.webhookDrafts[which] || "").trim();
   if (!clear && !url) { showToast("Paste the Discord webhook URL first", "error"); return; }
-  const r = await mutate("/admin/cc-auto-webhook", { url });
-  if (r) { state.webhookDraft = ""; render(); showToast(clear ? "Webhook removed" : "Webhook saved"); }
+  const r = await mutate("/admin/cc-auto-webhook", { url, which });
+  if (r) { state.webhookDrafts[which] = ""; render(); showToast(clear ? "Webhook removed" : "Webhook saved"); }
+}
+async function pingWebhook(which) {
+  try { await api("/admin/webhook-ping", { which }); showToast("Test message sent — check that channel"); }
+  catch (e) { showToast(e.message, "error"); }
 }
 async function testAuto() {
   state.autoTesting = true; render();
@@ -3379,15 +3395,8 @@ function renderAdminAuto() {
     ${backCrumb()}
     <div class="panel">
       <h2>📤 Automatic CC report → Discord</h2>
-      <div class="meter-note" style="margin-bottom:12px">Posts the "so far today" card sales report (summary + PDF) to a Discord channel on your schedule. Use a private channel — everyone in it can see the totals.</div>
-      <div class="auto-row"><span class="auto-label">Discord webhook</span>
-        <div>
-          ${w ? `<div class="key-state"><span class="pin-state ok">✓ saved ••••${esc(w.last4)}</span> <span class="meter-note">${w.source === "netlify" ? "(from Netlify)" : ""}</span>${w.source === "admin" ? ` <button class="bt-del" onclick="saveWebhook(true)" title="Remove">✕</button>` : ""}</div>` : `<div class="key-state"><span class="pin-state">none yet</span></div>`}
-          <input id="webhook-input" data-draft="1" class="admin-input" style="width:min(460px,100%)" type="password" autocomplete="off" placeholder="${w ? "Paste a new webhook URL to replace it" : "https://discord.com/api/webhooks/…"}" value="${esc(state.webhookDraft || "")}" oninput="state.webhookDraft = this.value">
-          <button class="btn small" onclick="saveWebhook(false)">Save</button>
-          <div class="meter-note">Discord: channel ⚙ Edit Channel → Integrations → Webhooks → New Webhook → Copy Webhook URL.</div>
-        </div>
-      </div>
+      <div class="meter-note" style="margin-bottom:12px">Posts the "so far today" card sales report (message + PDF) to a Discord channel on your schedule. Anyone in that channel can open the PDF, so pick the channel accordingly. To get a webhook URL in Discord: channel ⚙ Edit Channel → Integrations → Webhooks → New Webhook → Copy Webhook URL.</div>
+      ${renderWebhookRow("auto", "Webhook — automatic reports", w)}
       <div class="auto-row"><span class="auto-label">Send automatically</span>
         <label class="sort-option" style="margin:0"><input type="checkbox" id="auto-enabled" ${d.enabled ? "checked" : ""} onchange="setAuto('enabled', this.checked)"> On</label>
       </div>
@@ -3426,6 +3435,11 @@ function renderAdminAuto() {
         <span class="meter-note" id="auto-status">${state.autoDirty ? "Unsaved changes" : `Now: ${esc(autoSummary(a.settings))} (shop time)`}</span>
       </div>
       ${last && last.slot ? `<div class="meter-note" style="margin-top:8px">Last automatic send: ${esc(last.slot.replace("T", " "))} — ${last.ok === false ? `<span class="bad-text">failed: ${esc(last.error || "")}</span>` : last.ok ? "✓ sent" : "sending…"}</div>` : ""}
+    </div>
+    <div class="panel">
+      <h2>📨 Send buttons (LR Apps → Download CC Report)</h2>
+      <div class="meter-note" style="margin-bottom:6px">Where "Send today's report" / "Send previous day's report" post to. Separate from the automatic reports — can be a different channel. Until one is saved, those buttons are greyed out.</div>
+      ${renderWebhookRow("send", "Webhook — Send buttons", a.sendWebhook)}
     </div>`;
 }
 /* ---------- 🔔 Notifications (admins) ---------- */
