@@ -686,6 +686,9 @@
   .app-icon-wrap { position: relative; display: inline-block; }
   .app-lock { position: absolute; right: -7px; bottom: -7px; font-size: 15px; line-height: 1; background: var(--surface); border: 1px solid var(--border); border-radius: 999px; padding: 3px; }
   :root[data-theme="8bit"] .app-icon { border-radius: 0; border: 3px solid #000; }
+  .card-cols { align-items: flex-start; }
+  .card-col { display: flex; flex-direction: column; gap: 6px; align-items: stretch; }
+  .send-btn { font-size: 12.5px; }
   .card-pickers { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
   .card-actions { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-top: 12px; }
   td.num-r, th.num-r { text-align: right; font-variant-numeric: tabular-nums; }
@@ -3443,7 +3446,7 @@ function renderBellMenu() {
     let text = esc(i.kind), flag = "";
     if (i.kind === "cc_report") {
       const dayLbl = i.data.day ? shortDay(i.data.day) : "";
-      text = `<b>${esc(i.name)}</b> downloaded the CC report for ${esc(dayLbl)}${i.data.reader ? ` · ${esc(i.data.reader)}` : ""}${i.data.position ? ` <span class="meter-note" style="display:inline">(as ${esc(i.data.position)})</span>` : ""}`;
+      text = `<b>${esc(i.name)}</b> ${i.data.via === "discord" ? "sent the CC report to Discord" : "downloaded the CC report"} for ${esc(dayLbl)}${i.data.reader ? ` · ${esc(i.data.reader)}` : ""}${i.data.position ? ` <span class="meter-note" style="display:inline">(as ${esc(i.data.position)})</span>` : ""}`;
       if (i.streak >= 2) flag = `<div class="bell-flag ${i.streak >= 3 ? "hot" : ""}">🔁 ${i.streak} business days in a row</div>`;
       else if (i.last7 >= 3) flag = `<div class="bell-flag ${i.last7 >= 4 ? "hot" : ""}">📅 ${i.last7} of the last 7 days</div>`;
     }
@@ -3500,6 +3503,7 @@ function renderCardSalesTab() {
   if (!state.cardReader || (state.cardReader !== "all" && !readers.some(r => r.id === state.cardReader))) state.cardReader = readers[0].id; // default: Reader 1
   const busy = state.cardBusy;
   const btn = (day, label) => `<button class="btn ${day === info.today ? "primary" : ""}" onclick="downloadCardReport('${day}')" ${busy ? "disabled" : ""}>${busy === day ? "Pulling from Valor…" : `⬇ ${label}`}</button>`;
+  const sendBtn = (day, label) => `<button class="btn send-btn" onclick="sendCardReport('${day}')" ${busy || !info.discord ? "disabled" : ""} title="${info.discord ? "Post this report straight to the shop's Discord channel" : "No Discord webhook set up yet"}">${busy === "send:" + day ? "Sending to Discord…" : `📨 ${label}`}</button>`;
   return `
     <div class="panel">
       <h2>💳 Download CC Report</h2>
@@ -3509,13 +3513,30 @@ function renderCardSalesTab() {
           ${readers.length > 1 ? `<option value="all" ${state.cardReader === "all" ? "selected" : ""}>All readers</option>` : ""}
         </select>
       </div>
-      <div class="card-actions">
-        ${btn(info.today, "Download today's report")}
-        ${btn(info.previous, `Download previous day's report (${shortDay(info.previous)})`)}
+      <div class="card-actions card-cols">
+        <div class="card-col">
+          ${btn(info.today, "Download today's report")}
+          ${sendBtn(info.today, "Send today's report")}
+        </div>
+        <div class="card-col">
+          ${btn(info.previous, `Download previous day's report (${shortDay(info.previous)})`)}
+          ${sendBtn(info.previous, `Send previous day's report (${shortDay(info.previous)})`)}
+        </div>
       </div>
+      ${info.discord ? "" : `<div class="meter-note" style="margin-top:6px">Sending to Discord needs a webhook — an admin sets it up in Admin Console → Automatic reports.</div>`}
       ${state.cardError ? `<div class="bad-text" style="font-size:12.5px;margin-top:10px">${esc(state.cardError)}</div>` : ""}
       <div class="meter-note" style="margin-top:10px">Pulled from Valor when you click. Voids are left out of the total; refunds are subtracted. No card numbers or transaction ids are included. Only today and the previous business day are available.</div>
     </div>`;
+}
+async function sendCardReport(day) {
+  if (state.cardBusy) return;
+  const reader = state.cardReader || "1";
+  state.cardBusy = "send:" + day; state.cardError = null; render();
+  try {
+    const r = await api("/card-sales/send", { day, reader });
+    showToast(`Sent to Discord — ${r.reader}, ${shortDay(r.day)}`);
+  } catch (e) { state.cardError = e.message; }
+  finally { state.cardBusy = null; render(); }
 }
 async function downloadCardReport(day) {
   if (state.cardBusy) return;

@@ -19,7 +19,7 @@ import { syncTimers, syncTimersThrottled, rsTimerAction, rsTimerTotals } from ".
 import { ensureSchema } from "../../lib/migrate.mjs";
 import { RS_ISSUE_TYPES, ISSUE_TYPE_TO_DEVICE } from "../../lib/booktime.mjs";
 import { buildReport, syncInvoiceSnaps, laborProducts } from "../../lib/reports.mjs";
-import { getAutoSettings, cleanAutoSettings, webhookInfo, setWebhook, sendCardReport, lastAutoRun } from "../../lib/ccauto.mjs";
+import { getAutoSettings, cleanAutoSettings, webhookInfo, setWebhook, sendCardReport, lastAutoRun, sendReportNow, discordReady } from "../../lib/ccauto.mjs";
 import { syncCardSales, syncPastDay, cardSalesFor, valorDiagnose, previousBusinessDay, valorConfigured, valorReaders, namedReaders, ValorError } from "../../lib/valor.mjs";
 
 // Time budgets so a page load always answers well inside Netlify's ~10s function limit.
@@ -107,6 +107,7 @@ export default async (req, context) => {
     }
     if (req.method === "GET" && route === "/card-sales") return json(await cardSales(me, url.searchParams));
     if (req.method === "GET" && route === "/card-sales/info") return json(await cardSalesInfo(me));
+    if (req.method === "POST" && route === "/card-sales/send") return json(await cardSalesSend(me, body));
     if (req.method === "GET" && route === "/admin/valor-test") {
       if (!me.is_admin) throw new HttpError(403, "Admins only");
       return json(await valorDiagnose());
@@ -819,10 +820,20 @@ async function canSeeCardSales(me) {
 async function cardSalesInfo(me) {
   if (!(await canSeeCardSales(me))) throw new HttpError(403, "Card sales reports need the Sales, Float, Assistant Manager or Manager role (ask an admin)");
   const t0 = today();
-  return { configured: valorConfigured(), today: t0, previous: previousBusinessDay(t0), readers: (await namedReaders()).map(r => ({ id: r.id, name: r.name })) };
+  return { configured: valorConfigured(), today: t0, previous: previousBusinessDay(t0), readers: (await namedReaders()).map(r => ({ id: r.id, name: r.name })),
+           discord: await discordReady().catch(() => false) };
+}
+// Same report as the download, posted straight to the shop's Discord channel instead.
+async function cardSalesSend(me, b) {
+  const params = new URLSearchParams({ day: String(b.day || ""), reader: String(b.reader || "") });
+  const d = await cardSales(me, params, { via: "discord" });
+  const label = d.reader ? (d.readers.find(x => x.id === d.reader) || {}).name || "Reader" : "All readers";
+  try { await sendReportNow({ d, label, isToday: d.day === d.today, by: me.name }); }
+  catch (e) { throw new HttpError(400, e.message); }
+  return { ok: true, day: d.day, reader: label };
 }
 // One report, pulled from Valor right now. reader = a reader id, or "all".
-async function cardSales(me, params) {
+async function cardSales(me, params, { via = "download" } = {}) {
   if (!(await canSeeCardSales(me))) throw new HttpError(403, "Card sales reports need the Sales, Float, Assistant Manager or Manager role (ask an admin)");
   const t0 = today(), prev = previousBusinessDay(t0);
   const day = params.get("day") || t0;
@@ -843,7 +854,7 @@ async function cardSales(me, params) {
   // 🔔 Let the admins know who pulled a report (and how often they've been doing it).
   try {
     const readerName = reader ? (readers.find(x => x.id === reader) || {}).name : "All readers";
-    await db()`insert into notifications (kind, person_id, data) values ('cc_report', ${me.id}, ${db().json({ day, reader: readerName, position: (await db()`select position from attendance where person_id = ${me.id} and work_date = ${t0}`)[0]?.position || null })})`;
+    await db()`insert into notifications (kind, person_id, data) values ('cc_report', ${me.id}, ${db().json({ day, reader: readerName, via, position: (await db()`select position from attendance where person_id = ${me.id} and work_date = ${t0}`)[0]?.position || null })})`;
   } catch (e) { console.warn("notify", e.message); }
   return { today: t0, previous: prev, readers, reader, ...r, warning: errors.length ? errors.join(" · ") : null };
 }
