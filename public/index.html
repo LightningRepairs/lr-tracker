@@ -3339,7 +3339,6 @@ function toggleAutoDay(i) { const d = autoDraft(); d.days = d.days.includes(i) ?
 function setAutoTime(i, v) { const d = autoDraft(); d.times[i] = v; state.autoDirty = true; render(); }
 function addAutoTime() { const d = autoDraft(); const free = ["12:00", "14:00", "16:00", "10:00", "17:00"].find(t => !d.times.includes(t)) || "12:00"; d.times.push(free); state.autoDirty = true; render(); }
 function removeAutoTime(i) { const d = autoDraft(); d.times.splice(i, 1); if (!d.times.length) d.times.push("18:00"); state.autoDirty = true; render(); }
-function setAutoMessage(v) { const d = autoDraft(); d.message = v; if (!state.autoDirty) { state.autoDirty = true; const b = document.getElementById("auto-save"); if (b) b.disabled = false; const n = document.getElementById("auto-status"); if (n) n.textContent = "Unsaved changes"; } }
 async function saveAuto() {
   const r = await mutate("/admin/cc-auto", autoDraft());
   if (r) { state.autoDraft = JSON.parse(JSON.stringify(r.settings)); state.autoDirty = false; showToast("Settings saved"); render(); }
@@ -3362,6 +3361,10 @@ async function saveWebhook(which, clear) {
   if (!clear && !url) { showToast("Paste the Discord webhook URL first", "error"); return; }
   const r = await mutate("/admin/cc-auto-webhook", { url, which });
   if (r) { state.webhookDrafts[which] = ""; render(); showToast(clear ? "Webhook removed" : "Webhook saved"); }
+}
+async function saveSendMessage() {
+  const r = await mutate("/admin/cc-send-message", { message: state.sendMsgDraft ?? "" });
+  if (r) { state.sendMsgDraft = null; showToast("Message saved"); render(); }
 }
 async function pingWebhook(which) {
   try { await api("/admin/webhook-ping", { which }); showToast("Test message sent — check that channel"); }
@@ -3395,7 +3398,7 @@ function renderAdminAuto() {
     ${backCrumb()}
     <div class="panel">
       <h2>📤 Automatic CC report → Discord</h2>
-      <div class="meter-note" style="margin-bottom:12px">Posts the "so far today" card sales report (message + PDF) to a Discord channel on your schedule. Anyone in that channel can open the PDF, so pick the channel accordingly. To get a webhook URL in Discord: channel ⚙ Edit Channel → Integrations → Webhooks → New Webhook → Copy Webhook URL.</div>
+      <div class="meter-note" style="margin-bottom:12px">Posts the "so far today" card sales totals + PDF to your private Discord channel on your schedule. To get a webhook URL in Discord: channel ⚙ Edit Channel → Integrations → Webhooks → New Webhook → Copy Webhook URL.</div>
       ${renderWebhookRow("auto", "Webhook — automatic reports", w)}
       <div class="auto-row"><span class="auto-label">Send automatically</span>
         <label class="sort-option" style="margin:0"><input type="checkbox" id="auto-enabled" ${d.enabled ? "checked" : ""} onchange="setAuto('enabled', this.checked)"> On</label>
@@ -3423,12 +3426,7 @@ function renderAdminAuto() {
           ${readers.map(r => `<option value="${esc(r.id)}" ${d.readers === r.id ? "selected" : ""}>Only ${esc(r.name)}</option>`).join("")}
         </select>
       </div>
-      <div class="auto-row" style="align-items:start"><span class="auto-label" style="padding-top:6px">Message</span>
-        <div>
-          <textarea id="auto-message" data-draft="1" rows="3" maxlength="1500" class="auto-message" placeholder="Written message posted with the report (optional)" oninput="setAutoMessage(this.value)">${esc(d.message ?? "")}</textarea>
-          <div class="meter-note">Posted above the report. Fill-ins: <code>{net}</code> <code>{sales}</code> <code>{refunds}</code> <code>{date}</code> <code>{time}</code> <code>{readers}</code> · **bold** works · to ping someone use <code>&lt;@their Discord user ID&gt;</code> (@everyone is blocked). Leave it blank for just the report.</div>
-        </div>
-      </div>
+      <div class="meter-note" style="padding:6px 0 10px">Each automatic report says: 💳 Card sales so far today — date, time · then per reader: net total · number of sales (and refunds / voids if any), with the PDF attached.</div>
       <div class="card-actions">
         <button class="btn primary" id="auto-save" onclick="saveAuto()" ${state.autoDirty ? "" : "disabled"}>Save settings</button>
         <button class="btn" onclick="testAuto()" ${w && !state.autoTesting ? "" : "disabled"} title="${w ? "Post today's report to Discord right now" : "Save a webhook first"}">${state.autoTesting ? "Sending…" : "📨 Send a test now"}</button>
@@ -3440,6 +3438,13 @@ function renderAdminAuto() {
       <h2>📨 Send buttons (LR Apps → Download CC Report)</h2>
       <div class="meter-note" style="margin-bottom:6px">Where "Send today's report" / "Send previous day's report" post to. Separate from the automatic reports — can be a different channel. Until one is saved, those buttons are greyed out.</div>
       ${renderWebhookRow("send", "Webhook — Send buttons", a.sendWebhook)}
+      <div class="auto-row" style="align-items:start"><span class="auto-label" style="padding-top:6px">Message</span>
+        <div>
+          <textarea id="send-message" data-draft="1" rows="3" maxlength="1500" class="auto-message" placeholder="(blank = just the PDF, no text)" oninput="state.sendMsgDraft = this.value; const b = document.getElementById('send-msg-save'); if (b) b.disabled = false;">${esc(state.sendMsgDraft ?? a.sendMessage ?? "")}</textarea>
+          <div class="meter-note">This is the ONLY text posted with the PDF when someone presses Send. Optional fill-ins: <code>{date}</code> <code>{time}</code> <code>{readers}</code> <code>{by}</code> (who pressed it) <code>{net}</code> <code>{sales}</code> <code>{refunds}</code> · **bold** works · to ping someone use <code>&lt;@their Discord user ID&gt;</code> (@everyone is blocked).</div>
+          <button class="btn small primary" id="send-msg-save" style="margin-top:6px" onclick="saveSendMessage()" ${state.sendMsgDraft != null && state.sendMsgDraft !== a.sendMessage ? "" : "disabled"}>Save message</button>
+        </div>
+      </div>
     </div>`;
 }
 /* ---------- 🔔 Notifications (admins) ---------- */
