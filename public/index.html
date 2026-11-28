@@ -2360,13 +2360,13 @@ function renderMoney() {
           ${methods ? `<div class="money-chips">${methods}</div>` : ""}
         </div>
         <div class="money-card">
-          <div class="money-label">Total invoiced today</div>
-          <div class="money-big">${fmtMoney(m.invoicedTotal)}</div>
-          <div class="money-sub">${m.invoiceCount} invoice${m.invoiceCount === 1 ? "" : "s"} · ${fmtMoney(m.invoicedSubtotal)} + ${fmtMoney(m.invoicedTax)} tax</div>
+          <div class="money-label">Added to invoices today</div>
+          <div class="money-big">${fmtMoney(m.addedTotal)}</div>
+          <div class="money-sub">${m.lineCount} item${m.lineCount === 1 ? "" : "s"} on ${m.invoiceCount} invoice${m.invoiceCount === 1 ? "" : "s"} · before tax</div>
           ${who ? `<div class="money-whos">${who}</div>` : ""}
         </div>
       </div>
-      <div class="meter-note" style="margin-top:6px">Per person = each invoice line counts for whoever added it (amounts before tax). Bench fees count for no one.</div>
+      <div class="meter-note" style="margin-top:6px">Counts every item added to an invoice today — even on an older invoice — for whoever added it (before tax). Bench fees count for no one.</div>
     </div>`;
 }
 // Today's credit for one person. Resolved = tickets they're primary on (and hold a share of).
@@ -3070,7 +3070,7 @@ function renderReports() {
           <td><b>${money$(tot.labor)}</b> <span class="money-sub">· ${qty$(tot.laborQty)}</span></td><td class="num-cell"><b>${tot.invoices}</b></td>
           <td class="book-text"><b>${fmtHM(tot.book)}</b></td><td class="actual-text"><b>${fmtHM(tot.actual)}</b></td><td class="num-cell"><b>${tot.resolved}</b></td><td class="num-cell"><b>${tot.total}</b></td></tr></tfoot>
       </table></div>
-      <div class="meter-note" style="margin-top:8px">Revenue = invoice subtotals before tax · Profit = revenue − line-item cost · Labor SKUs = $ and count of items in RepairShopr's <b>${esc(r.labor?.category || "Repair Service")}</b> category${r.labor?.categories?.length > 1 ? ` (+ ${r.labor.categories.length - 1} subcategor${r.labor.categories.length === 2 ? "y" : "ies"})` : ""}. Each invoice line counts for whoever added it; bench fees count for no one.
+      <div class="meter-note" style="margin-top:8px">Revenue = items added to invoices that day (before tax, on any invoice) · Profit = revenue − line-item cost · Labor SKUs = $ and count of items in RepairShopr's <b>${esc(r.labor?.category || "Repair Service")}</b> category${r.labor?.categories?.length > 1 ? ` (+ ${r.labor.categories.length - 1} subcategor${r.labor.categories.length === 2 ? "y" : "ies"})` : ""}. Each invoice line counts for whoever added it; bench fees count for no one.
       ${r.labor && r.labor.found === false ? `<br><span class="bad-text">No RepairShopr product category named "${esc(r.labor.category)}" was found — labor shows $0.</span>` : ""}
       ${r.warning ? `<br><span class="bad-text">${esc(r.warning)}</span>` : ""}</div>`;
   }
@@ -3186,7 +3186,7 @@ function buildSalesPdf(data, f) {
     doc.autoTable({ ...PDF_TABLE, startY: doc.lastAutoTable.finalY + 30, head: [["Day", "Invoices", "Revenue", "Profit", "Margin", "Labor $", "Labor SKUs"]], body: daily });
   }
   const since = data.salesSince ? ` Sales data is recorded from ${shortDay(data.salesSince)} on.` : "";
-  return pdfFinish(doc, `Revenue = invoice subtotals before tax. Profit = revenue - line-item cost. Labor SKUs = items in RepairShopr's "${data.labor?.category || "Repair Service"}" category (and subcategories). Each invoice line counts for whoever added it; bench fees count for no one.${since}`);
+  return pdfFinish(doc, `Revenue = items added to invoices that day (before tax, on any invoice). Profit = revenue - line-item cost. Labor SKUs = items in RepairShopr's "${data.labor?.category || "Repair Service"}" category (and subcategories). Each invoice line counts for whoever added it; bench fees count for no one.${since}`);
 }
 function buildTimePdf(data, f) {
   const doc = pdfStart("Book time vs actual time", data, f);

@@ -407,25 +407,23 @@ async function buildState(me, { force = false } = {}) {
       };
       const byMethod = {}, byWho = {};
       for (const p of m.payments) byMethod[p.method] = (byMethod[p.method] || 0) + p.amount;
-      // Credit per LINE: whoever added each line. Bench fees / lines with no one recorded count for no one.
-      // Invoices whose lines aren't saved yet (first minute or so) count whole for the ticket's assignee.
-      const snaps = new Map((await sql`select * from invoice_snap where invoice_id = any(${m.invoices.map(i => i.id)}::bigint[])`).map(r => [String(r.invoice_id), r]));
-      for (const i of m.invoices) {
-        const fb = i.ticketId != null && i.ticketUserId != null ? i.ticketUserId : i.userId;
-        const snap = snaps.get(String(i.id));
-        const parts = snap ? splitInvoice({ ...snap, owner_rs_user: fb }, i.subtotal) : [{ uid: fb, revenue: i.subtotal }];
-        for (const part of parts) {
-          const w = nameOfRs(part.uid), k = w.personId || w.name;
-          (byWho[k] ||= { ...w, total: 0, subtotal: 0, count: 0, _inv: new Set() });
-          byWho[k].subtotal += part.revenue; byWho[k].total += part.revenue; byWho[k]._inv.add(i.id);
-        }
+      // Value ADDED to invoices today: every line added today (on any invoice, however old), for whoever added it.
+      // Bench fees / lines with no one recorded count for no one. Lines show up within about a minute.
+      const lines = await sql`select * from invoice_lines where day = ${t0} and not deposit`;
+      let addedTotal = 0;
+      const invoicesTouched = new Set();
+      for (const l of lines) {
+        const amt = Number(l.price) * Number(l.qty);
+        addedTotal += amt; invoicesTouched.add(String(l.invoice_id));
+        const w = nameOfRs(l.user_id), k = w.personId || w.name;
+        (byWho[k] ||= { ...w, total: 0, subtotal: 0, count: 0, _inv: new Set() });
+        byWho[k].subtotal += amt; byWho[k].total += amt; byWho[k]._inv.add(String(l.invoice_id));
       }
       for (const w of Object.values(byWho)) { w.count = w._inv.size; delete w._inv; }
       money = {
         paymentsTotal: m.payments.reduce((a, p) => a + p.amount, 0), paymentsCount: m.payments.length, paymentsError: m.paymentsError || null,
         byMethod: Object.entries(byMethod).map(([method, amount]) => ({ method, amount })).sort((a, b) => b.amount - a.amount),
-        invoicedTotal: m.invoices.reduce((a, i) => a + i.total, 0), invoicedSubtotal: m.invoices.reduce((a, i) => a + i.subtotal, 0),
-        invoicedTax: m.invoices.reduce((a, i) => a + i.tax, 0), invoiceCount: m.invoices.length,
+        addedTotal, lineCount: lines.length, invoiceCount: invoicesTouched.size,
         byWho: Object.values(byWho).sort((a, b) => b.total - a.total),
       };
     }
