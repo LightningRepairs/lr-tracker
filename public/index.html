@@ -623,6 +623,7 @@
   .refurb-chip button { border: none; background: transparent; color: var(--text-muted); cursor: pointer; font-size: 11px; padding: 0 3px; }
   .refurb-chip button:hover { color: var(--critical); }
   .refurb-row { padding-top: 6px; padding-bottom: 6px; }
+  .status-refurb { background: var(--grid); }
   .refurb-row.done { opacity: .85; }
   .ticket-status.status-done { color: var(--good-text); font-weight: 700; font-size: 12px; }
   .tcell-outcome { display: flex; justify-content: flex-end; }
@@ -659,8 +660,21 @@
   .due-pill.today, .due-pill.overdue { background: var(--critical); color: #fff; }
   .due-pill.tomorrow { background: var(--warning); color: #3a2a00; }
   .due-badge { display: inline-block; min-width: 15px; padding: 0 4px; margin-left: 3px; border-radius: 999px; font-size: 9.5px; font-weight: 800; text-align: center; line-height: 15px; vertical-align: top; position: relative; top: -6px; }
-  .queue-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 10px; }
+  .stat-detail td { background: var(--bg-soft, rgba(0,0,0,.03)); padding: 8px 12px 10px; }
+  .stat-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 6px; }
+  .stat-head .btn { margin-left: auto; }
+  .stat-item { display: grid; grid-template-columns: minmax(200px, 2fr) 130px 2fr; gap: 10px; align-items: center; padding: 4px 0; border-top: 1px solid var(--grid); font-size: 13px; }
+  .stat-ticket { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: inherit; }
+  .stat-status { font-size: 12px; color: var(--text-muted); }
+  .stat-tags { display: flex; gap: 4px; flex-wrap: wrap; }
+  .stat-tag { font-size: 11px; padding: 1px 7px; border-radius: 10px; background: var(--grid); white-space: nowrap; }
+  .link-num.on { background: var(--book); color: #fff; border-radius: 6px; padding: 0 6px; }
+  @media (max-width: 760px) { .stat-item { grid-template-columns: 1fr; gap: 2px; } }
+  .panel-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 6px; }
+  .panel-head h2 { margin: 0; }
+  .queue-head { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 12px; margin-bottom: 10px; }
   .queue-head h2 { margin: 0; }
+  @media (max-width: 760px) { .queue-head { grid-template-columns: 1fr; justify-items: start; } }
   .queue-summary { display: flex; gap: 6px; flex-wrap: wrap; }
   .qs-cell { min-width: 74px; padding: 5px 10px; border-radius: 8px; border: 1px solid var(--grid); text-align: center; background: var(--surface); }
   .qs-num { font-size: 18px; font-weight: 800; line-height: 1.1; }
@@ -787,10 +801,9 @@
   .diag-prompt { display: grid; grid-template-columns: minmax(190px, 240px) 130px 1fr; align-items: center; column-gap: 10px; padding: 8px 4px; border-bottom: 1px solid var(--grid); }
   .diag-prompt:last-child { border-bottom: none; }
   .diag-ask { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-  .diag-q { font-size: 13px; margin-right: 4px; flex: 1 1 280px; line-height: 1.4; }
+  .need-q { font-size: 13.5px; font-weight: 600; }
+  .diag-ask { justify-content: space-between; }
   .diag-btns { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; flex-shrink: 0; }
-  .need-tag { font-size: 11px; font-weight: 600; padding: 2px 7px; border-radius: 10px; background: var(--grid); white-space: nowrap; }
-  .need-actual { width: 64px; padding: 4px 6px; font-size: 13px; }
   .diag-gain { font-weight: 800; margin-left: 4px; opacity: 0.85; }
   @media (max-width: 1100px) { .diag-prompt { display: flex; flex-wrap: wrap; gap: 6px; } .diag-ask { justify-content: flex-start; } }
   .key-state { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-bottom: 4px; }
@@ -969,7 +982,6 @@ let state = {
   dueEditOpen: null,       // ticket whose due-date popup is open
   dueCustom: "",
   sortMode: "default",     // My Day order: default | reverse | oldest | newest
-  needActualDraft: {},     // ticket id → minutes typed in a 📌 "no actual time" reminder
   diagStep: {},            // ticket id → "repair" once "diagnosis 100% completed?" was answered Yes
   diagMinRepairTotal: 119,
   manualTimeNote: false,
@@ -1082,6 +1094,7 @@ function applyServerState(d) {
   state.ccAuto = d.ccAuto || null;
   state.notedToday = d.notedToday || [];
   state.teamStats = d.teamStats || {};
+  state.statTickets = d.statTickets || {};
   state.notifications = d.notifications || null;
   state.cardReaders = d.cardReaders || [];
   state.refurbs = (d.refurbs || []).map(buildRefurb);
@@ -1485,7 +1498,7 @@ function changePosition(pos) {
 /* ---------- My Day ---------- */
 // Open tickets assigned to someone (resolved ones live under "completed" instead).
 function ticketsFor(userId) { return state.tickets.filter(t => t.assignedTo === userId && !t.notOpen && t.status !== "Resolved"); }
-function findTicket(id) { return id < 0 ? findRefurb(id) : state.tickets.find(x => x.id === id); }
+function findTicket(id) { return (id < 0 && findRefurb(id)) || state.tickets.find(x => x.id === id); }
 // "Your assigned tickets" on My Day: only tickets in an "in the queue" status. A ticket whose timer
 // you have running/paused stays visible even if its status moved on, so you can always stop it.
 const normStatus = s => String(s || "").trim().toLowerCase();
@@ -1906,18 +1919,20 @@ function renderDay() {
        </div>`
     : `<div class="panel"><div class="meter-note">No repair-time goal for ${esc(state.position)} today.</div></div>`;
 
-  const ticketRows = tickets.length ? tickets.map(t => renderTicketRow(t)).join("") : `<div class="meter-note">None of your assigned tickets are in the queue right now.</div>`;
+  const refurbs = (state.refurbs || []).filter(f => f.state !== "done");
+  const ticketRows = tickets.length || refurbs.length
+    ? tickets.map(t => renderTicketRow(t)).join("") + refurbs.map(renderRefurbRow).join("")
+    : `<div class="meter-note">None of your assigned tickets are in the queue right now.</div>`;
   const doneRows = completed.length ? completed.map(t => renderCompletedRow(t, state.me)).join("") : `<div class="meter-note">Nothing resolved under your name yet today.</div>`;
 
   return `
     ${meters}
     <div class="panel">
-      <h2>Your assigned tickets</h2>
-      ${tickets.length ? tableHead("") : ""}
+      <div class="panel-head"><h2>Your assigned tickets</h2><button class="btn small primary" onclick="addRefurb()" title="Working a refurb? Add it, run the timer, and complete it to get its book time">+ Add refurb</button></div>
+      ${tickets.length || refurbs.length ? tableHead("") : ""}
       ${ticketRows}
     </div>
     ${renderNeedsInputSection()}
-    ${renderRefurbSection()}
     <div class="panel">
       <h2>Your completed tickets <span class="meter-note" style="display:inline">&mdash; resolved today while assigned to you</span></h2>
       ${completed.length ? tableHead("Credit") : ""}
@@ -1976,105 +1991,69 @@ function saveActual(id, fromBlur) {
     t.runningSince = null; t.spentSec = minutes * 60; t.timerState = "logged";
   });
 }
-/* ----- 📌 Needs your input: tickets that LEFT the queue and need an answer from you.
-   • Diagnosis: one of your tickets moved from the queue to a waiting status (parts / customer). Claiming it
-     (first answer) asks the $ question next; diagnosis can only ever be claimed once per ticket.
-   • Resolved today with no invoice → make the invoice, or say none is needed.
-   • Resolved today with no actual time → type it in. ----- */
+/* ----- 📌 Needs your input: your tickets that LEFT the queue and need a quick answer.
+   • Diagnosis: moved to a waiting status (parts / customer). The question is "is the diagnosis done?",
+     asked in words that fit why it's waiting. Done → "$119+ repair?" Yes/No. Claimed once per ticket, ever.
+   • Resolved today with no invoice → make the invoice, or say none is needed. ----- */
 function myDiagPrompts(userId) {
   return state.tickets.filter(t => t.diagPrompt && t.diagPrompt.personId === userId && !t.diagnosisLocked);
 }
 function myNeedsInput(userId) {
-  const done = state.tickets.filter(t => t.completion && creditOwner(t) === userId);
-  const dis = t => t.completion.dismissed || [];
+  const done = state.tickets.filter(t => t.completion && !t.isRefurb && creditOwner(t) === userId);
   return {
     diag: myDiagPrompts(userId),
-    noInvoice: done.filter(t => t.completion.noInvoice && !dis(t).includes("invoice")),
-    noActual: done.filter(t => !dis(t).includes("actual") && t.timerState !== "running" && liveSpentSec(t) < 60),
+    noInvoice: done.filter(t => t.completion.noInvoice && !(t.completion.dismissed || []).includes("invoice")),
   };
 }
-function needsInputCount(userId) { const n = myNeedsInput(userId); return n.diag.length + n.noInvoice.length + n.noActual.length; }
 function renderNeedsInputSection() {
   const n = myNeedsInput(state.me);
-  if (!n.diag.length && !n.noInvoice.length && !n.noActual.length) return "";
+  if (!n.diag.length && !n.noInvoice.length) return "";
   return `
     <div class="panel diag-panel">
-      <h2>📌 Needs your input <span class="meter-note" style="display:inline">&mdash; tickets out of the queue waiting on an answer from you</span></h2>
+      <h2>📌 Needs your input</h2>
       ${n.diag.map(renderDiagPrompt).join("")}
       ${n.noInvoice.map(renderNoInvoicePrompt).join("")}
-      ${n.noActual.map(renderNoActualPrompt).join("")}
     </div>`;
 }
-// The question depends on where the ticket went: waiting on a PART or waiting on the CUSTOMER.
+// Why it's waiting decides the wording; the first answer always means "diagnosis is done".
 function diagQuestionFor(t) {
   const to = String(t.diagPrompt?.toStatus || "");
-  if (/part/i.test(to)) return {
-    q: `This ticket was removed from the queue, and is now <b>waiting on a part</b>! Is it waiting on a part to perform a repair the client has <b>already been quoted for &amp; approves</b>, or is the part needed to <b>complete the diagnosis</b> and quote the client at a future date?`,
-    yes: "Quoted &amp; approved repair", no: "Needed to finish diagnosis",
-  };
-  if (/client|customer/i.test(to)) return {
-    q: `This ticket was removed from the queue, and is now <b>waiting on the customer</b>! Have we given the client a <b>repair quote</b> and/or are waiting for the client to call us back to give them a completed repair quote? Or are we waiting on the customer to give us <b>more details</b> than we need to complete the diagnosis?`,
-    yes: "Quoted / quote ready", no: "Need more details from them",
-  };
-  return { q: `This ticket left the queue (now <b>${esc(to || t.status)}</b>). Is the diagnosis for this <b>100% completed</b>?`, yes: "Yes", no: "No" };
+  if (/part/i.test(to)) return { q: "Why's it waiting on a part?", yes: "Diagnosed — part is for the repair", no: "Part is needed to diagnose" };
+  if (/client|customer/i.test(to)) return { q: "Why's it waiting on the customer?", yes: "Diagnosed — waiting to quote or hear back", no: "Need more info to diagnose" };
+  return { q: "Is the diagnosis done?", yes: "Yes, diagnosed", no: "Not yet" };
 }
 function renderDiagPrompt(t) {
   const step2 = state.diagStep[t.id] === "repair";
-  const diagMin = diagnosticsMinutesFor(t) || 30;
   const dq = diagQuestionFor(t);
-  const question = step2
-    ? `<span class="diag-q">Will the repair total be <b>$${esc(state.diagMinRepairTotal)} or more</b> if the client accepts repairs?</span>
+  const ask = step2
+    ? `<span class="need-q">Repair total <b>$${esc(state.diagMinRepairTotal)} or more</b>?</span>
        <span class="diag-btns">
-       <button class="btn small primary" onclick="answerDiag(${t.id}, true, true)" title="You get ${diagMin}m diagnosis credit">Yes <span class="diag-gain">+${diagMin}m</span></button>
-       <button class="btn small" onclick="answerDiag(${t.id}, true, false)" title="Diagnosis credit is taken but worth 0m — the repair still earns its credit when resolved">No <span class="diag-gain">0m</span></button>
-       <button class="btn small ghost" onclick="diagBack(${t.id})">← Back</button></span>`
-    : `<span class="diag-q">${dq.q}</span>
+         <button class="btn small primary" onclick="answerDiag(${t.id}, true, true)">Yes</button>
+         <button class="btn small primary" onclick="answerDiag(${t.id}, true, false)">No</button>
+         <button class="btn small ghost" onclick="diagBack(${t.id})">← Back</button></span>`
+    : `<span class="need-q">${esc(dq.q)}</span>
        <span class="diag-btns">
-       <button class="btn small primary" onclick="diagYes(${t.id})" title="Counts as diagnosis 100% complete">${dq.yes}</button>
-       <button class="btn small" onclick="answerDiag(${t.id}, false)" title="Diagnosis not done yet — it can be claimed the next time it goes back to the queue and out again">${dq.no}</button></span>`;
+         <button class="btn small" onclick="diagYes(${t.id})">${esc(dq.yes)}</button>
+         <button class="btn small" onclick="answerDiag(${t.id}, false)">${esc(dq.no)}</button></span>`;
   return `
     <div class="diag-prompt" data-need="diag-${t.id}">
       ${ticketCell(t)}
       ${statusPill(t)}
-      <div class="diag-ask"><span class="need-tag">🩺 Diagnosis</span>${question}</div>
+      <div class="diag-ask">${ask}</div>
     </div>`;
 }
 function renderNoInvoicePrompt(t) {
   return `
-    <div class="diag-prompt">
+    <div class="diag-prompt" data-need="invoice-${t.id}">
       ${ticketCell(t)}
       <span class="ticket-status resolved">✓ Resolved</span>
-      <div class="diag-ask"><span class="need-tag">🧾 No invoice</span>
-        <span class="diag-q">Resolved with <b>no invoice</b>. Make the invoice in RepairShopr, or clarify what was done.</span>
+      <div class="diag-ask">
+        <span class="need-q">Resolved with <b>no invoice</b></span>
         <span class="diag-btns">
-        <a class="btn small primary" href="${esc(rsTicketUrl(t.id))}" target="_blank" rel="noopener">Open in RepairShopr ↗</a>
-        <button class="btn small" onclick="dismissNeed(${t.id}, 'invoice')" title="Warranty, no charge, etc. — stops this reminder">No invoice needed</button></span>
+          <a class="btn small" href="${esc(rsTicketUrl(t.id))}" target="_blank" rel="noopener">Make invoice ↗</a>
+          <button class="btn small" onclick="dismissNeed(${t.id}, 'invoice')" title="Warranty, no charge, etc.">No invoice needed</button></span>
       </div>
     </div>`;
-}
-function renderNoActualPrompt(t) {
-  const v = state.needActualDraft[t.id] ?? "";
-  return `
-    <div class="diag-prompt">
-      ${ticketCell(t)}
-      <span class="ticket-status resolved">✓ Resolved</span>
-      <div class="diag-ask"><span class="need-tag">⏱ No actual time</span>
-        <span class="diag-q">How many minutes did this take you?</span>
-        <span class="diag-btns">
-        <input id="need-actual-${t.id}" class="need-actual" data-draft="1" type="text" inputmode="numeric" autocomplete="off" placeholder="min" value="${esc(v)}"
-          oninput="this.value = this.value.replace(/[^0-9]/g, '').slice(0, 4); state.needActualDraft[${t.id}] = this.value"
-          onkeydown="if (event.key === 'Enter') saveNeedActual(${t.id})">
-        <button class="btn small primary" onclick="saveNeedActual(${t.id})">Save</button>
-        <button class="btn small ghost" onclick="dismissNeed(${t.id}, 'actual')" title="Stop reminding me about this one">Skip</button></span>
-      </div>
-    </div>`;
-}
-function saveNeedActual(id) {
-  const t = findTicket(id);
-  const minutes = parseMinutes(state.needActualDraft[id]);
-  if (!minutes) { showToast("Type the total minutes, like 45", "error"); return; }
-  delete state.needActualDraft[id];
-  mutate("/manual-time", { ticketId: id, minutes }, () => { t.runningSince = null; t.spentSec = minutes * 60; t.timerState = "logged"; });
 }
 function dismissNeed(id, kind) {
   const t = findTicket(id);
@@ -2099,17 +2078,17 @@ function renderCompletedRow(t, viewerId) {
   const pct = viewerId ? myShare(t, viewerId) : 100; // Team view (no viewer) shows the full value
   const credited = Math.round((c.bookMinutes || 0) * pct / 100);
   const bookTitle = c.bookMinutes
-    ? `${t.repairType} = ${c.bookMinutes}m${pct < 100 ? ` · your share ${pct}% = ${credited}m` : ""}`
+    ? `${t.isRefurb ? "Refurb (locked in when completed)" : t.repairType} = ${c.bookMinutes}m${pct < 100 ? ` · your share ${pct}% = ${credited}m` : ""}`
     : "Pick the model & repair type — this ticket earns 0m until you do";
   return `
     <div class="trow" data-done="${t.id}">
-      ${ticketCell(t)}
+      ${t.isRefurb ? refurbCell(t) : ticketCell(t)}
       <div></div>
-      <span class="ticket-status resolved" title="Resolved ${esc(fmtTime(c.resolvedAt))}">✓ ${esc(fmtTime(c.resolvedAt))}</span>
-      ${renderDevicePicker(t)}
+      <span class="ticket-status resolved" title="${t.isRefurb ? "Completed" : "Resolved"} ${esc(fmtTime(c.resolvedAt))}">✓ ${esc(fmtTime(c.resolvedAt))}</span>
+      ${t.isRefurb ? renderRefurbDevice(t) : renderDevicePicker(t)}
       <div class="tcell-book ${c.bookMinutes ? "" : "missing"}" title="${esc(bookTitle)}">${c.bookMinutes ? (pct < 100 ? `${credited}m` : fmtHM(c.bookMinutes * 60)) : "⚠ 0m"}</div>
       ${viewerId ? renderActualCell(t) : "<div></div>"}
-      <div></div>
+      <div class="ticket-actions">${t.isRefurb && viewerId && (t.refurbOwner === state.me || state.currentUser.admin) ? `<button class="btn ghost small" onclick="reopenRefurb(${t.id})" title="Un-complete it so it can be changed (takes the credit back off)">Undo</button>` : ""}</div>
       <div class="tcell-outcome">${renderCreditChip(t)}</div>
     </div>
     ${state.creditEditOpen === t.id ? renderCreditEditor(t) : ""}
@@ -2425,21 +2404,18 @@ function renderTeam() {
     const tickets = ticketsFor(id).filter(t => isQueueStatus(t.status));
     const anyRunning = !!(state.personToday[id] && state.personToday[id].runningSince);
     const bookPct = goals ? Math.min(100,(totals.book/goals.book)*100) : 0;
-    const credit = creditCounts(id);
-    const ts = (state.teamStats || {})[id] || {};
     return `
       <tr>
         <td><div class="person-cell" title="Active today: ${esc(why)}"><div class="avatar" style="background:${esc(p.color)}">${esc(p.initials)}</div>${esc(p.name)}${anyRunning ? '<span class="live-dot" style="margin-left:8px" title="Timer running"></span>' : ''}</div></td>
         <td>${esc(pos || "—")}${picked ? "" : ` <span class="default-tag" title="Hasn't logged in today — using their default role">default</span>`}</td>
         <td>${goals ? `<div class="mini-meter-track"><div class="mini-meter-fill book" style="width:${bookPct}%"></div></div>${fmtHM(totals.book)} / ${fmtHM(goals.book)}` : '—'}</td>
-        <td class="num-cell">${statNum(ts.pushed, "Moved from the queue to a waiting status (parts / customer) today")}</td>
-        <td class="num-cell">${statNum(ts.diagnosed, "Claimed diagnosis credit today")}</td>
-        <td class="num-cell">${(() => { const n = credit.resolved + (ts.refurbs || 0); const tip = `Resolved as primary: ${credit.resolved}${ts.refurbs ? ` · refurbs finished: ${ts.refurbs}` : ""}`;
-          return credit.resolved ? `<button type="button" class="link-num" onclick="showResolved(${jsArg(id)})" title="${esc(tip)} — click to see them">${n}</button>` : `<span title="${esc(tip)}">${n}</span>`; })()}</td>
-        <td class="num-cell" title="Tickets they touched today: a note, timer time, pushed, diagnosed, resolved or partial credit (refurbs count too)">${ts.interacted || 0}</td>
-        <td class="num-cell">${(() => { const n = notesCount(id); return n ? `<button type="button" class="link-num" onclick="showNotes(${jsArg(id)})" title="See the tickets ${esc(p.name.split(" ")[0])} left a note on today">${n}</button>` : 0; })()}</td>
+        <td class="num-cell">${statNum(id, "pushed")}</td>
+        <td class="num-cell">${statNum(id, "diagnosed")}</td>
+        <td class="num-cell">${statNum(id, "resolved")}</td>
+        <td class="num-cell">${statNum(id, "interacted")}</td>
         <td><span class="ticket-count">${tickets.length}</span>${dueBadges(tickets)}</td>
       </tr>
+      ${state.statOpen && state.statOpen.pid === id ? renderStatDetail(id, state.statOpen.kind) : ""}
     `;
   }).join("");
   const inQ = t => !t.notOpen && isQueueStatus(t.status);
@@ -2452,7 +2428,7 @@ function renderTeam() {
       <h2>Today's team</h2>
       ${loggedInToday.length ? `
       <table>
-        <thead><tr><th>Person</th><th>Position</th><th class="h-book">📖 Book time</th><th class="num-cell" title="Moved from the queue to a waiting status (parts / customer) today — even if diagnosis wasn't claimed">📤 Pushed</th><th class="num-cell" title="Claimed diagnosis credit today">🩺 Diagnosed</th><th class="num-cell" title="Resolved today as the primary, plus refurbs finished">✅ Resolved</th><th class="num-cell" title="Every ticket they touched today: a note, timer time, pushed, diagnosed, resolved or partial credit (refurbs count too)">🤝 Interacted</th><th class="num-cell" title="Tickets they left a note on today (in RepairShopr or the app)">📝 Notes</th><th>In queue</th></tr></thead>
+        <thead><tr><th>Person</th><th>Position</th><th class="h-book">📖 Book time</th><th class="num-cell" title="${esc(STAT_INFO.pushed.tip)}">📤 Pushed</th><th class="num-cell" title="${esc(STAT_INFO.diagnosed.tip)}">🩺 Diagnosed</th><th class="num-cell" title="${esc(STAT_INFO.resolved.tip)}">✅ Resolved</th><th class="num-cell" title="${esc(STAT_INFO.interacted.tip)}">🤝 Interacted</th><th>In queue</th></tr></thead>
         <tbody>${rows}</tbody>
       </table>` : `<div class="meter-note">Nobody's shown any activity yet today.</div>`}
       ${team.inactive.length ? `<div class="meter-note" style="margin-top:8px">Not active yet today: ${team.inactive.map(id => esc(PEOPLE[id].name.split(" ")[0])).join(", ")} — they show up once they log in, leave a note in RepairShopr, run a timer, get credit or create an invoice.</div>` : ""}
@@ -2605,23 +2581,60 @@ function showNotes(pid) {
 // ✅ Resolved number on Today's team → open that person's list and scroll to it.
 // Queue at a glance (right of "All tickets in queue"): total, then how many are due when.
 function renderQueueSummary(tickets) {
-  let over = 0, today = 0, tom = 0, later = 0, none = 0;
-  for (const t of tickets) { const n = daysUntil(t.dueDay); if (n == null) none++; else if (n < 0) over++; else if (n === 0) today++; else if (n === 1) tom++; else later++; }
+  let over = 0, today = 0, tom = 0, later = 0;   // no due date counts as 2+ days
+  for (const t of tickets) { const n = daysUntil(t.dueDay); if (n == null) later++; else if (n < 0) over++; else if (n === 0) today++; else if (n === 1) tom++; else later++; }
   const cell = (cls, n, label, tip) => `<div class="qs-cell ${cls}${n ? "" : " zero"}" title="${esc(tip)}"><div class="qs-num">${n}</div><div class="qs-label">${label}</div></div>`;
   return `<div class="queue-summary">
     ${cell("total", tickets.length, "In queue", "Every ticket in a queue status, across everyone")}
     ${cell("red", over + today, "Overdue / today", `${over} overdue · ${today} due today`)}
     ${cell("yellow", tom, "Tomorrow", "Due tomorrow")}
-    ${cell("later", later, "2+ days", "Due in 2 or more days")}
-    ${cell("none", none, "No due date", "No due date set")}
+    ${cell("later", later, "2+ days", "Due in 2 or more days (or no due date)")}
   </div>`;
 }
-// A count with the ticket numbers in its tooltip.
-function statNum(ids, what) {
-  ids = ids || [];
-  if (!ids.length) return "0";
-  const nums = ids.map(id => { const t = state.tickets.find(x => x.id === id); return t?.num ? "#" + t.num : "ticket " + id; });
-  return `<span class="stat-num" title="${esc(what + ":\n" + nums.join(", "))}">${ids.length}</span>`;
+/* ----- Team stats: click a number to list those tickets under the person's row ----- */
+const STAT_INFO = {
+  pushed: { label: "📤 Pushed", tip: "Resolved + diagnosed + moved from the queue to Awaiting Parts / Client today (even with no diagnosis claimed)" },
+  diagnosed: { label: "🩺 Diagnosed", tip: "Claimed diagnosis credit today" },
+  resolved: { label: "✅ Resolved", tip: "Resolved today as the primary, plus refurbs finished" },
+  interacted: { label: "🤝 Interacted", tip: "Every ticket they pushed, left a note on, or got any share of credit for today — each ticket once" },
+};
+function statIds(pid, kind) { return ((state.teamStats || {})[pid] || {})[kind] || []; }
+function statNum(pid, kind) {
+  const n = statIds(pid, kind).length;
+  if (!n) return "0";
+  const on = state.statOpen && state.statOpen.pid === pid && state.statOpen.kind === kind;
+  return `<button type="button" class="link-num ${on ? "on" : ""}" onclick="toggleStat(${jsArg(pid)}, '${kind}')" title="${esc(STAT_INFO[kind].tip)} — click to see them">${n}</button>`;
+}
+function toggleStat(pid, kind) {
+  const on = state.statOpen && state.statOpen.pid === pid && state.statOpen.kind === kind;
+  state.statOpen = on ? null : { pid, kind };
+  render();
+}
+function statTicketInfo(id) {
+  const t = state.tickets.find(x => x.id === id);
+  if (t) return { num: t.num, subject: t.subject, status: t.status, isRefurb: !!t.isRefurb };
+  const x = (state.statTickets || {})[id];
+  return x ? { ...x, isRefurb: id < 0 } : { num: null, subject: id < 0 ? "Refurb" : `Ticket ${id}`, status: "", isRefurb: id < 0 };
+}
+function renderStatDetail(pid, kind) {
+  const ids = statIds(pid, kind), all = (state.teamStats || {})[pid] || {};
+  const has = (k, id) => (all[k] || []).includes(id);
+  const noted = id => (state.notedToday || []).some(n => n.ticketId === id && n.people.includes(pid));
+  const shared = id => { const t = state.tickets.find(x => x.id === id); return t && t.completion && t.completion.shares.some(sh => sh.personId === pid) && !has("resolved", id) ? myShare(t, pid) : 0; };
+  const items = ids.map(id => {
+    const info = statTicketInfo(id);
+    const tags = [has("resolved", id) && (info.isRefurb ? "🔧 Refurb done" : "✅ Resolved"), has("diagnosed", id) && "🩺 Diagnosed",
+      has("pushed", id) && !has("resolved", id) && !has("diagnosed", id) && "📤 Pushed", noted(id) && "📝 Note",
+      shared(id) && `🤝 ${shared(id)}% credit`].filter(Boolean);
+    const name = info.isRefurb ? `🔧 ${esc(info.subject)}` : `#${esc(info.num ?? id)} · ${esc(info.subject)}`;
+    const link = info.isRefurb ? `<span class="stat-ticket">${name}</span>` : `<a class="stat-ticket" href="${esc(rsTicketUrl(id))}" target="_blank" rel="noopener">${name} <span class="rs-link-icon">↗</span></a>`;
+    return `<div class="stat-item">${link}<span class="stat-status">${esc(info.status || "")}</span><span class="stat-tags">${tags.map(x => `<span class="stat-tag">${x}</span>`).join("")}</span></div>`;
+  }).join("");
+  return `<tr class="stat-detail"><td colspan="8">
+    <div class="stat-head"><b>${esc(PEOPLE[pid]?.name.split(" ")[0] || pid)} — ${STAT_INFO[kind].label} (${ids.length})</b> <span class="meter-note" style="display:inline">${esc(STAT_INFO[kind].tip)}</span>
+      <button class="btn ghost small" onclick="toggleStat(${jsArg(pid)}, '${kind}')">Close</button></div>
+    ${items}
+  </td></tr>`;
 }
 function showResolved(pid) {
   const key = "done:" + pid;
@@ -3211,35 +3224,34 @@ function renderReports() {
     const d = r.days[r.days.length - 1] || { people: {}, others: {} };
     const ids = activePeople().slice().sort((a, b) => a.name.localeCompare(b.name)).map(p => p.id);
     for (const pid of Object.keys(d.people)) if (!ids.includes(pid) && PEOPLE[pid]) ids.push(pid);
-    const tot = { revenue: 0, profit: 0, labor: 0, laborQty: 0, invoices: 0, book: 0, actual: 0, resolved: 0, total: 0 };
-    const moneyCells = m => `<td>${money$(m.revenue)}</td><td>${money$(m.profit)} <span class="money-sub">${pct$(m.profit, m.revenue)}</span></td><td>${money$(m.labor)} <span class="money-sub">· ${qty$(m.laborQty)}</span></td><td class="num-cell">${m.invoices}</td>`;
+    const tot = { revenue: 0, profit: 0, invoices: 0, book: 0, actual: 0, pushed: 0, diagnosed: 0, resolved: 0 };
+    const moneyCells = m => `<td>${money$(m.revenue)}</td><td>${money$(m.profit)} <span class="money-sub">${pct$(m.profit, m.revenue)}</span></td><td class="num-cell">${m.invoices}</td>`;
     const rows = ids.map(pid => {
-      const p = PEOPLE[pid], m = d.people[pid] || { revenue: 0, profit: 0, labor: 0, laborQty: 0, invoices: 0 };
-      const tt = computeTotals(pid), cc = creditCounts(pid);
-      for (const k of ["revenue", "profit", "labor", "laborQty", "invoices"]) tot[k] += m[k] || 0;
-      tot.book += tt.book; tot.actual += tt.spent; tot.resolved += cc.resolved; tot.total += cc.total;
-      const quiet = !m.invoices && !tt.book && !tt.spent && !cc.total;
+      const p = PEOPLE[pid], m = d.people[pid] || { revenue: 0, profit: 0, invoices: 0 };
+      const tt = computeTotals(pid), cc = { pushed: statIds(pid, "pushed").length, diagnosed: statIds(pid, "diagnosed").length, resolved: statIds(pid, "resolved").length };
+      for (const k of ["revenue", "profit", "invoices"]) tot[k] += m[k] || 0;
+      tot.book += tt.book; tot.actual += tt.spent; tot.pushed += cc.pushed; tot.diagnosed += cc.diagnosed; tot.resolved += cc.resolved;
+      const quiet = !m.invoices && !tt.book && !tt.spent && !cc.pushed;
       return `<tr class="${quiet ? "quiet-row" : ""}">
         <td><div class="person-cell"><div class="avatar" style="background:${esc(p.color)}">${esc(p.initials)}</div>${esc(p.name)}</div></td>
         ${moneyCells(m)}
         <td class="book-text">${fmtHM(tt.book)}</td><td class="actual-text">${fmtHM(tt.spent)}</td>
-        <td class="num-cell">${cc.resolved}</td><td class="num-cell">${cc.total}</td></tr>`;
+        <td class="num-cell">${cc.pushed}</td><td class="num-cell">${cc.diagnosed}</td><td class="num-cell">${cc.resolved}</td></tr>`;
     }).join("");
     const others = Object.entries(d.others || {}).map(([name, m]) => {
-      for (const k of ["revenue", "profit", "labor", "laborQty", "invoices"]) tot[k] += m[k] || 0;
-      return `<tr class="quiet-row"><td><div class="person-cell"><span class="money-noav"></span>${esc(name)} <span class="money-sub">&nbsp;(not in app)</span></div></td>${moneyCells(m)}<td colspan="4"></td></tr>`;
+      for (const k of ["revenue", "profit", "invoices"]) tot[k] += m[k] || 0;
+      return `<tr class="quiet-row"><td><div class="person-cell"><span class="money-noav"></span>${esc(name)} <span class="money-sub">&nbsp;(not in app)</span></div></td>${moneyCells(m)}<td colspan="5"></td></tr>`;
     }).join("");
     live = `
       <div class="table-scroll"><table class="report-table">
-        <thead><tr><th>Person</th><th>Revenue</th><th>Profit</th><th>Labor SKUs</th><th class="num-cell">Invoices</th>
-          <th class="h-book">📖 Book</th><th class="h-actual">⏱ Actual</th><th class="num-cell">✅ Resolved</th><th class="num-cell">Total tickets</th></tr></thead>
+        <thead><tr><th>Person</th><th>Revenue</th><th>Profit</th><th class="num-cell">Invoices</th>
+          <th class="h-book">📖 Book</th><th class="h-actual">⏱ Actual</th><th class="num-cell" title="${esc(STAT_INFO.pushed.tip)}">📤 Pushed</th><th class="num-cell">🩺 Diagnosed</th><th class="num-cell">✅ Resolved</th></tr></thead>
         <tbody>${rows}${others}</tbody>
         <tfoot><tr><td><b>Team</b></td><td><b>${money$(tot.revenue)}</b></td><td><b>${money$(tot.profit)}</b> <span class="money-sub">${pct$(tot.profit, tot.revenue)}</span></td>
-          <td><b>${money$(tot.labor)}</b> <span class="money-sub">· ${qty$(tot.laborQty)}</span></td><td class="num-cell"><b>${tot.invoices}</b></td>
-          <td class="book-text"><b>${fmtHM(tot.book)}</b></td><td class="actual-text"><b>${fmtHM(tot.actual)}</b></td><td class="num-cell"><b>${tot.resolved}</b></td><td class="num-cell"><b>${tot.total}</b></td></tr></tfoot>
+          <td class="num-cell"><b>${tot.invoices}</b></td>
+          <td class="book-text"><b>${fmtHM(tot.book)}</b></td><td class="actual-text"><b>${fmtHM(tot.actual)}</b></td><td class="num-cell"><b>${tot.pushed}</b></td><td class="num-cell"><b>${tot.diagnosed}</b></td><td class="num-cell"><b>${tot.resolved}</b></td></tr></tfoot>
       </table></div>
-      <div class="meter-note" style="margin-top:8px">Revenue = items added to invoices that day (before tax, on any invoice) · Profit = revenue − line-item cost · Labor SKUs = $ and count of items in RepairShopr's <b>${esc(r.labor?.category || "Repair Service")}</b> category${r.labor?.categories?.length > 1 ? ` (+ ${r.labor.categories.length - 1} subcategor${r.labor.categories.length === 2 ? "y" : "ies"})` : ""}. Each invoice line counts for whoever added it; bench fees count for no one.
-      ${r.labor && r.labor.found === false ? `<br><span class="bad-text">No RepairShopr product category named "${esc(r.labor.category)}" was found — labor shows $0.</span>` : ""}
+      <div class="meter-note" style="margin-top:8px">Revenue = items added to invoices that day (before tax, on any invoice) · Profit = revenue − line-item cost. Each invoice line counts for whoever added it; bench fees count for no one.
       ${r.warning ? `<br><span class="bad-text">${esc(r.warning)}</span>` : ""}</div>`;
   }
   const whoOpts = `<option value="all" ${f.who === "all" ? "selected" : ""}>Whole team</option>` +
@@ -3254,7 +3266,7 @@ function renderReports() {
       <h2>⬇ Download a PDF report</h2>
       <div class="report-form">
         <div class="report-field"><span class="report-label">Report</span>
-          <label class="sort-option"><input type="radio" name="rtype" ${f.type === "sales" ? "checked" : ""} onchange="setReportField('type','sales')"> 💰 Sales — revenue, profit, labor SKUs</label>
+          <label class="sort-option"><input type="radio" name="rtype" ${f.type === "sales" ? "checked" : ""} onchange="setReportField('type','sales')"> 💰 Sales — revenue, profit</label>
           <label class="sort-option"><input type="radio" name="rtype" ${f.type === "time" ? "checked" : ""} onchange="setReportField('type','time')"> ⏱ Book time vs actual time</label>
         </div>
         <div class="report-field"><span class="report-label">Who</span><select id="report-who" onchange="setReportField('who', this.value)">${whoOpts}</select></div>
@@ -3268,7 +3280,6 @@ function renderReports() {
         <div><button class="btn primary" id="report-dl" onclick="downloadReport()" ${state.reportBusy ? "disabled" : ""}>${state.reportBusy ? "Building PDF…" : "Download PDF"}</button></div>
       </div>
       <div class="meter-note" style="margin-top:8px">${since ? `Sales numbers are recorded from <b>${esc(shortDay(since))}</b> on (when this report started tracking).` : "Sales numbers are recorded from today on."} Book/actual time goes back as far as the app has been in use.</div>
-      ${renderLaborSetting(r)}
     </div>`;
 }
 function renderLaborSetting(r) {
@@ -3327,7 +3338,7 @@ function pdfFinish(doc, note) {
 const PDF_TABLE = { theme: "grid", styles: { fontSize: 9, cellPadding: 4 }, headStyles: { fillColor: [22, 50, 92] }, footStyles: { fillColor: [235, 240, 248], textColor: 20, fontStyle: "bold" }, margin: { left: 40, right: 40 } };
 const sumInto = (acc, m, keys) => { for (const k of keys) acc[k] = (acc[k] || 0) + (m[k] || 0); return acc; };
 const MONEY_KEYS = ["revenue", "profit", "cost", "labor", "laborQty", "invoices"];
-const TIME_KEYS = ["bookSec", "actualSec", "resolved", "total"];
+const TIME_KEYS = ["bookSec", "actualSec", "pushed", "diagnosed", "resolved"];
 const nameOf = pid => PEOPLE[pid]?.name || pid;
 function buildSalesPdf(data, f) {
   const doc = pdfStart("Sales report", data, f);
@@ -3340,46 +3351,46 @@ function buildSalesPdf(data, f) {
       sumInto(per[pid] ||= {}, m, MONEY_KEYS); sumInto(dayTot, m, MONEY_KEYS);
     }
     if (f.who === "all") for (const [n, m] of Object.entries(d.others || {})) { sumInto(others[n] ||= {}, m, MONEY_KEYS); sumInto(dayTot, m, MONEY_KEYS); }
-    daily.push([shortDay(d.day), dayTot.invoices || 0, money$(dayTot.revenue), money$(dayTot.profit), pct$(dayTot.profit || 0, dayTot.revenue || 0), money$(dayTot.labor), qty$(dayTot.laborQty)]);
+    daily.push([shortDay(d.day), dayTot.invoices || 0, money$(dayTot.revenue), money$(dayTot.profit), pct$(dayTot.profit || 0, dayTot.revenue || 0)]);
   }
-  const row = (name, m) => [name, m.invoices || 0, money$(m.revenue), money$(m.profit), pct$(m.profit || 0, m.revenue || 0), money$(m.labor), qty$(m.laborQty)];
+  const row = (name, m) => [name, m.invoices || 0, money$(m.revenue), money$(m.profit), pct$(m.profit || 0, m.revenue || 0)];
   const all = {};
   const body = Object.entries(per).sort((a, b) => (b[1].revenue || 0) - (a[1].revenue || 0)).map(([pid, m]) => { sumInto(all, m, MONEY_KEYS); return row(nameOf(pid), m); });
   for (const [n, m] of Object.entries(others)) { sumInto(all, m, MONEY_KEYS); body.push(row(`${n} (not in app)`, m)); }
-  const head = [["", "Invoices", "Revenue", "Profit", "Margin", "Labor $", "Labor SKUs"]];
+  const head = [["", "Invoices", "Revenue", "Profit", "Margin"]];
   head[0][0] = "Person";
-  doc.autoTable({ ...PDF_TABLE, startY: 80, head, body: body.length ? body : [["No invoices in this range", "", "", "", "", "", ""]], foot: [row("Total", all)] });
+  doc.autoTable({ ...PDF_TABLE, startY: 80, head, body: body.length ? body : [["No invoices in this range", "", "", "", ""]], foot: [row("Total", all)] });
   if (data.days.length > 1) {
     doc.setFontSize(11); doc.setFont("helvetica", "bold"); doc.text("By day", 40, doc.lastAutoTable.finalY + 24); doc.setFont("helvetica", "normal");
-    doc.autoTable({ ...PDF_TABLE, startY: doc.lastAutoTable.finalY + 30, head: [["Day", "Invoices", "Revenue", "Profit", "Margin", "Labor $", "Labor SKUs"]], body: daily });
+    doc.autoTable({ ...PDF_TABLE, startY: doc.lastAutoTable.finalY + 30, head: [["Day", "Invoices", "Revenue", "Profit", "Margin"]], body: daily });
   }
   const since = data.salesSince ? ` Sales data is recorded from ${shortDay(data.salesSince)} on.` : "";
-  return pdfFinish(doc, `Revenue = items added to invoices that day (before tax, on any invoice). Profit = revenue - line-item cost. Labor SKUs = items in RepairShopr's "${data.labor?.category || "Repair Service"}" category (and subcategories). Each invoice line counts for whoever added it; bench fees count for no one.${since}`);
+  return pdfFinish(doc, `Revenue = items added to invoices that day (before tax, on any invoice). Profit = revenue - line-item cost. Each invoice line counts for whoever added it; bench fees count for no one.${since}`);
 }
 function buildTimePdf(data, f) {
   const doc = pdfStart("Book time vs actual time", data, f);
   const per = {}, days = {};
   for (const d of data.days) for (const [pid, m] of Object.entries(d.people)) {
     if (f.who !== "all" && pid !== f.who) continue;
-    if (!m.bookSec && !m.actualSec && !m.total) continue;
+    if (!m.bookSec && !m.actualSec && !m.pushed && !m.total) continue;
     const x = sumInto(per[pid] ||= {}, m, TIME_KEYS); x.days = (x.days || 0) + 1;
     (days[d.day] ||= []).push([pid, m]);
   }
   const eff = m => (m.actualSec > 0 ? Math.round((m.bookSec / m.actualSec) * 100) + "%" : "—");
-  const row = (name, m, extra = []) => [name, ...extra, fmtHM(m.bookSec || 0), fmtHM(m.actualSec || 0), eff(m), m.resolved || 0, m.total || 0];
+  const row = (name, m, extra = []) => [name, ...extra, fmtHM(m.bookSec || 0), fmtHM(m.actualSec || 0), eff(m), m.pushed || 0, m.diagnosed || 0, m.resolved || 0];
   const all = {}; let allDays = 0;
   const body = Object.entries(per).sort((a, b) => nameOf(a[0]).localeCompare(nameOf(b[0]))).map(([pid, m]) => { sumInto(all, m, TIME_KEYS); allDays += m.days; return row(nameOf(pid), m, [m.days]); });
-  doc.autoTable({ ...PDF_TABLE, startY: 80, head: [["Person", "Days", "Book time", "Actual time", "Book ÷ actual", "Resolved", "Total tickets"]],
-    body: body.length ? body : [["Nothing recorded in this range", "", "", "", "", "", ""]], foot: [row("Total", all, [allDays])] });
+  doc.autoTable({ ...PDF_TABLE, startY: 80, head: [["Person", "Days", "Book time", "Actual time", "Book ÷ actual", "Pushed", "Diagnosed", "Resolved"]],
+    body: body.length ? body : [["Nothing recorded in this range", "", "", "", "", "", "", ""]], foot: [row("Total", all, [allDays])] });
   if (data.days.length > 1 || f.who !== "all") {
     const dBody = [];
     for (const d of data.days) for (const [pid, m] of (days[d.day] || []).sort((a, b) => nameOf(a[0]).localeCompare(nameOf(b[0])))) dBody.push(row(shortDay(d.day), m, f.who === "all" ? [nameOf(pid)] : []));
     if (dBody.length) {
       doc.setFontSize(11); doc.setFont("helvetica", "bold"); doc.text("By day", 40, doc.lastAutoTable.finalY + 24); doc.setFont("helvetica", "normal");
-      doc.autoTable({ ...PDF_TABLE, startY: doc.lastAutoTable.finalY + 30, head: [["Day", ...(f.who === "all" ? ["Person"] : []), "Book time", "Actual time", "Book ÷ actual", "Resolved", "Total tickets"]], body: dBody });
+      doc.autoTable({ ...PDF_TABLE, startY: doc.lastAutoTable.finalY + 30, head: [["Day", ...(f.who === "all" ? ["Person"] : []), "Book time", "Actual time", "Book ÷ actual", "Pushed", "Diagnosed", "Resolved"]], body: dBody });
     }
   }
-  return pdfFinish(doc, "Book time = credited minutes for resolved tickets (by credit share) + diagnosis credits. Actual time = app timer + RepairShopr timers + typed-in time. Resolved = primary on a resolved ticket. Total = every ticket with any credit, including diagnosis credit (even 0m).");
+  return pdfFinish(doc, "Book time = credited minutes for resolved tickets (by credit share) + diagnosis credits. Actual time = app timer + RepairShopr timers + typed-in time. Pushed = resolved + diagnosed + moved from the queue to Awaiting Parts / Client (each ticket once). Diagnosed = diagnosis credit claimed. Resolved = primary on a resolved ticket or a finished refurb.");
 }
 
 /* ---------- 🔧 Refurbs (app-only — RepairShopr's API has no refurbs) ----------
@@ -3421,10 +3432,10 @@ function completeRefurb(negId) {
   const f = findRefurb(negId);
   if (!String(f.label || "").trim()) { showToast("Enter the refurb # first", "error"); document.getElementById(`refurb-label-${-negId}`)?.focus(); return; }
   if (!f.model || !refurbRepairs(f).length) { showToast("Pick the model and at least one repair first", "error"); return; }
-  mutate("/refurb", { action: "complete", id: -negId }, () => { f.state = "done"; f.doneAt = nowMs(); finalizeElapsed(f); f.timerState = "logged"; })
-    .then(r => { if (r) showToast(`Refurb complete — ${r.minutes}m book time`); });
+  mutate("/refurb", { action: "complete", id: -negId }, () => { state.refurbs = state.refurbs.filter(x => x.id !== negId); })
+    .then(r => { if (r) showToast(`Refurb complete — ${r.minutes}m book time (it's in your completed tickets)`); });
 }
-function reopenRefurb(negId) { mutate("/refurb", { action: "reopen", id: -negId }, () => { findRefurb(negId).state = "open"; }); }
+function reopenRefurb(negId) { mutate("/refurb", { action: "reopen", id: -negId }, () => { state.tickets = state.tickets.filter(t => t.id !== negId); }); }
 function deleteRefurb(negId) {
   const f = findRefurb(negId);
   if (!confirm(`Delete this refurb${f.label ? ` (${f.label})` : ""}? Its timer time is deleted too.`)) return;
@@ -3446,6 +3457,11 @@ function renderRefurbDevice(f) {
   const mainR = ranked.length ? ranked[0].r : null;
   const chips = refurbRepairs(f).map(rt => { const isMain = rt === mainR, ao = addOnMinutesFor(f, rt), mins = isMain ? (repairMinutesFor(f, rt) ?? 0) : (ao ?? repairMinutesFor(f, rt) ?? 0);
     return `<span class="refurb-chip ${isMain ? "" : "addon-chip"}" title="${isMain ? "Main repair (full book time)" : "Add-on (add-on book time)"}">${isMain ? "" : "+ "}${esc(rt)} <b>${mins}m</b>${done ? "" : `<button type="button" onclick="removeRefurbRepair(${f.id}, ${jsArg(rt)})" title="Remove">✕</button>`}</span>`; }).join("");
+  if (done) return `
+    <div class="tcell-device refurb-device">
+      <span class="device-chip">${ISSUE_TYPE_ICONS[f.issueType] || ""} ${esc(f.issueType || "—")}${f.deviceRow ? ` · ${esc(f.deviceRow)}` : ""}</span>
+      ${chips ? `<div class="refurb-chips">${chips}</div>` : ""}
+    </div>`;
   return `
     <div class="tcell-device refurb-device">
       <select class="device-select" onchange="setRefurbType(${f.id}, this.value)" ${done ? "disabled" : ""}>
@@ -3460,47 +3476,33 @@ function renderRefurbDevice(f) {
       ${chips ? `<div class="refurb-chips">${chips}</div>` : ""}
     </div>`;
 }
+// Refurb label cell: the Refurb # box while it's open, "🔧 Refurb #123" once completed.
+function refurbCell(f) {
+  const label = String(f.label || "").replace(/^#/, "");
+  return f.state === "done"
+    ? `<div class="refurb-label"><div class="ticket-num">🔧 Refurb</div><div class="ticket-subject">${label ? "Refurb #" + esc(label) : "(no refurb #)"}</div></div>`
+    : `<div class="refurb-label"><div class="ticket-num">🔧 Refurb</div>
+        <input id="refurb-label-${-f.id}" class="refurb-input" type="text" maxlength="80" placeholder="Refurb #" inputmode="numeric" value="${esc(f.label || "")}" onchange="setRefurbLabel(${f.id}, this.value)" onkeydown="if (event.key === 'Enter') this.blur()"></div>`;
+}
+// An open refurb, shown in "Your assigned tickets". Completing it moves it to "Your completed tickets".
 function renderRefurbRow(f) {
-  const done = f.state === "done";
   const running = f.timerState === "running", paused = f.timerState === "paused", logged = f.timerState === "logged";
-  const controls = done ? "" : running
+  const controls = running
     ? `<button class="icon-btn stop" onclick="toggleTimer(${f.id},'pause')" title="Pause">❚❚</button>
        <button class="icon-btn stop" onclick="toggleTimer(${f.id},'stop')" title="Stop &amp; log time">■</button>`
     : `<button class="icon-btn play" onclick="toggleTimer(${f.id},'start')" title="${logged ? "Start a new timer segment" : paused ? "Resume" : "Start"}">▶</button>
        ${paused ? `<button class="icon-btn stop" onclick="toggleTimer(${f.id},'stop')" title="Stop &amp; log time">■</button>` : ""}`;
-  const labelCell = done
-    ? `<div class="refurb-label"><div class="ticket-num">🔧 Refurb</div><div class="ticket-subject">${f.label ? "Refurb #" + esc(f.label.replace(/^#/, "")) : "(no refurb #)"}</div></div>`
-    : `<div class="refurb-label"><div class="ticket-num">🔧 Refurb</div>
-        <input id="refurb-label-${-f.id}" class="refurb-input" type="text" maxlength="80" placeholder="Refurb #" inputmode="numeric" value="${esc(f.label || "")}" onchange="setRefurbLabel(${f.id}, this.value)" onkeydown="if (event.key === 'Enter') this.blur()"></div>`;
-  const doneTime = f.doneAt ? new Date(f.doneAt).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" }) : "";
+  const ready = String(f.label || "").trim() && f.deviceRow && refurbRepairs(f).length;
   return `
-    <div class="trow refurb-row ${done ? "done" : ""}" data-id="${f.id}">
-      ${labelCell}
+    <div class="trow refurb-row" data-id="${f.id}">
+      ${refurbCell(f)}
       <div></div>
-      <span class="ticket-status ${done ? "status-done" : ""}">${done ? `✓ ${esc(doneTime)}` : "In progress"}</span>
+      <span class="ticket-status status-refurb">🔧 Refurb</span>
       ${renderRefurbDevice(f)}
-      <div class="tcell-book" title="Sum of the picked repairs from the Book Time Database${done ? " (locked in when completed)" : ""}">${f.bookedSec ? fmtHM(f.bookedSec) : "—"}</div>
+      <div class="tcell-book" title="Biggest repair in full + the rest as add-ons, from the Book Time Database">${f.bookedSec ? fmtHM(f.bookedSec) : "—"}</div>
       ${renderActualCell(f, controls)}
-      <div class="ticket-actions">${done ? "" : `<button class="icon-btn trash-btn" onclick="deleteRefurb(${f.id})" title="Delete this refurb" aria-label="Delete this refurb"><svg viewBox="0 0 24 24" width="15" height="15" aria-hidden="true"><path fill="currentColor" d="M9 3h6l1 2h4v2H4V5h4l1-2zm-3 6h12l-1 12a2 2 0 0 1-2 2H9a2 2 0 0 1-2-2L6 9zm4 2v9h2v-9h-2zm4 0v9h2v-9h-2z"/></svg></button>`}</div>
-      <div class="tcell-outcome">${done
-        ? `<button class="btn ghost small" onclick="reopenRefurb(${f.id})" title="Take the credit back off so it can be changed">Undo</button>`
-        : `<button class="btn small primary" onclick="completeRefurb(${f.id})" ${String(f.label || "").trim() && f.deviceRow && refurbRepairs(f).length ? "" : `disabled title="${!String(f.label || "").trim() ? "Enter the refurb # first" : "Pick the model and at least one repair first"}"`}>✓ Complete refurb</button>`}</div>
-    </div>`;
-}
-function renderRefurbSection() {
-  const list = state.refurbs || [];
-  const open = list.filter(f => f.state !== "done"), done = list.filter(f => f.state === "done");
-  const doneMin = done.reduce((a, f) => a + (f.bookMinutes || 0), 0);
-  return `
-    <div class="panel refurb-panel">
-      <div class="refurb-head">
-        <h2>🔧 Refurbs ${done.length ? `<span class="meter-note" style="display:inline">&mdash; ${done.length} completed today · ${fmtHM(doneMin * 60)} book time</span>` : ""}</h2>
-        <button class="btn small primary" onclick="addRefurb()">+ Add refurb</button>
-      </div>
-      ${list.length ? `<div class="trow thead"><div>Refurb</div><div></div><div>Status</div><div>Type · Model · Repairs</div><div class="h-book">📖 Book</div><div class="h-actual">⏱ Actual</div><div></div><div></div></div>` : ""}
-      ${open.map(renderRefurbRow).join("")}
-      ${done.map(renderRefurbRow).join("")}
-      ${list.length ? "" : `<div class="meter-note">Working a refurb? Add it here, run the timer, and complete it to get its book time.</div>`}
+      <div class="ticket-actions"><button class="icon-btn trash-btn" onclick="deleteRefurb(${f.id})" title="Delete this refurb" aria-label="Delete this refurb"><svg viewBox="0 0 24 24" width="15" height="15" aria-hidden="true"><path fill="currentColor" d="M9 3h6l1 2h4v2H4V5h4l1-2zm-3 6h12l-1 12a2 2 0 0 1-2 2H9a2 2 0 0 1-2-2L6 9zm4 2v9h2v-9h-2zm4 0v9h2v-9h-2z"/></svg></button></div>
+      <div class="tcell-outcome"><button class="btn small primary" onclick="completeRefurb(${f.id})" ${ready ? "" : `disabled title="${!String(f.label || "").trim() ? "Enter the refurb # first" : "Pick the model and at least one repair first"}"`}>✓ Complete</button></div>
     </div>`;
 }
 

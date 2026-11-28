@@ -249,8 +249,8 @@ async function buildState(me, { force = false } = {}) {
     sql`select r.*, t.state as timer_state, t.running_since,
            (select coalesce(sum(seconds),0)::int from time_entries e where e.ticket_id = -r.id and e.person_id = r.person_id) as spent
         from refurbs r left join timers t on t.ticket_id = -r.id and t.person_id = r.person_id
-        where r.person_id = ${me.id} and (r.state = 'open' or r.done_date = ${t0}) order by r.created_at`,
-    sql`select person_id, count(*)::int as n, sum(book_minutes)::int as m from refurbs where state = 'done' and done_date = ${t0} group by 1`,
+        where r.person_id = ${me.id} and r.state = 'open' order by r.created_at`,
+    sql`select * from refurbs where state = 'done' and done_date = ${t0}`,
   ]);
 
   const stateById = new Map(stateRows.map(r => [Number(r.ticket_id), r]));
@@ -270,9 +270,12 @@ async function buildState(me, { force = false } = {}) {
   for (const c of bookTodayRows) {
     const id = Number(c.ticket_id);
     const ts = stateById.get(id);
-    const dev = effectiveDevice(issueTypeById.get(id) ?? ts?.rs_problem_type, ts);
-    const mins = ticketBookMinutes(settings.bookTimes, dev, dev.repairType, ts?.addons || []);
-    if (c.book_minutes !== mins) await sql`update completions set book_minutes = ${mins} where ticket_id = ${id} and work_date = ${t0}`;
+    let mins = c.book_minutes || 0;   // refurbs (id < 0): frozen when completed
+    if (id > 0) {
+      const dev = effectiveDevice(issueTypeById.get(id) ?? ts?.rs_problem_type, ts);
+      mins = ticketBookMinutes(settings.bookTimes, dev, dev.repairType, ts?.addons || []);
+      if (c.book_minutes !== mins) await sql`update completions set book_minutes = ${mins} where ticket_id = ${id} and work_date = ${t0}`;
+    }
     completionBy.set(id, {
       resolvedAt: ms(c.resolved_at), assignedPerson: c.assigned_person || null, primaryPerson: c.primary_person || null,
       assignedRsUser: c.assigned_rs_user != null ? Number(c.assigned_rs_user) : null,
@@ -283,7 +286,7 @@ async function buildState(me, { force = false } = {}) {
   try {
     const dis = await sql`select ticket_id, kind from input_dismiss where ticket_id = any(${[...completionBy.keys()]}::bigint[])`;
     for (const d of dis) { const c = completionBy.get(Number(d.ticket_id)); if (c) (c.dismissed ||= []).push(d.kind); }
-    const check = [...completionBy.entries()].filter(([, c]) => !(c.dismissed || []).includes("invoice")).map(([id]) => id);
+    const check = [...completionBy.entries()].filter(([id, c]) => id > 0 && !(c.dismissed || []).includes("invoice")).map(([id]) => id);
     const none = await ticketsWithoutInvoice(check);
     for (const id of none) completionBy.get(id).noInvoice = true;
   } catch (e) { console.warn("invoice check", e.message); }
@@ -346,6 +349,31 @@ async function buildState(me, { force = false } = {}) {
     else if (r.status === "stopped" && x.state === "idle") x.state = "logged";
   }
 
+  // Finished-today refurbs ride along as tickets (id = -refurb id) so they show in Completed tickets
+  // (My Day + Team) with the same credit editor. They're never "open", so they're never in a queue.
+  if (refurbDoneRows.length) {
+    const negIds = refurbDoneRows.map(r => -Number(r.id));
+    const [rfTotal, rfToday] = await Promise.all([
+      sql`select ticket_id, person_id, sum(seconds)::int as s from time_entries where ticket_id = any(${negIds}::bigint[]) group by 1,2`,
+      sql`select ticket_id, person_id, sum(seconds)::int as s from time_entries where ticket_id = any(${negIds}::bigint[]) and work_date = ${t0} group by 1,2`,
+    ]);
+    for (const r of refurbDoneRows) {
+      const id = -Number(r.id);
+      const timers = {};
+      for (const x of rfTotal) if (Number(x.ticket_id) === id) (timers[x.person_id] ||= { state: "idle", runningSince: null, totalSec: 0, todaySec: 0 }).totalSec = x.s;
+      for (const x of rfToday) if (Number(x.ticket_id) === id) (timers[x.person_id] ||= { state: "idle", runningSince: null, totalSec: 0, todaySec: 0 }).todaySec = x.s;
+      const label = String(r.label || "").replace(/^#/, "");
+      tickets.push({
+        id, isRefurb: true, refurbId: Number(r.id), refurbOwner: r.person_id, num: null, subject: label ? `Refurb #${label}` : "Refurb",
+        status: "Resolved", issueType: r.issue_type, customer: "", notOpen: true, dueDay: null,
+        assignedTo: r.person_id, assignedRsUserId: null, deviceOverrideSubtype: r.subtype || null, deviceRow: r.model || null,
+        repairType: null, addons: [], label: r.label, model: r.model, subtype: r.subtype, repairs: r.repairs || [], bookMinutes: r.book_minutes,
+        state: "done", doneAt: ms(r.done_at), workLog: [], assignmentLog: [], notes: [], queuedToday: [],
+        completion: completionBy.get(id) || null, diagPrompt: null, timers,
+      });
+    }
+  }
+
   const personToday = {};
   for (const p of peopleRows) personToday[p.id] = { bookSec: 0, spentSec: 0, runningSince: null, runningTicketId: null };
   // + diagnosis credits claimed today
@@ -354,7 +382,6 @@ async function buildState(me, { force = false } = {}) {
   for (const c of completionBy.values()) {
     for (const sh of c.shares) if (personToday[sh.personId]) personToday[sh.personId].bookSec += Math.round((c.bookMinutes || 0) * 60 * sh.pct / 100);
   }
-  for (const r of refurbDoneRows) if (personToday[r.person_id]) personToday[r.person_id].bookSec += (r.m || 0) * 60;
   for (const r of spentTodayRows) if (personToday[r.person_id]) personToday[r.person_id].spentSec = r.s;
   for (const r of runningRows) if (personToday[r.person_id]) { personToday[r.person_id].runningSince = ms(r.running_since); personToday[r.person_id].runningTicketId = Number(r.ticket_id); }
   for (const r of rsTimerRows) {
@@ -404,36 +431,38 @@ async function buildState(me, { force = false } = {}) {
   if (mc?.day === t0) for (const i of mc.invoices || []) mark(i.userId != null ? personByRsUser.get(String(i.userId)) : null, "invoice");
   mark(me.id, "logged in");
 
-  // 📊 Team stats per person: pushed to the next stage, diagnosed (claimed diagnosis credit), resolved
-  // (primary on a resolved ticket, or a finished refurb), and every ticket/refurb they touched today.
+  // 📊 Team stats per person (ticket ids; refurbs are -refurb id):
+  //   Resolved   = primary on a resolved ticket or a finished refurb.
+  //   Diagnosed  = claimed diagnosis credit.
+  //   Pushed     = resolved + diagnosed + moved from the queue to a waiting status (even with no diagnosis claimed).
+  //   Interacted = pushed + left a note + holds any share of the credit (each ticket once).
   const teamStats = {};
+  const statTickets = {};   // short info for tickets in the lists that aren't in today's ticket list
   {
-    const st = pid => (teamStats[pid] ||= { pushed: new Set(), diagnosed: new Set(), resolved: 0, refurbs: 0, touched: new Set() });
-    const [pushRows, diagRows, timeRows, refurbTouchRows] = await Promise.all([
-      sql`select ticket_id, person_id from push_log where work_date = ${t0}`,
+    const st = pid => (teamStats[pid] ||= { resolved: new Set(), diagnosed: new Set(), pushed: new Set(), interacted: new Set() });
+    const [pushRows, diagRows] = await Promise.all([
+      sql`select ticket_id, person_id, to_status from push_log where work_date = ${t0}`,
       sql`select ticket_id, person_id from work_log where work_date = ${t0} and outcome = 'diagnosis_completed'`,
-      sql`select distinct person_id, ticket_id from time_entries where work_date = ${t0} and ticket_id > 0`,
-      sql`select person_id, count(*)::int as n from refurbs
-          where done_date = ${t0} or exists (select 1 from time_entries e where e.ticket_id = -refurbs.id and e.work_date = ${t0})
-          group by 1`,
     ]);
-    for (const r of pushRows) { st(r.person_id).pushed.add(Number(r.ticket_id)); st(r.person_id).touched.add(Number(r.ticket_id)); }
-    for (const r of diagRows) { st(r.person_id).diagnosed.add(Number(r.ticket_id)); st(r.person_id).touched.add(Number(r.ticket_id)); }
-    for (const r of timeRows) st(r.person_id).touched.add(Number(r.ticket_id));
-    for (const r of runningRows) if (Number(r.ticket_id) > 0) st(r.person_id).touched.add(Number(r.ticket_id));
-    for (const r of rsTimerRows) { const pid = r.rsUserId != null ? personByRsUser.get(r.rsUserId) : null; if (pid && (r.today || r.status === "running")) st(pid).touched.add(Number(r.ticketId)); }
     for (const [id, c] of completionBy) {
-      for (const sh of c.shares) st(sh.personId).touched.add(id);
-      if (c.shares.length && c.primaryPerson) st(c.primaryPerson).resolved++;
+      if (c.primaryPerson && c.shares.some(sh => sh.personId === c.primaryPerson)) st(c.primaryPerson).resolved.add(id);
+      for (const sh of c.shares) st(sh.personId).interacted.add(id);
     }
-    for (const n of notedToday) for (const pid of n.people) st(pid).touched.add(n.ticketId);
-    for (const r of refurbDoneRows) st(r.person_id).refurbs = r.n;
-    for (const r of refurbTouchRows) st(r.person_id).refurbTouched = r.n;
+    for (const r of diagRows) st(r.person_id).diagnosed.add(Number(r.ticket_id));
+    for (const r of pushRows) st(r.person_id).pushed.add(Number(r.ticket_id));
+    for (const n of notedToday) for (const pid of n.people) st(pid).interacted.add(n.ticketId);
+    for (const x of Object.values(teamStats)) {
+      for (const id of [...x.resolved, ...x.diagnosed]) x.pushed.add(id);
+      for (const id of x.pushed) x.interacted.add(id);
+    }
+    const known = new Set(tickets.map(t => t.id));
+    const missing = [...new Set(Object.values(teamStats).flatMap(x => [...x.interacted]))].filter(id => !known.has(id));
+    const noteInfo = new Map(notedToday.filter(n => n.ticket).map(n => [n.ticketId, n.ticket]));
+    const stRows = missing.length ? await sql`select ticket_id, rs_number, rs_subject, rs_status from ticket_state where ticket_id = any(${missing}::bigint[])` : [];
+    for (const r of stRows) statTickets[Number(r.ticket_id)] = { num: r.rs_number ? Number(r.rs_number) : null, subject: r.rs_subject || "", status: r.rs_status || "" };
+    for (const id of missing) if (!statTickets[id] && noteInfo.has(id)) { const t = noteInfo.get(id); statTickets[id] = { num: t.num, subject: t.subject, status: t.status }; }
   }
-  const teamStatsOut = Object.fromEntries(Object.entries(teamStats).map(([pid, x]) => [pid, {
-    pushed: [...x.pushed], diagnosed: [...x.diagnosed], resolved: x.resolved + x.refurbs, refurbs: x.refurbs,
-    interacted: x.touched.size + (x.refurbTouched || 0),
-  }]));
+  const teamStatsOut = Object.fromEntries(Object.entries(teamStats).map(([pid, x]) => [pid, Object.fromEntries(Object.entries(x).map(([k, v]) => [k, [...v]]))]));
 
   // 💰 Today's money (Team tab): payments received + invoiced, split by who created each invoice.
   let money = null;
@@ -500,6 +529,7 @@ async function buildState(me, { force = false } = {}) {
     personToday,
     notedToday,
     teamStats: teamStatsOut,
+    statTickets,
     refurbs: myRefurbRows.map(r => ({
       id: Number(r.id), label: r.label, issueType: r.issue_type, subtype: r.subtype, model: r.model, repairs: r.repairs || [],
       state: r.state, bookMinutes: r.book_minutes, doneAt: ms(r.done_at), createdAt: ms(r.created_at),
@@ -744,7 +774,9 @@ async function setIssueType(me, { ticketId, issueType }) {
 // [{ personId, pct }] in whole percents summing to 100; primary = who owns it from now on. Changing the
 // primary also re-assigns the ticket to that person in RepairShopr.
 async function setCredit(me, { ticketId, shares, primary }) {
-  const id = ticketIdOf(ticketId);
+  const id = Number(ticketId);
+  if (!Number.isInteger(id) || id === 0) throw new HttpError(400, "Bad ticket id");
+  const isRefurb = id < 0;   // refurbs live only in the app — nothing to re-assign in RepairShopr
   const t0 = today();
   const sql = db();
   const list = (Array.isArray(shares) ? shares : []).map(x => ({ personId: String(x.personId || ""), pct: Math.round(Number(x.pct)) }))
@@ -768,7 +800,7 @@ async function setCredit(me, { ticketId, shares, primary }) {
   for (const pid of merged.keys()) if (!people.has(pid)) throw new HttpError(400, `Unknown person: ${pid}`);
 
   // New primary → re-assign the ticket in RepairShopr first (if that fails, nothing changes).
-  if (newPrimary && newPrimary !== c.primary_person) {
+  if (newPrimary && newPrimary !== c.primary_person && !isRefurb) {
     const p = people.get(newPrimary);
     if (p.rs_user_id == null) throw new HttpError(400, `${p.name} isn't linked to a RepairShopr user yet (Admin Console → Users)`);
     await assignTicket(id, Number(p.rs_user_id), keyFor(me));
@@ -781,7 +813,7 @@ async function setCredit(me, { ticketId, shares, primary }) {
     if (rows.length) await tx`insert into credit_shares ${tx(rows, "ticket_id", "work_date", "person_id", "pct")}`;
     await tx`update completions set primary_person = ${newPrimary} where ticket_id = ${id} and work_date = ${t0}`;
   });
-  return { ok: true, reassigned: !!newPrimary && newPrimary !== c.primary_person };
+  return { ok: true, reassigned: !isRefurb && !!newPrimary && newPrimary !== c.primary_person };
 }
 
 // Answer the "Is the diagnosis 100% completed?" question.
@@ -1020,13 +1052,26 @@ async function refurbAction(me, b) {
     if (!String(r.label || "").trim()) throw new HttpError(400, "Enter the refurb # first");
     if (!r.model || !(r.repairs || []).length) throw new HttpError(400, "Pick the model and at least one repair first");
     await localTimer({ id: r.person_id }, -Number(r.id), "stop").catch(() => {});
-    await sql`update refurbs set state = 'done', book_minutes = ${minutes}, done_at = now(), done_date = ${today()} where id = ${r.id}`;
+    const t0 = today();
+    await sql.begin(async tx => {
+      await tx`update refurbs set state = 'done', book_minutes = ${minutes}, done_at = now(), done_date = ${t0} where id = ${r.id}`;
+      // A finished refurb is a completion (ticket_id = -refurb id): it lands in Completed tickets and its credit can be shared.
+      await tx`insert into completions (ticket_id, work_date, resolved_at, assigned_person, primary_person, book_minutes)
+               values (${-Number(r.id)}, ${t0}, now(), ${r.person_id}, ${r.person_id}, ${minutes})
+               on conflict (ticket_id, work_date) do update set resolved_at = now(), book_minutes = excluded.book_minutes`;
+      await tx`delete from credit_shares where ticket_id = ${-Number(r.id)} and work_date = ${t0}`;
+      await tx`insert into credit_shares (ticket_id, work_date, person_id, pct) values (${-Number(r.id)}, ${t0}, ${r.person_id}, 100)`;
+    });
     return { ok: true, minutes };
   }
   if (b.action === "reopen") {
     if (r.state !== "done") return { ok: true };
     if (r.done_date && dstr(r.done_date) !== today()) throw new HttpError(400, "Only today's completed refurbs can be undone");
-    await sql`update refurbs set state = 'open', book_minutes = null, done_at = null, done_date = null where id = ${r.id}`;
+    await sql.begin(async tx => {
+      await tx`update refurbs set state = 'open', book_minutes = null, done_at = null, done_date = null where id = ${r.id}`;
+      await tx`delete from credit_shares where ticket_id = ${-Number(r.id)}`;
+      await tx`delete from completions where ticket_id = ${-Number(r.id)}`;
+    });
     return { ok: true };
   }
   if (b.action === "delete") {
