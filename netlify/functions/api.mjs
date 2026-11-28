@@ -18,7 +18,7 @@ import { syncFromRs, DEFAULT_QUEUE_STATUSES } from "../../lib/sync.mjs";
 import { syncTimers, syncTimersThrottled, rsTimerAction, rsTimerTotals } from "../../lib/timers.mjs";
 import { ensureSchema } from "../../lib/migrate.mjs";
 import { RS_ISSUE_TYPES, ISSUE_TYPE_TO_DEVICE } from "../../lib/booktime.mjs";
-import { buildReport, syncInvoiceSnaps, laborProducts } from "../../lib/reports.mjs";
+import { buildReport, syncInvoiceSnaps, laborProducts, splitInvoice } from "../../lib/reports.mjs";
 import { getAutoSettings, cleanAutoSettings, webhookInfo, setWebhook, sendCardReport, lastAutoRun, sendReportNow, discordReady, pingWebhook, getSendMessage, setSendMessage } from "../../lib/ccauto.mjs";
 import { syncCardSales, syncPastDay, cardSalesFor, valorDiagnose, previousBusinessDay, valorConfigured, valorReaders, namedReaders, ValorError } from "../../lib/valor.mjs";
 
@@ -407,12 +407,20 @@ async function buildState(me, { force = false } = {}) {
       };
       const byMethod = {}, byWho = {};
       for (const p of m.payments) byMethod[p.method] = (byMethod[p.method] || 0) + p.amount;
-      // Credit: whoever the invoice's ticket is assigned to; no ticket (or unassigned ticket) → invoice creator.
+      // Credit per LINE: whoever added each line. Lines with no one recorded (e.g. Bench Fee) → the ticket's
+      // assignee, else the invoice creator. Invoices whose lines aren't saved yet count whole the same way.
+      const snaps = new Map((await sql`select * from invoice_snap where invoice_id = any(${m.invoices.map(i => i.id)}::bigint[])`).map(r => [String(r.invoice_id), r]));
       for (const i of m.invoices) {
-        const w = nameOfRs(i.ticketId != null && i.ticketUserId != null ? i.ticketUserId : i.userId), k = w.personId || w.name;
-        (byWho[k] ||= { ...w, total: 0, subtotal: 0, count: 0 });
-        byWho[k].total += i.total; byWho[k].subtotal += i.subtotal; byWho[k].count++;
+        const fb = i.ticketId != null && i.ticketUserId != null ? i.ticketUserId : i.userId;
+        const snap = snaps.get(String(i.id));
+        const parts = snap ? splitInvoice({ ...snap, owner_rs_user: fb }, i.subtotal) : [{ uid: fb, revenue: i.subtotal }];
+        for (const part of parts) {
+          const w = nameOfRs(part.uid), k = w.personId || w.name;
+          (byWho[k] ||= { ...w, total: 0, subtotal: 0, count: 0, _inv: new Set() });
+          byWho[k].subtotal += part.revenue; byWho[k].total += part.revenue; byWho[k]._inv.add(i.id);
+        }
       }
+      for (const w of Object.values(byWho)) { w.count = w._inv.size; delete w._inv; }
       money = {
         paymentsTotal: m.payments.reduce((a, p) => a + p.amount, 0), paymentsCount: m.payments.length, paymentsError: m.paymentsError || null,
         byMethod: Object.entries(byMethod).map(([method, amount]) => ({ method, amount })).sort((a, b) => b.amount - a.amount),

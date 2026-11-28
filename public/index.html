@@ -2338,7 +2338,7 @@ function renderMoney() {
   const methods = m.byMethod.map(x => `<span class="money-chip">${esc(x.method)} ${fmtMoney(x.amount)}</span>`).join("");
   const who = m.byWho.map(w => {
     const p = w.personId && PEOPLE[w.personId];
-    const pct = m.invoicedTotal > 0 ? (w.total / m.invoicedTotal) * 100 : 0;
+    const pct = m.invoicedSubtotal > 0 ? (w.total / m.invoicedSubtotal) * 100 : 0;
     return `<div class="money-who">
       <span class="money-who-name">${p ? `<span class="avatar" style="background:${esc(p.color)};width:18px;height:18px;font-size:8.5px;margin-right:6px">${esc(p.initials)}</span>` : `<span class="money-noav"></span>`}<span style="overflow:hidden;text-overflow:ellipsis">${esc(w.name)}</span></span>
       <div class="mini-meter-track money-bar"><div class="mini-meter-fill" style="width:${pct.toFixed(1)}%"></div></div>
@@ -2365,7 +2365,7 @@ function renderMoney() {
           ${who ? `<div class="money-whos">${who}</div>` : ""}
         </div>
       </div>
-      <div class="meter-note" style="margin-top:6px">Invoiced % goes to whoever the invoice's ticket is assigned to — or whoever created the invoice, if it has no ticket.</div>
+      <div class="meter-note" style="margin-top:6px">Per person = each invoice line counts for whoever added it (amounts before tax). Lines with no one recorded go to the ticket's assignee.</div>
     </div>`;
 }
 // Today's credit for one person. Resolved = tickets they're primary on (and hold a share of).
@@ -3069,7 +3069,7 @@ function renderReports() {
           <td><b>${money$(tot.labor)}</b> <span class="money-sub">· ${qty$(tot.laborQty)}</span></td><td class="num-cell"><b>${tot.invoices}</b></td>
           <td class="book-text"><b>${fmtHM(tot.book)}</b></td><td class="actual-text"><b>${fmtHM(tot.actual)}</b></td><td class="num-cell"><b>${tot.resolved}</b></td><td class="num-cell"><b>${tot.total}</b></td></tr></tfoot>
       </table></div>
-      <div class="meter-note" style="margin-top:8px">Revenue = invoice subtotals before tax · Profit = revenue − line-item cost · Labor SKUs = $ and count of items in RepairShopr's <b>${esc(r.labor?.category || "Repair Service")}</b> category${r.labor?.categories?.length > 1 ? ` (+ ${r.labor.categories.length - 1} subcategor${r.labor.categories.length === 2 ? "y" : "ies"})` : ""}. Invoices count for whoever the ticket is assigned to (no ticket → invoice creator).
+      <div class="meter-note" style="margin-top:8px">Revenue = invoice subtotals before tax · Profit = revenue − line-item cost · Labor SKUs = $ and count of items in RepairShopr's <b>${esc(r.labor?.category || "Repair Service")}</b> category${r.labor?.categories?.length > 1 ? ` (+ ${r.labor.categories.length - 1} subcategor${r.labor.categories.length === 2 ? "y" : "ies"})` : ""}. Each invoice line counts for whoever added it (lines with no one recorded → the ticket's assignee).
       ${r.labor && r.labor.found === false ? `<br><span class="bad-text">No RepairShopr product category named "${esc(r.labor.category)}" was found — labor shows $0.</span>` : ""}
       ${r.warning ? `<br><span class="bad-text">${esc(r.warning)}</span>` : ""}</div>`;
   }
@@ -3185,7 +3185,7 @@ function buildSalesPdf(data, f) {
     doc.autoTable({ ...PDF_TABLE, startY: doc.lastAutoTable.finalY + 30, head: [["Day", "Invoices", "Revenue", "Profit", "Margin", "Labor $", "Labor SKUs"]], body: daily });
   }
   const since = data.salesSince ? ` Sales data is recorded from ${shortDay(data.salesSince)} on.` : "";
-  return pdfFinish(doc, `Revenue = invoice subtotals before tax. Profit = revenue - line-item cost. Labor SKUs = items in RepairShopr's "${data.labor?.category || "Repair Service"}" category (and subcategories). Invoices count for whoever the ticket is assigned to (no ticket: invoice creator).${since}`);
+  return pdfFinish(doc, `Revenue = invoice subtotals before tax. Profit = revenue - line-item cost. Labor SKUs = items in RepairShopr's "${data.labor?.category || "Repair Service"}" category (and subcategories). Each invoice line counts for whoever added it (lines with no one recorded: the ticket's assignee).${since}`);
 }
 function buildTimePdf(data, f) {
   const doc = pdfStart("Book time vs actual time", data, f);
