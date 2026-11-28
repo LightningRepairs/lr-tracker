@@ -692,6 +692,7 @@
   .card-pickers { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
   .card-actions { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-top: 12px; }
   td.num-r, th.num-r { text-align: right; font-variant-numeric: tabular-nums; }
+  .del-person { color: var(--critical); }
   .default-tag { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; color: var(--text-muted); border: 1px dashed var(--border); border-radius: 999px; padding: 0 6px; margin-left: 4px; }
   .note-chip { font-size: 11.5px; font-weight: 600; border: 1px solid var(--border); border-radius: 999px; padding: 2px 9px; white-space: nowrap; background: var(--surface-2); }
   .note-chip.solo { border-color: color-mix(in srgb, var(--brand-blue) 55%, transparent); color: var(--brand-blue); }
@@ -2601,7 +2602,8 @@ function renderAdminUsers() {
         <span class="pin-state ${p.hasPin ? "ok" : ""}">${p.hasPin ? "✓ has PIN" : "no PIN yet"}</span>
       </td>
       <td style="white-space:nowrap">${renderKeyCell(p)}</td>
-      <td>${p.id === state.me ? "" : `<button class="btn ghost small" onclick="setActive(${jsArg(p.id)}, ${!p.active})">${p.active ? "Deactivate" : "Reactivate"}</button>`}</td>
+      <td style="white-space:nowrap">${p.id === state.me ? "" : `<button class="btn ghost small" onclick="setActive(${jsArg(p.id)}, ${!p.active})">${p.active ? "Deactivate" : "Reactivate"}</button>
+        <button class="btn ghost small del-person" onclick="deletePerson(${jsArg(p.id)})" title="Permanently delete (for test accounts)">🗑 Delete</button>`}</td>
     </tr>
   `).join("");
   return `
@@ -2742,6 +2744,13 @@ async function savePin(personId) {
   if (r) { state.pinDrafts[personId] = ""; showToast(`PIN set for ${PEOPLE[personId].name}`); render(); }
 }
 function setActive(personId, active) { mutate("/admin/person", { id: personId, active }); }
+async function deletePerson(personId) {
+  const p = PEOPLE[personId];
+  const typed = prompt(`Permanently delete ${p.name}?\n\nThis erases everything the app has for them (time, credit, notes, refurbs). It can't be undone. Nothing in RepairShopr is changed.\n\nFor real staff who left, use Deactivate instead — it keeps their history.\n\nType their full name to confirm:`);
+  if (typed == null) return;
+  const r = await mutate("/admin/person-delete", { id: personId, confirmName: typed });
+  if (r) showToast(`${p.name} deleted`);
+}
 async function addPerson() {
   const name = state.newPersonName.trim();
   if (!name) return;

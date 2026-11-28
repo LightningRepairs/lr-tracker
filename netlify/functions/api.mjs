@@ -97,6 +97,7 @@ export default async (req, context) => {
           case "/admin/eligible-statuses":  return json(await setSetting("diagnosis_eligible_statuses", (body.statuses || []).map(String).slice(0, 50)));
           case "/admin/queue-statuses":     return json(await setSetting("queue_statuses", (body.statuses || []).map(String).slice(0, 50)));
           case "/admin/person":             return json(await upsertPerson(me, body));
+          case "/admin/person-delete":      return json(await deletePerson(me, body));
           case "/admin/pin":                return json(await setPin(body));
           case "/admin/person-key":         return json(await setPersonKey(body));
           case "/admin/default-key":        return json(await setDefaultKey(body));
@@ -990,6 +991,27 @@ async function refurbTimer(me, negId, action) {
     }
   }
   return localTimer(me, negId, action);
+}
+
+// Permanently remove a person (e.g. a test account) and everything tied to them in the app.
+// Nothing in RepairShopr is touched. Real staff should be Deactivated instead (keeps their history).
+async function deletePerson(me, { id, confirmName }) {
+  const sql = db();
+  const [p] = await sql`select * from people where id = ${String(id || "")}`;
+  if (!p) throw new HttpError(404, "Unknown person");
+  if (p.id === me.id) throw new HttpError(400, "You can't delete yourself");
+  if (String(confirmName || "").trim().toLowerCase() !== p.name.trim().toLowerCase()) throw new HttpError(400, "Type their full name exactly to confirm");
+  await sql.begin(async tx => {
+    for (const t of ["attendance", "work_log", "timers", "time_entries", "notes", "assignment_log", "queue_log", "credit_shares", "diag_prompts", "refurbs", "notifications"]) {
+      await tx.unsafe(`delete from ${t} where person_id = $1`, [p.id]).catch(e => { if (!/does not exist/.test(e.message)) throw e; });
+    }
+    await tx`update completions set assigned_person = null where assigned_person = ${p.id}`;
+    await tx`update completions set primary_person = null where primary_person = ${p.id}`;
+    await tx`update ticket_state set diagnosis_claimed_by = null where diagnosis_claimed_by = ${p.id}`;
+    await tx`update ticket_state set repair_claimed_by = null where repair_claimed_by = ${p.id}`;
+    await tx`delete from people where id = ${p.id}`;
+  });
+  return { ok: true };
 }
 
 async function setRoleGoal({ position, book, actual }) {
