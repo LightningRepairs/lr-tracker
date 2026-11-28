@@ -407,8 +407,8 @@ async function buildState(me, { force = false } = {}) {
       };
       const byMethod = {}, byWho = {};
       for (const p of m.payments) byMethod[p.method] = (byMethod[p.method] || 0) + p.amount;
-      // Credit per LINE: whoever added each line. Lines with no one recorded (e.g. Bench Fee) → the ticket's
-      // assignee, else the invoice creator. Invoices whose lines aren't saved yet count whole the same way.
+      // Credit per LINE: whoever added each line. Bench fees / lines with no one recorded count for no one.
+      // Invoices whose lines aren't saved yet (first minute or so) count whole for the ticket's assignee.
       const snaps = new Map((await sql`select * from invoice_snap where invoice_id = any(${m.invoices.map(i => i.id)}::bigint[])`).map(r => [String(r.invoice_id), r]));
       for (const i of m.invoices) {
         const fb = i.ticketId != null && i.ticketUserId != null ? i.ticketUserId : i.userId;
