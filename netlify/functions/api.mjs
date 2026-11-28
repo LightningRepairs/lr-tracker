@@ -221,11 +221,12 @@ async function buildState(me, { force = false } = {}) {
     union select ticket_id from timers where state in ('running','paused')
     union select ticket_id from notes where work_date = ${t0}
     union select ticket_id from completions where work_date = ${t0}
-    union select ticket_id from diag_prompts where state = 'pending'`;
+    union select ticket_id from diag_prompts where state = 'pending'
+    union select ticket_id from push_log where work_date = ${t0}`;
   const extraIds = extraIdRows.map(r => Number(r.ticket_id)).filter(id => id > 0 && !openIds.has(id));
   const ids = [...openIds, ...extraIds];
 
-  const [stateRows, workRows, assignRows, noteRows, timerRows, totalRows, todayRows, bookTodayRows, spentTodayRows, runningRows, queueRows, promptRows, diagCreditRows, appNoteRows, moneyCache] = await Promise.all([
+  const [stateRows, workRows, assignRows, noteRows, timerRows, totalRows, todayRows, bookTodayRows, spentTodayRows, runningRows, queueRows, promptRows, diagCreditRows, appNoteRows, moneyCache, pushTodayRows] = await Promise.all([
     sql`select * from ticket_state where ticket_id = any(${ids}::bigint[])`,
     sql`select * from work_log where ticket_id = any(${ids}::bigint[]) and work_date = ${t0}`,
     sql`select * from assignment_log where ticket_id = any(${ids}::bigint[]) and work_date = ${t0}`,
@@ -243,6 +244,7 @@ async function buildState(me, { force = false } = {}) {
     sql`select person_id, sum(credited_minutes)::int as m from work_log where work_date = ${t0} and outcome = 'diagnosis_completed' group by 1`,
     sql`select distinct person_id from notes where work_date = ${t0}`,
     sql`select value from rs_cache where key = 'money'`,
+    sql`select ticket_id, person_id, to_status, created_at from push_log where work_date = ${t0}`,
   ]);
   // Refurbs: mine (open + done today) with their timers; everyone's done-today minutes count as book time.
   const [myRefurbRows, refurbDoneRows] = await Promise.all([
@@ -291,6 +293,7 @@ async function buildState(me, { force = false } = {}) {
     for (const id of none) completionBy.get(id).noInvoice = true;
   } catch (e) { console.warn("invoice check", e.message); }
   const group = (rows) => { const m = new Map(); for (const r of rows) { const k = Number(r.ticket_id); if (!m.has(k)) m.set(k, []); m.get(k).push(r); } return m; };
+  const pushBy = group(pushTodayRows);
   const workBy = group(workRows), assignBy = group(assignRows), notesBy = group(noteRows), timersBy = group(timerRows), queueBy = group(queueRows);
   const totalBy = group(totalRows), todayBy = group(todayRows);
 
@@ -327,6 +330,7 @@ async function buildState(me, { force = false } = {}) {
       assignmentLog: (assignBy.get(t.id) || []).map(a => ({ personId: a.person_id, date: dstr(a.work_date) })),
       notes: (notesBy.get(t.id) || []).map(n => ({ author: n.person_id, date: t0 })),
       queuedToday: (queueBy.get(t.id) || []).map(q => q.person_id), // people who had it in their queue today
+      pushedToday: (pushBy.get(t.id) || []).map(p => ({ personId: p.person_id, at: ms(p.created_at), toStatus: p.to_status })),
       completion: completionBy.get(t.id) || null,
       diagPrompt: promptBy.get(t.id) || null,
       timers,
@@ -1036,6 +1040,11 @@ async function refurbAction(me, b) {
   const r = await myRefurb(me, Number(b.id));
   if (b.action === "update") {
     if (r.state === "done") throw new HttpError(400, "Undo the completion before changing it");
+    // The refurb # comes first and is locked once it's in.
+    const hasLabel = !!String(r.label || "").trim();
+    if (b.label !== undefined && hasLabel && text(b.label, 80) !== r.label) throw new HttpError(400, "The refurb # can't be changed once it's entered");
+    if (!hasLabel && (b.issueType !== undefined || b.model !== undefined || b.subtype !== undefined || b.repairs !== undefined) && !text(b.label, 80))
+      throw new HttpError(400, "Enter the refurb # first");
     const issueType = b.issueType !== undefined ? (RS_ISSUE_TYPES.includes(b.issueType) ? b.issueType : null) : r.issue_type;
     const typeChanged = issueType !== r.issue_type;
     const model = b.model !== undefined ? (text(b.model, 120) || null) : (typeChanged ? null : r.model);
@@ -1089,6 +1098,7 @@ async function refurbTimer(me, negId, action) {
   const r = await myRefurb(me, -negId);
   if (r.person_id !== me.id) throw new HttpError(403, "Only the person doing the refurb runs its timer");
   if (r.state === "done" && action === "start") throw new HttpError(400, "Undo the completion to start its timer again");
+  if (action === "start" && !String(r.label || "").trim()) throw new HttpError(400, "Enter the refurb # first");
   if (action === "start") {
     // Never two timers: pause my RepairShopr timer if one is running (the app's own ones are paused by localTimer).
     const myKey = keyFor(me);
