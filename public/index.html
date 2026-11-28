@@ -607,6 +607,16 @@
   .refurb-label .ticket-num { font-size: 11px; color: var(--text-muted); }
   .refurb-label .ticket-subject { font-size: 13px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .refurb-input { width: 100%; font: inherit; font-size: 12.5px; padding: 4px 7px; border: 1px solid var(--border); border-radius: 6px; background: var(--surface); color: var(--text-primary); }
+  .addon-line { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 4px; align-items: center; }
+  .addon-line .addon-select { width: auto; max-width: 220px; padding: 2px 6px; font-size: 12px; }
+  .refurb-chip.addon-chip { border-style: dashed; }
+  .bt-addon-row td { border-top: 2px solid var(--border); background: color-mix(in srgb, var(--brand-blue) 6%, transparent); }
+  .bt-addon-row .booktime-row-label { font-weight: 700; }
+  .bt-misc, .bt-misc-h { background: color-mix(in srgb, var(--warning) 14%, transparent); }
+  .bt-sub { font-size: 9.5px; font-weight: 600; color: var(--text-muted); text-transform: none; letter-spacing: 0; }
+  .bt-na { text-align: center; color: var(--text-muted); }
+  .trash-btn { color: var(--critical); display: inline-grid; place-items: center; }
+  .trash-btn:hover { background: color-mix(in srgb, var(--critical) 14%, var(--surface)); }
   .refurb-chips { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 4px; }
   .refurb-chip { display: inline-flex; align-items: center; gap: 4px; font-size: 11.5px; border: 1px solid var(--border); border-radius: 999px; padding: 1px 4px 1px 9px; background: var(--surface-2); }
   .refurb-chip b { color: var(--book); font-weight: 700; }
@@ -649,6 +659,18 @@
   .due-pill.today, .due-pill.overdue { background: var(--critical); color: #fff; }
   .due-pill.tomorrow { background: var(--warning); color: #3a2a00; }
   .due-badge { display: inline-block; min-width: 15px; padding: 0 4px; margin-left: 3px; border-radius: 999px; font-size: 9.5px; font-weight: 800; text-align: center; line-height: 15px; vertical-align: top; position: relative; top: -6px; }
+  .queue-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 10px; }
+  .queue-head h2 { margin: 0; }
+  .queue-summary { display: flex; gap: 6px; flex-wrap: wrap; }
+  .qs-cell { min-width: 74px; padding: 5px 10px; border-radius: 8px; border: 1px solid var(--grid); text-align: center; background: var(--surface); }
+  .qs-num { font-size: 18px; font-weight: 800; line-height: 1.1; }
+  .qs-label { font-size: 10.5px; color: var(--text-muted); white-space: nowrap; }
+  .qs-cell.total { border-color: var(--text-muted); }
+  .qs-cell.red:not(.zero) { background: var(--critical); border-color: var(--critical); }
+  .qs-cell.red:not(.zero) .qs-num, .qs-cell.red:not(.zero) .qs-label { color: #fff; }
+  .qs-cell.yellow:not(.zero) { background: var(--warning); border-color: var(--warning); }
+  .qs-cell.yellow:not(.zero) .qs-num, .qs-cell.yellow:not(.zero) .qs-label { color: #3a2a00; }
+  .qs-cell.zero .qs-num { color: var(--text-muted); }
   .due-badge.red { background: var(--critical); color: #fff; }
   .due-badge.yellow { background: var(--warning); color: #3a2a00; box-shadow: inset 0 0 0 1.5px rgba(0,0,0,.45); }
   .due-badges { display: inline-flex; gap: 2px; width: 44px; flex: none; vertical-align: top; margin-left: 2px; }
@@ -762,10 +784,13 @@
   .refresh-btn:hover { filter: brightness(1.15); }
   .refresh-btn.spinning { opacity: 0.6; pointer-events: none; }
   .diag-panel { border-color: var(--book); }
-  .diag-prompt { display: grid; grid-template-columns: minmax(190px, 1.3fr) 118px 3fr; align-items: center; column-gap: 10px; padding: 8px 4px; border-bottom: 1px solid var(--grid); }
+  .diag-prompt { display: grid; grid-template-columns: minmax(190px, 240px) 130px 1fr; align-items: center; column-gap: 10px; padding: 8px 4px; border-bottom: 1px solid var(--grid); }
   .diag-prompt:last-child { border-bottom: none; }
-  .diag-ask { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
-  .diag-q { font-size: 13px; margin-right: 4px; }
+  .diag-ask { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .diag-q { font-size: 13px; margin-right: 4px; flex: 1 1 280px; line-height: 1.4; }
+  .diag-btns { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; flex-shrink: 0; }
+  .need-tag { font-size: 11px; font-weight: 600; padding: 2px 7px; border-radius: 10px; background: var(--grid); white-space: nowrap; }
+  .need-actual { width: 64px; padding: 4px 6px; font-size: 13px; }
   .diag-gain { font-weight: 800; margin-left: 4px; opacity: 0.85; }
   @media (max-width: 1100px) { .diag-prompt { display: flex; flex-wrap: wrap; gap: 6px; } .diag-ask { justify-content: flex-start; } }
   .key-state { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-bottom: 4px; }
@@ -944,6 +969,7 @@ let state = {
   dueEditOpen: null,       // ticket whose due-date popup is open
   dueCustom: "",
   sortMode: "default",     // My Day order: default | reverse | oldest | newest
+  needActualDraft: {},     // ticket id → minutes typed in a 📌 "no actual time" reminder
   diagStep: {},            // ticket id → "repair" once "diagnosis 100% completed?" was answered Yes
   diagMinRepairTotal: 119,
   manualTimeNote: false,
@@ -1055,6 +1081,7 @@ function applyServerState(d) {
   state.money = d.money || null;
   state.ccAuto = d.ccAuto || null;
   state.notedToday = d.notedToday || [];
+  state.teamStats = d.teamStats || {};
   state.notifications = d.notifications || null;
   state.cardReaders = d.cardReaders || [];
   state.refurbs = (d.refurbs || []).map(buildRefurb);
@@ -1095,10 +1122,23 @@ function diagnosticsMinutesFor(t) {
   const row = (t.deviceRow && grid.data[t.deviceRow]) ? grid.data[t.deviceRow] : (grid.rows.length ? grid.data[grid.rows[0]] : null);
   return row ? (row["Diagnostics"] ?? null) : null;
 }
+const SPECIAL_COLS = ["Diagnostics", "Misc Repair"];   // not pickable repair types
 function repairColumnsFor(t) {
   const grid = deviceGridFor(t);
   if (!grid || !t.deviceRow || !grid.data[t.deviceRow]) return [];
-  return grid.columns.filter(c => c !== "Diagnostics" && grid.data[t.deviceRow][c] != null);
+  return grid.columns.filter(c => !SPECIAL_COLS.includes(c) && grid.data[t.deviceRow][c] != null);
+}
+// Add-on minutes (same for every model of a device type). null = that repair can't be an add-on.
+function addOnMinutesFor(t, col) { const g = deviceGridFor(t); const v = g && g.addOns ? g.addOns[col] : null; return v == null ? null : Number(v); }
+function addOnColumnsFor(t) {
+  const g = deviceGridFor(t);
+  if (!g || !t.deviceRow) return [];
+  return g.columns.filter(c => !SPECIAL_COLS.includes(c) && c !== t.repairType && g.addOns && g.addOns[c] != null);
+}
+// Several repairs on one device (refurbs): the biggest counts in full, the rest as add-ons (full if no add-on minutes set).
+function multiRepairMinutesFor(t, repairs) {
+  const list = (repairs || []).map(r => ({ r, full: repairMinutesFor(t, r) || 0 })).sort((a, b) => b.full - a.full);
+  return list.reduce((sum, x, i) => sum + (i === 0 ? x.full : (addOnMinutesFor(t, x.r) ?? x.full)), 0);
 }
 function repairMinutesFor(t, repairType) {
   const grid = deviceGridFor(t);
@@ -1108,7 +1148,9 @@ function repairMinutesFor(t, repairType) {
 // A ticket's book time = the picked repair type's minutes. Until a repair type is picked, it's the
 // Diagnostics minutes. (Never the two added together — they're credited separately.)
 function recomputeBookedSec(t) {
-  const min = t.repairType ? (repairMinutesFor(t, t.repairType) || 0) : (diagnosticsMinutesFor(t) || 0);
+  const min = t.repairType
+    ? (repairMinutesFor(t, t.repairType) || 0) + (t.addons || []).reduce((a, x) => a + (x !== t.repairType ? (addOnMinutesFor(t, x) || 0) : 0), 0)
+    : (diagnosticsMinutesFor(t) || 0);
   t.bookedSec = min * 60;
 }
 
@@ -1617,6 +1659,8 @@ function ticketsEligibleForDiagnosisCredit(userId) {
 
 /* ----- Type / Model / Repair-type picker ----- */
 function persistDevice(t) {
+  if (!t.repairType) t.addons = [];
+  t.addons = (t.addons || []).filter(a => a !== t.repairType);
   recomputeBookedSec(t);
   render();
   mutate("/device", {
@@ -1625,8 +1669,11 @@ function persistDevice(t) {
     subtype: t.deviceOverrideSubtype || null,
     row: t.deviceRow || null,
     repairType: t.repairType || null,
+    addons: t.addons,
   });
 }
+function addTicketAddon(ticketId, col) { const t = findTicket(ticketId); if (!col) return; t.addons = [...new Set([...(t.addons || []), col])]; persistDevice(t); }
+function removeTicketAddon(ticketId, col) { const t = findTicket(ticketId); t.addons = (t.addons || []).filter(a => a !== col); persistDevice(t); }
 function openTypeEdit(ticketId) {
   state.typeEditOpen = ticketId;
   render();
@@ -1645,7 +1692,7 @@ function setIssueType(ticketId, val) {
   if (t.issueType === val) { render(); return; }
   mutate("/issue-type", { ticketId, issueType: val }, () => {
     t.issueType = val;
-    t.deviceOverrideSubtype = null; t.deviceRow = null; t.repairType = null;
+    t.deviceOverrideSubtype = null; t.deviceRow = null; t.repairType = null; t.addons = [];
     resolveDevice(t); recomputeBookedSec(t);
   });
 }
@@ -1656,7 +1703,7 @@ function setTicketModel(ticketId, val) {
   const mapped = ISSUE_TYPE_TO_DEVICE[t.issueType];
   t.deviceOverrideSubtype = mapped && sub !== mapped.subtype ? sub : null;
   t.deviceRow = rest.join("|") || null;
-  t.repairType = null;
+  t.repairType = null; t.addons = [];
   resolveDevice(t);
   persistDevice(t);
 }
@@ -1666,7 +1713,11 @@ function setTicketRepairType(ticketId, val) {
   persistDevice(t);
 }
 function bookBreakdown(t) {
-  if (t.repairType) { const m = repairMinutesFor(t, t.repairType); return m ? `${t.repairType} ${m}m` : ""; }
+  if (t.repairType) {
+    const m = repairMinutesFor(t, t.repairType);
+    const extra = (t.addons || []).map(a => `+ ${a} add-on ${addOnMinutesFor(t, a) || 0}m`).join(" ");
+    return m ? `${t.repairType} ${m}m${extra ? " " + extra : ""}` : "";
+  }
   const d = diagnosticsMinutesFor(t);
   return d ? `Diagnostics ${d}m (until a repair type is picked)` : "";
 }
@@ -1707,8 +1758,17 @@ function renderDevicePicker(t) {
         <option value="" ${!t.repairType ? "selected" : ""} disabled>Repair type…</option>
         ${repairOpts}
       </select>
+      ${t.repairType ? renderAddonPicker(t) : ""}
     </div>
   `;
+}
+
+function renderAddonPicker(t) {
+  const have = new Set(t.addons || []);
+  const opts = addOnColumnsFor(t).filter(c => !have.has(c)).map(c => `<option value="${esc(c)}">${esc(c)} (+${addOnMinutesFor(t, c)}m)</option>`).join("");
+  const chips = (t.addons || []).map(a => `<span class="refurb-chip addon-chip">+ ${esc(a)} <b>${addOnMinutesFor(t, a) ?? 0}m</b><button type="button" onclick="removeTicketAddon(${t.id}, ${jsArg(a)})" title="Remove add-on">✕</button></span>`).join("");
+  if (!opts && !chips) return "";
+  return `<div class="addon-line">${chips}${opts ? `<select class="device-select addon-select" onchange="addTicketAddon(${t.id}, this.value)"><option value="" selected disabled>+ Add-on…</option>${opts}</select>` : ""}</div>`;
 }
 
 /* ----- diagnosis / repair credit ----- */
@@ -1856,7 +1916,7 @@ function renderDay() {
       ${tickets.length ? tableHead("") : ""}
       ${ticketRows}
     </div>
-    ${renderDiagnosisSection()}
+    ${renderNeedsInputSection()}
     ${renderRefurbSection()}
     <div class="panel">
       <h2>Your completed tickets <span class="meter-note" style="display:inline">&mdash; resolved today while assigned to you</span></h2>
@@ -1916,37 +1976,109 @@ function saveActual(id, fromBlur) {
     t.runningSince = null; t.spentSec = minutes * 60; t.timerState = "logged";
   });
 }
-/* ----- 🩺 Diagnosis credit: appears only when one of your tickets moves from the queue into a
-   diagnosis status. One question at a time. Diagnosis can only ever be claimed once per ticket. ----- */
+/* ----- 📌 Needs your input: tickets that LEFT the queue and need an answer from you.
+   • Diagnosis: one of your tickets moved from the queue to a waiting status (parts / customer). Claiming it
+     (first answer) asks the $ question next; diagnosis can only ever be claimed once per ticket.
+   • Resolved today with no invoice → make the invoice, or say none is needed.
+   • Resolved today with no actual time → type it in. ----- */
 function myDiagPrompts(userId) {
   return state.tickets.filter(t => t.diagPrompt && t.diagPrompt.personId === userId && !t.diagnosisLocked);
 }
-function renderDiagnosisSection() {
-  const list = myDiagPrompts(state.me);
-  if (!list.length) return "";
+function myNeedsInput(userId) {
+  const done = state.tickets.filter(t => t.completion && creditOwner(t) === userId);
+  const dis = t => t.completion.dismissed || [];
+  return {
+    diag: myDiagPrompts(userId),
+    noInvoice: done.filter(t => t.completion.noInvoice && !dis(t).includes("invoice")),
+    noActual: done.filter(t => !dis(t).includes("actual") && t.timerState !== "running" && liveSpentSec(t) < 60),
+  };
+}
+function needsInputCount(userId) { const n = myNeedsInput(userId); return n.diag.length + n.noInvoice.length + n.noActual.length; }
+function renderNeedsInputSection() {
+  const n = myNeedsInput(state.me);
+  if (!n.diag.length && !n.noInvoice.length && !n.noActual.length) return "";
   return `
     <div class="panel diag-panel">
-      <h2>🩺 Diagnosis credit</h2>
-      ${list.map(renderDiagPrompt).join("")}
+      <h2>📌 Needs your input <span class="meter-note" style="display:inline">&mdash; tickets out of the queue waiting on an answer from you</span></h2>
+      ${n.diag.map(renderDiagPrompt).join("")}
+      ${n.noInvoice.map(renderNoInvoicePrompt).join("")}
+      ${n.noActual.map(renderNoActualPrompt).join("")}
     </div>`;
+}
+// The question depends on where the ticket went: waiting on a PART or waiting on the CUSTOMER.
+function diagQuestionFor(t) {
+  const to = String(t.diagPrompt?.toStatus || "");
+  if (/part/i.test(to)) return {
+    q: `This ticket was removed from the queue, and is now <b>waiting on a part</b>! Is it waiting on a part to perform a repair the client has <b>already been quoted for &amp; approves</b>, or is the part needed to <b>complete the diagnosis</b> and quote the client at a future date?`,
+    yes: "Quoted &amp; approved repair", no: "Needed to finish diagnosis",
+  };
+  if (/client|customer/i.test(to)) return {
+    q: `This ticket was removed from the queue, and is now <b>waiting on the customer</b>! Have we given the client a <b>repair quote</b> and/or are waiting for the client to call us back to give them a completed repair quote? Or are we waiting on the customer to give us <b>more details</b> than we need to complete the diagnosis?`,
+    yes: "Quoted / quote ready", no: "Need more details from them",
+  };
+  return { q: `This ticket left the queue (now <b>${esc(to || t.status)}</b>). Is the diagnosis for this <b>100% completed</b>?`, yes: "Yes", no: "No" };
 }
 function renderDiagPrompt(t) {
   const step2 = state.diagStep[t.id] === "repair";
   const diagMin = diagnosticsMinutesFor(t) || 30;
+  const dq = diagQuestionFor(t);
   const question = step2
     ? `<span class="diag-q">Will the repair total be <b>$${esc(state.diagMinRepairTotal)} or more</b> if the client accepts repairs?</span>
+       <span class="diag-btns">
        <button class="btn small primary" onclick="answerDiag(${t.id}, true, true)" title="You get ${diagMin}m diagnosis credit">Yes <span class="diag-gain">+${diagMin}m</span></button>
        <button class="btn small" onclick="answerDiag(${t.id}, true, false)" title="Diagnosis credit is taken but worth 0m — the repair still earns its credit when resolved">No <span class="diag-gain">0m</span></button>
-       <button class="btn small ghost" onclick="diagBack(${t.id})">← Back</button>`
-    : `<span class="diag-q">Is the diagnosis for this <b>100% completed</b>?</span>
-       <button class="btn small primary" onclick="diagYes(${t.id})">Yes</button>
-       <button class="btn small" onclick="answerDiag(${t.id}, false)" title="Not yet — you (or someone else) can claim it the next time it goes back to the queue and out again">No</button>`;
+       <button class="btn small ghost" onclick="diagBack(${t.id})">← Back</button></span>`
+    : `<span class="diag-q">${dq.q}</span>
+       <span class="diag-btns">
+       <button class="btn small primary" onclick="diagYes(${t.id})" title="Counts as diagnosis 100% complete">${dq.yes}</button>
+       <button class="btn small" onclick="answerDiag(${t.id}, false)" title="Diagnosis not done yet — it can be claimed the next time it goes back to the queue and out again">${dq.no}</button></span>`;
+  return `
+    <div class="diag-prompt" data-need="diag-${t.id}">
+      ${ticketCell(t)}
+      ${statusPill(t)}
+      <div class="diag-ask"><span class="need-tag">🩺 Diagnosis</span>${question}</div>
+    </div>`;
+}
+function renderNoInvoicePrompt(t) {
   return `
     <div class="diag-prompt">
       ${ticketCell(t)}
-      ${statusPill(t)}
-      <div class="diag-ask">${question}</div>
+      <span class="ticket-status resolved">✓ Resolved</span>
+      <div class="diag-ask"><span class="need-tag">🧾 No invoice</span>
+        <span class="diag-q">Resolved with <b>no invoice</b>. Make the invoice in RepairShopr, or clarify what was done.</span>
+        <span class="diag-btns">
+        <a class="btn small primary" href="${esc(rsTicketUrl(t.id))}" target="_blank" rel="noopener">Open in RepairShopr ↗</a>
+        <button class="btn small" onclick="dismissNeed(${t.id}, 'invoice')" title="Warranty, no charge, etc. — stops this reminder">No invoice needed</button></span>
+      </div>
     </div>`;
+}
+function renderNoActualPrompt(t) {
+  const v = state.needActualDraft[t.id] ?? "";
+  return `
+    <div class="diag-prompt">
+      ${ticketCell(t)}
+      <span class="ticket-status resolved">✓ Resolved</span>
+      <div class="diag-ask"><span class="need-tag">⏱ No actual time</span>
+        <span class="diag-q">How many minutes did this take you?</span>
+        <span class="diag-btns">
+        <input id="need-actual-${t.id}" class="need-actual" data-draft="1" type="text" inputmode="numeric" autocomplete="off" placeholder="min" value="${esc(v)}"
+          oninput="this.value = this.value.replace(/[^0-9]/g, '').slice(0, 4); state.needActualDraft[${t.id}] = this.value"
+          onkeydown="if (event.key === 'Enter') saveNeedActual(${t.id})">
+        <button class="btn small primary" onclick="saveNeedActual(${t.id})">Save</button>
+        <button class="btn small ghost" onclick="dismissNeed(${t.id}, 'actual')" title="Stop reminding me about this one">Skip</button></span>
+      </div>
+    </div>`;
+}
+function saveNeedActual(id) {
+  const t = findTicket(id);
+  const minutes = parseMinutes(state.needActualDraft[id]);
+  if (!minutes) { showToast("Type the total minutes, like 45", "error"); return; }
+  delete state.needActualDraft[id];
+  mutate("/manual-time", { ticketId: id, minutes }, () => { t.runningSince = null; t.spentSec = minutes * 60; t.timerState = "logged"; });
+}
+function dismissNeed(id, kind) {
+  const t = findTicket(id);
+  mutate("/input/dismiss", { ticketId: id, kind }, () => { (t.completion.dismissed ||= []).push(kind); });
 }
 function diagYes(id) { state.diagStep[id] = "repair"; render(); }
 function diagBack(id) { delete state.diagStep[id]; render(); }
@@ -2294,13 +2426,17 @@ function renderTeam() {
     const anyRunning = !!(state.personToday[id] && state.personToday[id].runningSince);
     const bookPct = goals ? Math.min(100,(totals.book/goals.book)*100) : 0;
     const credit = creditCounts(id);
+    const ts = (state.teamStats || {})[id] || {};
     return `
       <tr>
         <td><div class="person-cell" title="Active today: ${esc(why)}"><div class="avatar" style="background:${esc(p.color)}">${esc(p.initials)}</div>${esc(p.name)}${anyRunning ? '<span class="live-dot" style="margin-left:8px" title="Timer running"></span>' : ''}</div></td>
         <td>${esc(pos || "—")}${picked ? "" : ` <span class="default-tag" title="Hasn't logged in today — using their default role">default</span>`}</td>
         <td>${goals ? `<div class="mini-meter-track"><div class="mini-meter-fill book" style="width:${bookPct}%"></div></div>${fmtHM(totals.book)} / ${fmtHM(goals.book)}` : '—'}</td>
-        <td class="num-cell">${credit.resolved ? `<button type="button" class="link-num" onclick="showResolved(${jsArg(id)})" title="See ${esc(p.name.split(" ")[0])}'s resolved tickets">${credit.resolved}</button>` : 0}</td>
-        <td class="num-cell">${credit.total}</td>
+        <td class="num-cell">${statNum(ts.pushed, "Moved from the queue to a waiting status (parts / customer) today")}</td>
+        <td class="num-cell">${statNum(ts.diagnosed, "Claimed diagnosis credit today")}</td>
+        <td class="num-cell">${(() => { const n = credit.resolved + (ts.refurbs || 0); const tip = `Resolved as primary: ${credit.resolved}${ts.refurbs ? ` · refurbs finished: ${ts.refurbs}` : ""}`;
+          return credit.resolved ? `<button type="button" class="link-num" onclick="showResolved(${jsArg(id)})" title="${esc(tip)} — click to see them">${n}</button>` : `<span title="${esc(tip)}">${n}</span>`; })()}</td>
+        <td class="num-cell" title="Tickets they touched today: a note, timer time, pushed, diagnosed, resolved or partial credit (refurbs count too)">${ts.interacted || 0}</td>
         <td class="num-cell">${(() => { const n = notesCount(id); return n ? `<button type="button" class="link-num" onclick="showNotes(${jsArg(id)})" title="See the tickets ${esc(p.name.split(" ")[0])} left a note on today">${n}</button>` : 0; })()}</td>
         <td><span class="ticket-count">${tickets.length}</span>${dueBadges(tickets)}</td>
       </tr>
@@ -2316,13 +2452,16 @@ function renderTeam() {
       <h2>Today's team</h2>
       ${loggedInToday.length ? `
       <table>
-        <thead><tr><th>Person</th><th>Position</th><th class="h-book">📖 Book time</th><th class="num-cell" title="Resolved today as the primary (got the credit)">✅ Resolved</th><th class="num-cell" title="Every ticket they got credit for today: resolved, partial credit, or diagnosis credit (even 0m)">Total tickets</th><th class="num-cell" title="Tickets they left a note on today (in RepairShopr or the app)">📝 Notes</th><th>In queue</th></tr></thead>
+        <thead><tr><th>Person</th><th>Position</th><th class="h-book">📖 Book time</th><th class="num-cell" title="Moved from the queue to a waiting status (parts / customer) today — even if diagnosis wasn't claimed">📤 Pushed</th><th class="num-cell" title="Claimed diagnosis credit today">🩺 Diagnosed</th><th class="num-cell" title="Resolved today as the primary, plus refurbs finished">✅ Resolved</th><th class="num-cell" title="Every ticket they touched today: a note, timer time, pushed, diagnosed, resolved or partial credit (refurbs count too)">🤝 Interacted</th><th class="num-cell" title="Tickets they left a note on today (in RepairShopr or the app)">📝 Notes</th><th>In queue</th></tr></thead>
         <tbody>${rows}</tbody>
       </table>` : `<div class="meter-note">Nobody's shown any activity yet today.</div>`}
       ${team.inactive.length ? `<div class="meter-note" style="margin-top:8px">Not active yet today: ${team.inactive.map(id => esc(PEOPLE[id].name.split(" ")[0])).join(", ")} — they show up once they log in, leave a note in RepairShopr, run a timer, get credit or create an invoice.</div>` : ""}
     </div>
     <div class="panel">
-      <h2>All tickets in queue</h2>
+      <div class="queue-head">
+        <h2>All tickets in queue</h2>
+        ${renderQueueSummary(state.tickets.filter(inQ))}
+      </div>
       ${renderQueueGroup("unassigned", "Unassigned", null, state.tickets.filter(t => inQ(t) && t.assignedRsUserId == null))}
       ${people.map(p => renderQueueGroup(p.id, p.name, p.color, ticketsFor(p.id).filter(inQ))).join("")}
       ${otherAssigned.length ? renderQueueGroup("other", "Assigned in RepairShopr to someone not in this app", null, otherAssigned) : ""}
@@ -2464,6 +2603,26 @@ function showNotes(pid) {
   document.getElementById("group-" + key.replace(/[^a-z0-9]/gi, "-"))?.scrollIntoView({ behavior: "smooth", block: "start" });
 }
 // ✅ Resolved number on Today's team → open that person's list and scroll to it.
+// Queue at a glance (right of "All tickets in queue"): total, then how many are due when.
+function renderQueueSummary(tickets) {
+  let over = 0, today = 0, tom = 0, later = 0, none = 0;
+  for (const t of tickets) { const n = daysUntil(t.dueDay); if (n == null) none++; else if (n < 0) over++; else if (n === 0) today++; else if (n === 1) tom++; else later++; }
+  const cell = (cls, n, label, tip) => `<div class="qs-cell ${cls}${n ? "" : " zero"}" title="${esc(tip)}"><div class="qs-num">${n}</div><div class="qs-label">${label}</div></div>`;
+  return `<div class="queue-summary">
+    ${cell("total", tickets.length, "In queue", "Every ticket in a queue status, across everyone")}
+    ${cell("red", over + today, "Overdue / today", `${over} overdue · ${today} due today`)}
+    ${cell("yellow", tom, "Tomorrow", "Due tomorrow")}
+    ${cell("later", later, "2+ days", "Due in 2 or more days")}
+    ${cell("none", none, "No due date", "No due date set")}
+  </div>`;
+}
+// A count with the ticket numbers in its tooltip.
+function statNum(ids, what) {
+  ids = ids || [];
+  if (!ids.length) return "0";
+  const nums = ids.map(id => { const t = state.tickets.find(x => x.id === id); return t?.num ? "#" + t.num : "ticket " + id; });
+  return `<span class="stat-num" title="${esc(what + ":\n" + nums.join(", "))}">${ids.length}</span>`;
+}
 function showResolved(pid) {
   const key = "done:" + pid;
   state.expandedGroups.add(key);
@@ -2921,16 +3080,23 @@ function renderBookTimeHome() {
 }
 function renderBookTimeGridTable(catKey, subKey, sub) {
   const a = `${jsArg(catKey)}, ${jsArg(subKey)}`;
-  const headerCells = sub.columns.map((c, ci) => `<th>${esc(c)} <button class="bt-del" title="Remove repair type “${esc(c)}”" onclick="editBookTimeStructure(${a}, 'delCol', ${ci})">✕</button></th>`).join("");
+  const headerCells = sub.columns.map((c, ci) => c === "Misc Repair"
+    ? `<th class="bt-misc-h" title="Automatic book time for anything it can't identify: profit ÷ this many dollars = minutes">Misc Repair<div class="bt-sub">$ profit per 1 min</div></th>`
+    : `<th>${esc(c)} <button class="bt-del" title="Remove repair type “${esc(c)}”" onclick="editBookTimeStructure(${a}, 'delCol', ${ci})">✕</button></th>`).join("");
   const rowKey = `${catKey}|${subKey}|row`, colKey = `${catKey}|${subKey}|col`;
   const bodyRows = sub.rows.map((rowLabel, ri) => `
     <tr>
       <td class="booktime-row-label">${esc(rowLabel)} <button class="bt-del" title="Remove model “${esc(rowLabel)}”" onclick="editBookTimeStructure(${a}, 'delRow', ${ri})">✕</button></td>
       ${sub.columns.map((c, ci) => `
-        <td><input id="bt-${esc(catKey)}-${esc(subKey)}-${ri}-${ci}" class="booktime-input" type="number" min="0" value="${esc(sub.data[rowLabel][c] ?? '')}" placeholder="N/A" onchange="setBookTimeCell(${jsArg(catKey)}, ${jsArg(subKey)}, ${ri}, ${ci}, this.value)"></td>
+        <td class="${c === "Misc Repair" ? "bt-misc" : ""}"><input id="bt-${esc(catKey)}-${esc(subKey)}-${ri}-${ci}" class="booktime-input" type="number" min="0" step="${c === "Misc Repair" ? "0.5" : "1"}" value="${esc(sub.data[rowLabel][c] ?? '')}" placeholder="N/A" onchange="setBookTimeCell(${jsArg(catKey)}, ${jsArg(subKey)}, ${ri}, ${ci}, this.value)"></td>
       `).join("")}
     </tr>
-  `).join("");
+  `).join("") + `
+    <tr class="bt-addon-row">
+      <td class="booktime-row-label" title="Minutes a repair earns when it's done ON TOP OF another repair (same for every model). Blank = can't be an add-on.">➕ Add-on</td>
+      ${sub.columns.map((c, ci) => SPECIAL_COLS.includes(c) ? `<td class="bt-na">—</td>` : `
+        <td><input id="bt-${esc(catKey)}-${esc(subKey)}-addon-${ci}" class="booktime-input" type="number" min="0" value="${esc((sub.addOns || {})[c] ?? '')}" placeholder="N/A" onchange="setBookTimeCell(${jsArg(catKey)}, ${jsArg(subKey)}, 'addon', ${ci}, this.value)"></td>`).join("")}
+    </tr>`;
   return `
     <table class="booktime-grid">
       <thead><tr><th></th>${headerCells}</tr></thead>
@@ -2993,9 +3159,11 @@ function backToBookTimeHome() { state.adminView = "home"; state.adminCategory = 
 function setBookTimeCell(catKey, subKey, rowIdx, colIdx, val) {
   const sub = state.bookTimeCategories[catKey].subtypes[subKey];
   const trimmed = (val ?? "").toString().trim();
-  const value = trimmed === "" ? null : Math.max(0, Math.round(Number(trimmed) || 0)); // empty = N/A
+  const col = sub.columns[colIdx];
+  const value = trimmed === "" ? null : (col === "Misc Repair" ? Math.max(0, Math.round((Number(trimmed) || 0) * 100) / 100) : Math.max(0, Math.round(Number(trimmed) || 0))); // empty = N/A
   mutate("/admin/booktime-cell", { cat: catKey, sub: subKey, rowIdx, colIdx, value: trimmed }, () => {
-    sub.data[sub.rows[rowIdx]][sub.columns[colIdx]] = value;
+    if (rowIdx === "addon") { sub.addOns = { ...(sub.addOns || {}) }; if (value == null) delete sub.addOns[col]; else sub.addOns[col] = value; }
+    else sub.data[sub.rows[rowIdx]][col] = value;
   });
 }
 function setThreshold(val) {
@@ -3221,7 +3389,7 @@ function buildRefurb(r) {
   const x = { ...r, id: -r.id, refurbId: r.id, isRefurb: true, deviceCategory: mapped ? mapped.category : null,
     deviceSubtype: mapped ? (r.subtype && (r.subtype === mapped.subtype || (mapped.alt || []).includes(r.subtype)) ? r.subtype : mapped.subtype) : null,
     deviceRow: r.model || null };
-  x.bookedSec = r.state === "done" && r.bookMinutes != null ? r.bookMinutes * 60 : refurbRepairs(x).reduce((a, rt) => a + (repairMinutesFor(x, rt) || 0), 0) * 60;
+  x.bookedSec = r.state === "done" && r.bookMinutes != null ? r.bookMinutes * 60 : multiRepairMinutesFor(x, refurbRepairs(x)) * 60;
   return x;
 }
 const refurbRepairs = f => f.repairs || [];
@@ -3251,6 +3419,7 @@ function removeRefurbRepair(negId, rt) {
 }
 function completeRefurb(negId) {
   const f = findRefurb(negId);
+  if (!String(f.label || "").trim()) { showToast("Enter the refurb # first", "error"); document.getElementById(`refurb-label-${-negId}`)?.focus(); return; }
   if (!f.model || !refurbRepairs(f).length) { showToast("Pick the model and at least one repair first", "error"); return; }
   mutate("/refurb", { action: "complete", id: -negId }, () => { f.state = "done"; f.doneAt = nowMs(); finalizeElapsed(f); f.timerState = "logged"; })
     .then(r => { if (r) showToast(`Refurb complete — ${r.minutes}m book time`); });
@@ -3272,7 +3441,11 @@ function renderRefurbDevice(f) {
     : subKeys.map(k => `<optgroup label="${esc(cat.subtypes[k].label)}">${cat.subtypes[k].rows.map(r => opt(k, r)).join("")}</optgroup>`).join("");
   const have = new Set(refurbRepairs(f));
   const repairOpts = repairColumnsFor(f).filter(c => !have.has(c)).map(c => `<option value="${esc(c)}">${esc(c)}${repairMinutesFor(f, c) ? ` (${repairMinutesFor(f, c)}m)` : ""}</option>`).join("");
-  const chips = refurbRepairs(f).map(rt => `<span class="refurb-chip">${esc(rt)} <b>${repairMinutesFor(f, rt) ?? 0}m</b>${done ? "" : `<button type="button" onclick="removeRefurbRepair(${f.id}, ${jsArg(rt)})" title="Remove">✕</button>`}</span>`).join("");
+  // Biggest repair counts in full; the others as add-ons.
+  const ranked = refurbRepairs(f).map(r => ({ r, full: repairMinutesFor(f, r) || 0 })).sort((a, b) => b.full - a.full);
+  const mainR = ranked.length ? ranked[0].r : null;
+  const chips = refurbRepairs(f).map(rt => { const isMain = rt === mainR, ao = addOnMinutesFor(f, rt), mins = isMain ? (repairMinutesFor(f, rt) ?? 0) : (ao ?? repairMinutesFor(f, rt) ?? 0);
+    return `<span class="refurb-chip ${isMain ? "" : "addon-chip"}" title="${isMain ? "Main repair (full book time)" : "Add-on (add-on book time)"}">${isMain ? "" : "+ "}${esc(rt)} <b>${mins}m</b>${done ? "" : `<button type="button" onclick="removeRefurbRepair(${f.id}, ${jsArg(rt)})" title="Remove">✕</button>`}</span>`; }).join("");
   return `
     <div class="tcell-device refurb-device">
       <select class="device-select" onchange="setRefurbType(${f.id}, this.value)" ${done ? "disabled" : ""}>
@@ -3296,9 +3469,9 @@ function renderRefurbRow(f) {
     : `<button class="icon-btn play" onclick="toggleTimer(${f.id},'start')" title="${logged ? "Start a new timer segment" : paused ? "Resume" : "Start"}">▶</button>
        ${paused ? `<button class="icon-btn stop" onclick="toggleTimer(${f.id},'stop')" title="Stop &amp; log time">■</button>` : ""}`;
   const labelCell = done
-    ? `<div class="refurb-label"><div class="ticket-num">🔧 Refurb</div><div class="ticket-subject">${esc(f.label || "(no refurb # / serial)")}</div></div>`
+    ? `<div class="refurb-label"><div class="ticket-num">🔧 Refurb</div><div class="ticket-subject">${f.label ? "Refurb #" + esc(f.label.replace(/^#/, "")) : "(no refurb #)"}</div></div>`
     : `<div class="refurb-label"><div class="ticket-num">🔧 Refurb</div>
-        <input id="refurb-label-${-f.id}" class="refurb-input" type="text" maxlength="80" placeholder="Refurb # / IMEI / serial" value="${esc(f.label || "")}" onchange="setRefurbLabel(${f.id}, this.value)" onkeydown="if (event.key === 'Enter') this.blur()"></div>`;
+        <input id="refurb-label-${-f.id}" class="refurb-input" type="text" maxlength="80" placeholder="Refurb #" inputmode="numeric" value="${esc(f.label || "")}" onchange="setRefurbLabel(${f.id}, this.value)" onkeydown="if (event.key === 'Enter') this.blur()"></div>`;
   const doneTime = f.doneAt ? new Date(f.doneAt).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" }) : "";
   return `
     <div class="trow refurb-row ${done ? "done" : ""}" data-id="${f.id}">
@@ -3308,10 +3481,10 @@ function renderRefurbRow(f) {
       ${renderRefurbDevice(f)}
       <div class="tcell-book" title="Sum of the picked repairs from the Book Time Database${done ? " (locked in when completed)" : ""}">${f.bookedSec ? fmtHM(f.bookedSec) : "—"}</div>
       ${renderActualCell(f, controls)}
-      <div class="ticket-actions">${done ? "" : `<button class="icon-btn" onclick="deleteRefurb(${f.id})" title="Delete this refurb">🗑</button>`}</div>
+      <div class="ticket-actions">${done ? "" : `<button class="icon-btn trash-btn" onclick="deleteRefurb(${f.id})" title="Delete this refurb" aria-label="Delete this refurb"><svg viewBox="0 0 24 24" width="15" height="15" aria-hidden="true"><path fill="currentColor" d="M9 3h6l1 2h4v2H4V5h4l1-2zm-3 6h12l-1 12a2 2 0 0 1-2 2H9a2 2 0 0 1-2-2L6 9zm4 2v9h2v-9h-2zm4 0v9h2v-9h-2z"/></svg></button>`}</div>
       <div class="tcell-outcome">${done
         ? `<button class="btn ghost small" onclick="reopenRefurb(${f.id})" title="Take the credit back off so it can be changed">Undo</button>`
-        : `<button class="btn small primary" onclick="completeRefurb(${f.id})" ${f.deviceRow && refurbRepairs(f).length ? "" : `disabled title="Pick the model and at least one repair first"`}>✓ Complete refurb</button>`}</div>
+        : `<button class="btn small primary" onclick="completeRefurb(${f.id})" ${String(f.label || "").trim() && f.deviceRow && refurbRepairs(f).length ? "" : `disabled title="${!String(f.label || "").trim() ? "Enter the refurb # first" : "Pick the model and at least one repair first"}"`}>✓ Complete refurb</button>`}</div>
     </div>`;
 }
 function renderRefurbSection() {

@@ -4,10 +4,10 @@
 import { db } from "../../lib/db.mjs";
 import { signToken, verifyToken } from "../../lib/auth.mjs";
 import { today, shopDate, shopOffset, shopTimeOfDay } from "../../lib/time.mjs";
-import { effectiveDevice, creditedMinutes, repairMinutes } from "../../lib/booktime.mjs";
+import { effectiveDevice, creditedMinutes, repairMinutes, ticketBookMinutes, multiRepairMinutes, SPECIAL_COLS } from "../../lib/booktime.mjs";
 import {
   getTickets, getUsers, assignTicket, setTicketIssueType, postComment, invalidate, patchCachedTicket, probeRs, RsError, RS_SUBDOMAIN,
-  whoIsKey, defaultKey, forgetDefaultKey, setTicketDueDate, getMoney, listTimers, timerOp, getNotesToday,
+  whoIsKey, defaultKey, forgetDefaultKey, setTicketDueDate, getMoney, listTimers, timerOp, getNotesToday, ticketsWithoutInvoice,
 } from "../../lib/rs.mjs";
 import { encryptSecret, decryptSecret, last4 } from "../../lib/secrets.mjs";
 
@@ -73,6 +73,7 @@ export default async (req, context) => {
         case "/issue-type":    return json(await setIssueType(me, body));
         case "/credit":        return json(await setCredit(me, body));
         case "/diagnosis":     return json(await answerDiagnosis(me, body));
+        case "/input/dismiss": return json(await dismissInput(me, body));
         case "/due":           return json(await setDueDate(me, body));
       }
       if (route.startsWith("/admin/")) {
@@ -270,7 +271,7 @@ async function buildState(me, { force = false } = {}) {
     const id = Number(c.ticket_id);
     const ts = stateById.get(id);
     const dev = effectiveDevice(issueTypeById.get(id) ?? ts?.rs_problem_type, ts);
-    const mins = repairMinutes(settings.bookTimes, dev, dev.repairType) || 0;
+    const mins = ticketBookMinutes(settings.bookTimes, dev, dev.repairType, ts?.addons || []);
     if (c.book_minutes !== mins) await sql`update completions set book_minutes = ${mins} where ticket_id = ${id} and work_date = ${t0}`;
     completionBy.set(id, {
       resolvedAt: ms(c.resolved_at), assignedPerson: c.assigned_person || null, primaryPerson: c.primary_person || null,
@@ -278,6 +279,14 @@ async function buildState(me, { force = false } = {}) {
       bookMinutes: mins, shares: c.shares || [],
     });
   }
+  // 📌 Needs your input: resolved today with no invoice (unless someone said none is needed).
+  try {
+    const dis = await sql`select ticket_id, kind from input_dismiss where ticket_id = any(${[...completionBy.keys()]}::bigint[])`;
+    for (const d of dis) { const c = completionBy.get(Number(d.ticket_id)); if (c) (c.dismissed ||= []).push(d.kind); }
+    const check = [...completionBy.entries()].filter(([, c]) => !(c.dismissed || []).includes("invoice")).map(([id]) => id);
+    const none = await ticketsWithoutInvoice(check);
+    for (const id of none) completionBy.get(id).noInvoice = true;
+  } catch (e) { console.warn("invoice check", e.message); }
   const group = (rows) => { const m = new Map(); for (const r of rows) { const k = Number(r.ticket_id); if (!m.has(k)) m.set(k, []); m.get(k).push(r); } return m; };
   const workBy = group(workRows), assignBy = group(assignRows), notesBy = group(noteRows), timersBy = group(timerRows), queueBy = group(queueRows);
   const totalBy = group(totalRows), todayBy = group(todayRows);
@@ -306,6 +315,7 @@ async function buildState(me, { force = false } = {}) {
       deviceOverrideSubtype: s.device_subtype || null,
       deviceRow: s.device_row || null,
       repairType: s.repair_type || null,
+      addons: Array.isArray(s.addons) ? s.addons : [],
       diagnosisClaimedBy: s.diagnosis_claimed_by || null, diagnosisClaimedAt: dstr(s.diagnosis_claimed_at),
       diagnosisLocked: !!s.diagnosis_locked,
       repairClaimedBy: s.repair_claimed_by || null, repairClaimedAt: dstr(s.repair_claimed_at),
@@ -394,6 +404,37 @@ async function buildState(me, { force = false } = {}) {
   if (mc?.day === t0) for (const i of mc.invoices || []) mark(i.userId != null ? personByRsUser.get(String(i.userId)) : null, "invoice");
   mark(me.id, "logged in");
 
+  // 📊 Team stats per person: pushed to the next stage, diagnosed (claimed diagnosis credit), resolved
+  // (primary on a resolved ticket, or a finished refurb), and every ticket/refurb they touched today.
+  const teamStats = {};
+  {
+    const st = pid => (teamStats[pid] ||= { pushed: new Set(), diagnosed: new Set(), resolved: 0, refurbs: 0, touched: new Set() });
+    const [pushRows, diagRows, timeRows, refurbTouchRows] = await Promise.all([
+      sql`select ticket_id, person_id from push_log where work_date = ${t0}`,
+      sql`select ticket_id, person_id from work_log where work_date = ${t0} and outcome = 'diagnosis_completed'`,
+      sql`select distinct person_id, ticket_id from time_entries where work_date = ${t0} and ticket_id > 0`,
+      sql`select person_id, count(*)::int as n from refurbs
+          where done_date = ${t0} or exists (select 1 from time_entries e where e.ticket_id = -refurbs.id and e.work_date = ${t0})
+          group by 1`,
+    ]);
+    for (const r of pushRows) { st(r.person_id).pushed.add(Number(r.ticket_id)); st(r.person_id).touched.add(Number(r.ticket_id)); }
+    for (const r of diagRows) { st(r.person_id).diagnosed.add(Number(r.ticket_id)); st(r.person_id).touched.add(Number(r.ticket_id)); }
+    for (const r of timeRows) st(r.person_id).touched.add(Number(r.ticket_id));
+    for (const r of runningRows) if (Number(r.ticket_id) > 0) st(r.person_id).touched.add(Number(r.ticket_id));
+    for (const r of rsTimerRows) { const pid = r.rsUserId != null ? personByRsUser.get(r.rsUserId) : null; if (pid && (r.today || r.status === "running")) st(pid).touched.add(Number(r.ticketId)); }
+    for (const [id, c] of completionBy) {
+      for (const sh of c.shares) st(sh.personId).touched.add(id);
+      if (c.shares.length && c.primaryPerson) st(c.primaryPerson).resolved++;
+    }
+    for (const n of notedToday) for (const pid of n.people) st(pid).touched.add(n.ticketId);
+    for (const r of refurbDoneRows) st(r.person_id).refurbs = r.n;
+    for (const r of refurbTouchRows) st(r.person_id).refurbTouched = r.n;
+  }
+  const teamStatsOut = Object.fromEntries(Object.entries(teamStats).map(([pid, x]) => [pid, {
+    pushed: [...x.pushed], diagnosed: [...x.diagnosed], resolved: x.resolved + x.refurbs, refurbs: x.refurbs,
+    interacted: x.touched.size + (x.refurbTouched || 0),
+  }]));
+
   // 💰 Today's money (Team tab): payments received + invoiced, split by who created each invoice.
   let money = null;
   if (settings.showMoney) try {
@@ -458,6 +499,7 @@ async function buildState(me, { force = false } = {}) {
     tickets,
     personToday,
     notedToday,
+    teamStats: teamStatsOut,
     refurbs: myRefurbRows.map(r => ({
       id: Number(r.id), label: r.label, issueType: r.issue_type, subtype: r.subtype, model: r.model, repairs: r.repairs || [],
       state: r.state, bookMinutes: r.book_minutes, doneAt: ms(r.done_at), createdAt: ms(r.created_at),
@@ -583,14 +625,18 @@ async function recomputeCredits(tx, ticketId) {
 
 const clean = (v, max = 120) => (v == null || v === "" ? null : String(v).slice(0, max));
 
-async function setDevice(me, { ticketId, category, subtype, row, repairType }) {
+async function setDevice(me, { ticketId, category, subtype, row, repairType, addons }) {
   const id = ticketIdOf(ticketId);
+  const rt = clean(repairType);
+  if (rt && SPECIAL_COLS.includes(rt)) throw new HttpError(400, `${rt} isn't a repair type`);
+  // Add-ons only make sense on top of a main repair; never the main repair itself.
+  const ao = rt ? [...new Set((Array.isArray(addons) ? addons : []).map(a => clean(a)).filter(a => a && a !== rt && !SPECIAL_COLS.includes(a)))].slice(0, 8) : [];
   await db().begin(async tx => {
     await tx`
-      insert into ticket_state (ticket_id, device_category, device_subtype, device_row, repair_type, updated_at)
-      values (${id}, ${clean(category)}, ${clean(subtype)}, ${clean(row)}, ${clean(repairType)}, now())
+      insert into ticket_state (ticket_id, device_category, device_subtype, device_row, repair_type, addons, updated_at)
+      values (${id}, ${clean(category)}, ${clean(subtype)}, ${clean(row)}, ${rt}, ${tx.json(ao)}, now())
       on conflict (ticket_id) do update set device_category = excluded.device_category, device_subtype = excluded.device_subtype,
-        device_row = excluded.device_row, repair_type = excluded.repair_type, updated_at = now()`;
+        device_row = excluded.device_row, repair_type = excluded.repair_type, addons = excluded.addons, updated_at = now()`;
     await recomputeCredits(tx, id);
   });
   return { ok: true };
@@ -772,6 +818,18 @@ async function answerDiagnosis(me, { ticketId, complete, bigRepair }) {
   });
 }
 
+// 📌 "No invoice needed" / "Skip" on a Needs-your-input reminder for a ticket resolved today.
+async function dismissInput(me, { ticketId, kind }) {
+  const id = ticketIdOf(ticketId);
+  if (!["invoice", "actual"].includes(kind)) throw new HttpError(400, "Unknown reminder");
+  const [c] = await db()`select * from completions where ticket_id = ${id} and work_date = ${today()}`;
+  if (!c) throw new HttpError(404, "That ticket wasn't resolved today");
+  if (!me.is_admin && ![c.primary_person, c.assigned_person].includes(me.id)) throw new HttpError(403, "Only whoever resolved it (or an admin) can do that");
+  await db()`insert into input_dismiss (ticket_id, kind, person_id) values (${id}, ${kind}, ${me.id})
+             on conflict (ticket_id, kind) do update set person_id = excluded.person_id, created_at = now()`;
+  return { ok: true };
+}
+
 // Change a ticket's due DATE in RepairShopr (made with the logged-in person's key). The time of day it
 // already had is kept; a ticket with no due date gets 5:00 PM.
 async function setDueDate(me, { ticketId, day }) {
@@ -932,7 +990,7 @@ async function refurbMinutes(r) {
   if (!mapped || !r.model) return 0;
   const subtype = r.subtype && (r.subtype === mapped.subtype || (mapped.alt || []).includes(r.subtype)) ? r.subtype : mapped.subtype;
   const dev = { category: mapped.category, subtype, row: r.model };
-  return (r.repairs || []).reduce((a, rt) => a + (repairMinutes(bookTimes, dev, rt) || 0), 0);
+  return multiRepairMinutes(bookTimes, dev, r.repairs || []);   // biggest repair full, the rest as add-ons
 }
 async function refurbAction(me, b) {
   const sql = db();
@@ -950,7 +1008,7 @@ async function refurbAction(me, b) {
     const typeChanged = issueType !== r.issue_type;
     const model = b.model !== undefined ? (text(b.model, 120) || null) : (typeChanged ? null : r.model);
     const subtype = b.subtype !== undefined ? (text(b.subtype, 40) || null) : (typeChanged ? null : r.subtype);
-    const repairs = b.repairs !== undefined ? [...new Set((Array.isArray(b.repairs) ? b.repairs : []).map(x => text(x, 80)).filter(Boolean))].slice(0, 12)
+    const repairs = b.repairs !== undefined ? [...new Set((Array.isArray(b.repairs) ? b.repairs : []).map(x => text(x, 80)).filter(x => x && !SPECIAL_COLS.includes(x)))].slice(0, 12)
                                             : (typeChanged || model !== r.model ? [] : r.repairs);
     const label = b.label !== undefined ? text(b.label, 80) : r.label;
     await sql`update refurbs set label = ${label}, issue_type = ${issueType}, subtype = ${subtype}, model = ${model}, repairs = ${sql.json(repairs)} where id = ${r.id}`;
@@ -959,6 +1017,7 @@ async function refurbAction(me, b) {
   if (b.action === "complete") {
     if (r.state === "done") return { ok: true };
     const minutes = await refurbMinutes(r);
+    if (!String(r.label || "").trim()) throw new HttpError(400, "Enter the refurb # first");
     if (!r.model || !(r.repairs || []).length) throw new HttpError(400, "Pick the model and at least one repair first");
     await localTimer({ id: r.person_id }, -Number(r.id), "stop").catch(() => {});
     await sql`update refurbs set state = 'done', book_minutes = ${minutes}, done_at = now(), done_date = ${today()} where id = ${r.id}`;
@@ -1042,10 +1101,21 @@ async function setBookTimeCell({ cat, sub, rowIdx, colIdx, value }) {
     const bt = r?.value || {};
     const g = bt?.[cat]?.subtypes?.[sub];
     if (!g) throw new HttpError(400, "Unknown category/sub-type");
-    const row = g.rows[rowIdx], col = g.columns[colIdx];
-    if (row == null || col == null) throw new HttpError(400, "Unknown cell");
+    const col = g.columns[colIdx];
+    if (col == null) throw new HttpError(400, "Unknown cell");
     const trimmed = String(value ?? "").trim();
-    g.data[row][col] = trimmed === "" ? null : Math.max(0, Math.round(Number(trimmed) || 0));
+    // Misc Repair is "$ of profit per 1 minute" (decimals OK); everything else is whole minutes.
+    const v = trimmed === "" ? null : (col === "Misc Repair" ? Math.max(0, Math.round((Number(trimmed) || 0) * 100) / 100) : Math.max(0, Math.round(Number(trimmed) || 0)));
+    if (rowIdx === "addon") {                    // the Add-on row: same for every model of this device type
+      if (SPECIAL_COLS.includes(col)) throw new HttpError(400, `${col} can't be an add-on`);
+      g.addOns = { ...(g.addOns || {}) };
+      if (v == null) delete g.addOns[col]; else g.addOns[col] = v;
+      await tx`update settings set value = ${tx.json(bt)} where key = 'book_times'`;
+      return { ok: true, value: v };
+    }
+    const row = g.rows[rowIdx];
+    if (row == null) throw new HttpError(400, "Unknown cell");
+    g.data[row][col] = v;
     await tx`update settings set value = ${tx.json(bt)} where key = 'book_times'`;
     return { ok: true, value: g.data[row][col] };
   });
@@ -1072,7 +1142,9 @@ async function editBookTimeStructure({ cat, sub, op, name, index }) {
     } else if (op === "delCol") {
       const col = g.columns[index];
       if (col == null) throw new HttpError(400, "Unknown repair type");
+      if (col === "Misc Repair") throw new HttpError(400, "Misc Repair is used by automatic book time on every sheet — it can't be removed");
       g.columns.splice(index, 1); for (const row of g.rows) delete g.data[row][col];
+      if (g.addOns) delete g.addOns[col];
     } else throw new HttpError(400, "Bad operation");
     await tx`update settings set value = ${tx.json(bt)} where key = 'book_times'`;
     return { ok: true };
